@@ -34,26 +34,29 @@ Rule 4: Return ONLY valid JSON. No markdown, no code blocks, just pure JSON."""
             gcs_uri: GCS URI of the invoice image
             raw_text: Raw OCR text from Document AI
             extracted_entities: Structured entities from Document AI
-            rag_context: Context from Vertex AI Search
+            rag_context: Context from Vertex AI Search (defaults to "No vendor history" if None/empty)
             
         Returns:
             Validated JSON structure
         """
+        if not rag_context or rag_context.strip() == "":
+            rag_context = "No vendor history found in database."
+        
         prompt = f"""
 You are an expert Invoice Auditor.
 
 INPUT DATA:
-1. OCR Text from Document AI: {raw_text}
+1. OCR Text from Document AI: {raw_text[:2000]}
 
 2. Structured Entities from Document AI: {json.dumps(extracted_entities, indent=2)}
 
 3. Internal Database Context (RAG): {rag_context}
 
 YOUR TASKS:
-1. Merge the Document AI entities with the visual image data to create a PERFECT JSON.
+1. Merge the Document AI entities to create a PERFECT JSON.
 2. Compare the "Vendor Name" on the invoice with the "Internal Database Context". Use the Database spelling/ID if it's a match.
-3. MATH CHECK: Write and execute Python code to verify: (Quantity * Unit Price) == Line Total. If the math is wrong on the invoice, flag it.
-4. NORMALIZE: Convert all dates to ISO 8601 (YYYY-MM-DD). Convert all currency to ISO 4217 (USD, EUR).
+3. MATH CHECK: Verify (Quantity * Unit Price) == Line Total for each line item. If the math is wrong, set math_verified: false and add a flag.
+4. NORMALIZE: Convert all dates to ISO 8601 (YYYY-MM-DD). Convert all currency to ISO 4217 (USD, EUR, etc).
 
 OUTPUT SCHEMA:
 Return ONLY valid JSON matching this schema:
@@ -72,44 +75,68 @@ Return ONLY valid JSON matching this schema:
 }}
 """
         
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.system_instruction
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=self.system_instruction,
+                        response_mime_type="application/json",
+                        temperature=0.1
+                    )
                 )
-            )
-            
-            result_text = response.text.strip() if response.text else ""
-            
-            if result_text.startswith('```json'):
-                result_text = result_text[7:]
-            if result_text.startswith('```'):
-                result_text = result_text[3:]
-            if result_text.endswith('```'):
-                result_text = result_text[:-3]
-            
-            result_text = result_text.strip()
-            
-            if not result_text:
+                
+                if not response or not response.text:
+                    if attempt < max_retries - 1:
+                        continue
+                    return {
+                        "error": "Empty response from Gemini",
+                        "vendor": {"name": "Unknown", "address": "", "matched_db_id": None},
+                        "validation_flags": ["Gemini returned empty response"]
+                    }
+                
+                result_text = response.text.strip()
+                
+                if result_text.startswith('```json'):
+                    result_text = result_text[7:]
+                if result_text.startswith('```'):
+                    result_text = result_text[3:]
+                if result_text.endswith('```'):
+                    result_text = result_text[:-3]
+                
+                result_text = result_text.strip()
+                
+                validated_data = json.loads(result_text)
+                
+                if 'vendor' not in validated_data:
+                    validated_data['vendor'] = {"name": "Unknown", "address": "", "matched_db_id": None}
+                if 'validation_flags' not in validated_data:
+                    validated_data['validation_flags'] = []
+                
+                return validated_data
+                
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    continue
+                
+                response_text = response.text if 'response' in locals() and response and hasattr(response, 'text') else "No response"
+                print(f"Raw response: {response_text}")
                 return {
-                    "error": "Empty response from Gemini"
+                    "error": "Failed to parse Gemini response after retries",
+                    "raw_response": response_text[:500],
+                    "vendor": {"name": "Unknown", "address": "", "matched_db_id": None},
+                    "validation_flags": ["JSON parsing failed"]
                 }
-            
-            validated_data = json.loads(result_text)
-            return validated_data
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            response_text = response.text if 'response' in locals() and response and hasattr(response, 'text') else "No response"
-            print(f"Raw response: {response_text}")
-            return {
-                "error": "Failed to parse Gemini response",
-                "raw_response": response_text
-            }
-        except Exception as e:
-            print(f"Gemini validation error: {e}")
-            return {
-                "error": str(e)
-            }
+            except Exception as e:
+                print(f"Gemini validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    continue
+                
+                return {
+                    "error": str(e),
+                    "vendor": {"name": "Unknown", "address": "", "matched_db_id": None},
+                    "validation_flags": [f"Gemini error: {str(e)}"]
+                }

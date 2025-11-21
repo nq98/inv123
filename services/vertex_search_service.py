@@ -65,10 +65,10 @@ class VertexSearchService:
         Format search results into context string for Gemini
         
         Returns:
-            Formatted context string
+            Formatted context string (always returns a string, never None/empty)
         """
-        if not search_results:
-            return "No vendor history found in database."
+        if not search_results or len(search_results) == 0:
+            return "No vendor history found in database. This is a new vendor or vendor name was not detected."
         
         context_parts = []
         for i, result in enumerate(search_results, 1):

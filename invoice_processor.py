@@ -33,11 +33,15 @@ class InvoiceProcessor:
             'layers': {}
         }
         
+        print(f"\n{'='*60}")
+        print(f"PROCESSING INVOICE: {gcs_uri}")
+        print(f"{'='*60}\n")
+        
+        raw_text = ""
+        extracted_entities = {}
+        rag_context = "No vendor history found in database."
+        
         try:
-            print(f"\n{'='*60}")
-            print(f"PROCESSING INVOICE: {gcs_uri}")
-            print(f"{'='*60}\n")
-            
             print("LAYER 1: Document AI - Structure Extraction")
             print("-" * 60)
             document = self.doc_ai_service.process_document(gcs_uri, mime_type)
@@ -52,14 +56,27 @@ class InvoiceProcessor:
                 'text_length': len(raw_text),
                 'entity_types': list(extracted_entities.keys())
             }
-            
+        except Exception as e:
+            print(f"✗ Document AI error: {str(e)}")
+            result['layers']['layer1_document_ai'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            result['status'] = 'error'
+            result['error'] = f"Document AI failed: {str(e)}"
+            result['validated_data'] = {
+                'error': str(e),
+                'validation_flags': ['Document AI processing failed']
+            }
+            return result
+        
+        try:
             print("\nLAYER 2: Vertex AI Search (RAG) - Context Retrieval")
             print("-" * 60)
             vendor_name = extract_vendor_name(extracted_entities)
             print(f"✓ Extracted vendor name: {vendor_name}")
             
             search_results = []
-            rag_context = "No vendor history found in database."
             
             if vendor_name:
                 search_results = self.vertex_search_service.search_vendor(vendor_name)
@@ -73,7 +90,14 @@ class InvoiceProcessor:
                 'vendor_query': vendor_name,
                 'matches_found': len(search_results)
             }
-            
+        except Exception as e:
+            print(f"⚠ Vertex Search error (non-critical): {str(e)}")
+            result['layers']['layer2_vertex_search'] = {
+                'status': 'warning',
+                'error': str(e)
+            }
+        
+        try:
             print("\nLAYER 3: Gemini - Semantic Validation & Math Checking")
             print("-" * 60)
             validated_data = self.gemini_service.validate_invoice(
@@ -84,10 +108,10 @@ class InvoiceProcessor:
             )
             
             if 'error' in validated_data:
-                print(f"✗ Gemini validation error: {validated_data['error']}")
+                print(f"⚠ Gemini validation completed with warnings: {validated_data.get('error', 'Unknown')}")
                 result['layers']['layer3_gemini'] = {
-                    'status': 'error',
-                    'error': validated_data['error']
+                    'status': 'completed_with_warnings',
+                    'error': validated_data.get('error')
                 }
             else:
                 print("✓ Semantic validation complete")
@@ -114,9 +138,17 @@ class InvoiceProcessor:
             return result
             
         except Exception as e:
-            print(f"\n✗ ERROR: {str(e)}\n")
+            print(f"✗ Gemini validation error: {str(e)}")
+            result['layers']['layer3_gemini'] = {
+                'status': 'error',
+                'error': str(e)
+            }
             result['status'] = 'error'
-            result['error'] = str(e)
+            result['error'] = f"Gemini validation failed: {str(e)}"
+            result['validated_data'] = {
+                'error': str(e),
+                'validation_flags': ['Gemini validation failed']
+            }
             return result
     
     def process_local_file(self, file_path, mime_type='application/pdf'):

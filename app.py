@@ -69,8 +69,7 @@ def process_invoice():
     
     result = processor.process_invoice(gcs_uri, mime_type)
     
-    status_code = 200 if result['status'] == 'completed' else 500
-    return jsonify(result), status_code
+    return jsonify(result), 200
 
 @app.route('/upload', methods=['POST'])
 def upload_invoice():
@@ -99,8 +98,8 @@ def upload_invoice():
     
     os.remove(filepath)
     
-    status_code = 200 if result['status'] == 'completed' else 500
-    return jsonify(result), status_code
+    return jsonify(result), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.getenv('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=True)

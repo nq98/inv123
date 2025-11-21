@@ -26,18 +26,24 @@ class DocumentAIService:
         Returns:
             Processed document with extracted entities
         """
-        gcs_document = documentai.GcsDocument(
-            gcs_uri=gcs_uri,
-            mime_type=mime_type
-        )
+        if not config.DOCAI_PROCESSOR_NAME:
+            raise ValueError("DOCAI_PROCESSOR_NAME not configured. Check DOCAI_PROCESSOR_ID and DOCAI_LOCATION.")
         
-        request = documentai.ProcessRequest(
-            name=config.DOCAI_PROCESSOR_NAME,
-            gcs_document=gcs_document
-        )
-        
-        result = self.client.process_document(request=request)
-        return result.document
+        try:
+            gcs_document = documentai.GcsDocument(
+                gcs_uri=gcs_uri,
+                mime_type=mime_type
+            )
+            
+            request = documentai.ProcessRequest(
+                name=config.DOCAI_PROCESSOR_NAME,
+                gcs_document=gcs_document
+            )
+            
+            result = self.client.process_document(request=request)
+            return result.document
+        except Exception as e:
+            raise RuntimeError(f"Document AI processing failed: {str(e)}") from e
     
     def extract_entities(self, document):
         """
