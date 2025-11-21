@@ -1,0 +1,136 @@
+Project Spec: Enterprise Invoice Extraction (Hybrid Arch)
+Goal: Extract structured data from invoices (200+ countries) with 100% semantic accuracy, using Google Document AI for layout and Gemini 1.5 Pro for validation and reasoning.
+1. The Architecture Flow
+Trigger: Invoice (PDF/Image) uploaded to GCS Bucket (payouts-invoices).
+Layer 1 (Structure): Send file to Document AI Invoice Processor.
+Why: It gives us precise bounding boxes and confidence scores.
+
+
+Layer 2 (Context/RAG): Query Vertex AI Search (invoices-ds).
+Action: Search for the extracted "Vendor Name" to find the canonical "Vendor ID" and "Past Spending Patterns."
+
+
+Layer 3 (Semantic & Math): Send Raw Image + DocAI Output + RAG Context to Gemini 1.5 Pro.
+Action:
+Correct OCR errors based on RAG context (e.g., "Adbe" -> "Adobe").
+Normalize dates (e.g., detect if 05/04 is May 4th or April 5th based on country).
+Code Execution: Write and run Python to verify Quantity * UnitPrice == LineTotal.
+
+
+
+
+Output: Save validated JSON to database/storage.
+
+2. Configuration & Environment Variables
+Developer Instruction: Configure the backend (Python/Node) with these specific IDs and Credentials.
+codeEnv
+# --- PROJECT CONFIG ---
+GOOGLE_CLOUD_PROJECT_ID="invoicereader-477008"
+GCS_INPUT_BUCKET="payouts-invoices"
+REGION="us-central1" (or your specific region, usually us-central1 or eu)
+
+# --- DOCUMENT AI CONFIG ---
+# Use the 'documentai-access' Service Account for this
+DOCAI_PROCESSOR_ID="919c19aabdb1802d"
+DOCAI_LOCATION="us" (Must match processor location)
+
+# --- VERTEX AI SEARCH (RAG) ---
+# Use the 'vertex-runner' Service Account for this
+VERTEX_SEARCH_DATA_STORE_ID="invoices-ds"
+VERTEX_SEARCH_COLLECTION="default_collection"
+
+# --- GEMINI / GEN AI ---
+GOOGLE_GEMINI_API_KEY="AIzaSyAnPxhoDCdoqS92NR1HApdEbfzeKQ8zC5k"
+
+# --- GMAIL INTEGRATION (If using email ingestion) ---
+GMAIL_CLIENT_ID="437918215047-aferokcvfrcm3a42je2lpqal590asjpt.apps.googleusercontent.com"
+GMAIL_CLIENT_SECRET="[YOUR_PROVIDED_SECRET_STARTING_WITH_GOCSPX]"
+
+3. Implementation Logic (Python Pseudo-Code)
+Developer: This is the logical flow you need to write.
+Step A: Setup Clients
+Use the google-cloud-documentai, google-cloud-discoveryengine, and google-generativeai libraries.
+Auth: Use the vertex-runner JSON for Vertex/Gemini calls. Use the documentai-access JSON for DocAI calls.
+Step B: The Processing Function
+codePython
+def process_invoice(gcs_uri, mime_type):
+    
+    # 1. EXTRACT STRUCTURE (Document AI)
+    # Call Processor: 919c19aabdb1802d
+    doc_ai_result = document_ai_client.process_document(
+        name=f"projects/invoicereader-477008/locations/us/processors/919c19aabdb1802d",
+        gcs_document={"gcs_uri": gcs_uri, "mime_type": mime_type}
+    )
+    raw_text = doc_ai_result.text
+    extracted_entities = doc_ai_result.entities  # Rough extraction
+
+    # 2. RETRIEVE CONTEXT (Vertex AI Search - RAG)
+    # Use extracted vendor name to find history in 'invoices-ds'
+    vendor_query = extract_vendor_name(extracted_entities)
+    
+    search_results = vertex_search_client.search(
+        serving_config=f"projects/invoicereader-477008/locations/global/collections/default_collection/dataStores/invoices-ds/servingConfigs/default_search",
+        query=vendor_query
+    )
+    
+    # Format context for LLM: "We have a vendor 'Acme Corp' (ID: 555) in the USA. Last invoice was $500."
+    context_str = format_search_results(search_results)
+
+    # 3. SEMANTIC REASONING & VALIDATION (Gemini 1.5 Pro)
+    model = GenerativeModel("gemini-1.5-pro-002")
+    
+    # Load the raw image file from GCS for the LLM to "see"
+    image_part = Part.from_uri(gcs_uri, mime_type)
+
+    prompt = f"""
+    You are an expert Invoice Auditor.
+    
+    INPUT DATA:
+    1. OCR Text from Document AI: {raw_text}
+    2. Structured Entities from Document AI: {extracted_entities}
+    3. Internal Database Context (RAG): {context_str}
+    
+    YOUR TASKS:
+    1. Merge the Document AI entities with the visual image data to create a PERFECT JSON.
+    2. Compare the "Vendor Name" on the invoice with the "Internal Database Context". Use the Database spelling/ID if it's a match.
+    3. MATH CHECK: Write and execute Python code to verify: (Quantity * Unit Price) == Line Total. If the math is wrong on the invoice, flag it.
+    4. NORMALIZE: Convert all dates to ISO 8601 (YYYY-MM-DD). Convert all currency to ISO 4217 (USD, EUR).
+    
+    OUTPUT SCHEMA:
+    Return ONLY valid JSON matching this schema:
+    {{
+        "vendor": {{ "name": "string", "address": "string", "matched_db_id": "string" }},
+        "invoice_number": "string",
+        "date": "YYYY-MM-DD",
+        "currency": "ISO_CODE",
+        "line_items": [
+            {{ "description": "string", "qty": float, "unit_price": float, "total": float, "math_verified": boolean }}
+        ],
+        "subtotal": float,
+        "tax": float,
+        "grand_total": float,
+        "validation_flags": ["list of warnings or errors"]
+    }}
+    """
+
+    # 4. GENERATE AND CLEAN
+    response = model.generate_content([image_part, prompt])
+    final_json = response.text
+    
+    return final_json
+
+4. Detailed System Prompt (For the Developer to Use)
+When integrating Gemini, use this precise logic to ensure the "No Hallucination" goal:
+System Instructions for Gemini:
+"You are a financial auditor API. Your goal is 100% data accuracy.
+Rule 1 (Context Priority): If the OCR text says 'Gooogle' but the RAG Context says the vendor is 'Google LLC', output 'Google LLC'.
+Rule 2 (Math Validation): You MUST calculate line items. If the invoice says 5 * 10 = 40, output math_verified: false and flag it. Do not silently fix it; flag the discrepancy.
+Rule 3 (Global Dates): If the invoice is from the US, read dates as MM/DD/YYYY. If from Europe/Israel, read as DD/MM/YYYY. Use the detected address to decide the locale."
+
+Summary Checklist for Your Developer
+Service Account 1: Use vertex-runner JSON for Vertex Search and Gemini API calls.
+Service Account 2: Use documentai-access JSON to call Processor 919c19aabdb1802d.
+Storage: Listen to payouts-invoices bucket.
+RAG: Connect to Data Store invoices-ds.
+Model: Use gemini-1.5-pro (or flash for lower cost, but pro is better for this logic).
+Use Arrow Up and Arrow Down to select a turn, Enter to jump to it, and Escape to return to the chat.
