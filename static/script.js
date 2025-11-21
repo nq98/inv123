@@ -59,6 +59,12 @@ uploadForm.addEventListener('submit', async (e) => {
             body: formData
         });
         
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Server returned non-JSON response: ${text.substring(0, 200)}`);
+        }
+        
         const data = await response.json();
         
         loading.classList.add('hidden');
@@ -72,6 +78,7 @@ uploadForm.addEventListener('submit', async (e) => {
                 <strong>Error:</strong> ${error.message}
             </div>
         `;
+        console.error('Upload error:', error);
     }
 });
 
