@@ -38,10 +38,13 @@ Process an invoice from GCS URI
 ### `POST /upload`
 Upload and process an invoice file
 ```bash
-curl -X POST -F "file=@invoice.pdf" http://localhost:8000/upload
+curl -X POST -F "file=@invoice.pdf" http://localhost:5000/upload
 ```
 
 ## Usage Examples
+
+### Web Interface
+Simply open your browser and navigate to the web interface to upload invoices via drag & drop.
 
 ### Python Script
 ```python
@@ -61,12 +64,12 @@ print(result['validated_data'])
 ### API Request
 ```bash
 # Process from GCS URI
-curl -X POST http://localhost:8000/process \
+curl -X POST http://localhost:5000/process \
   -H "Content-Type: application/json" \
   -d '{"gcs_uri": "gs://payouts-invoices/invoice.pdf"}'
 
 # Upload and process
-curl -X POST -F "file=@invoice.pdf" http://localhost:8000/upload
+curl -X POST -F "file=@invoice.pdf" http://localhost:5000/upload
 ```
 
 ## Configuration

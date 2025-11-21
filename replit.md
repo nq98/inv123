@@ -41,11 +41,24 @@ See `.env` for required configuration including API keys, processor IDs, and ser
 
 ## Recent Changes
 - 2025-11-21: Initial project setup with hybrid architecture implementation
+- 2025-11-21: Added web interface with drag & drop invoice upload on port 5000
+- 2025-11-21: Fixed Google Cloud Storage authentication using service account credentials
+- 2025-11-21: Updated Flask app to serve web UI and handle file uploads properly
 
 ## Key Features
+- **Web Interface**: Beautiful drag & drop UI for uploading invoices (port 5000)
 - Multi-region invoice support (200+ countries)
 - Automated OCR error correction using RAG context
 - Python code execution for line item math verification
 - Global date format normalization (MM/DD vs DD/MM)
 - Currency standardization to ISO 4217
 - Vendor matching with historical data
+- Real-time processing feedback with visual status indicators
+
+## Web UI
+The web interface (templates/index.html) provides:
+- Drag & drop file upload area
+- Visual progress indicators during 3-layer processing
+- Formatted display of extracted invoice data (vendor, amounts, line items)
+- Math verification results
+- Support for PDF, PNG, JPG, TIFF files up to 16MB

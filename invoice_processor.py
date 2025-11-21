@@ -163,18 +163,33 @@ class InvoiceProcessor:
             Dictionary containing validated invoice data
         """
         from google.cloud import storage
+        from google.oauth2 import service_account
         import os
         
-        storage_client = storage.Client(project=config.GOOGLE_CLOUD_PROJECT_ID)
-        bucket = storage_client.bucket(config.GCS_INPUT_BUCKET)
-        
-        filename = os.path.basename(file_path)
-        blob = bucket.blob(f"uploads/{filename}")
-        
-        print(f"Uploading {filename} to GCS...")
-        blob.upload_from_filename(file_path, content_type=mime_type)
-        
-        gcs_uri = f"gs://{config.GCS_INPUT_BUCKET}/uploads/{filename}"
-        print(f"✓ Uploaded to: {gcs_uri}")
-        
-        return self.process_invoice(gcs_uri, mime_type)
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                config.VERTEX_RUNNER_SA_PATH
+            )
+            storage_client = storage.Client(
+                project=config.GOOGLE_CLOUD_PROJECT_ID,
+                credentials=credentials
+            )
+            bucket = storage_client.bucket(config.GCS_INPUT_BUCKET)
+            
+            filename = os.path.basename(file_path)
+            blob = bucket.blob(f"uploads/{filename}")
+            
+            print(f"Uploading {filename} to GCS...")
+            blob.upload_from_filename(file_path, content_type=mime_type)
+            
+            gcs_uri = f"gs://{config.GCS_INPUT_BUCKET}/uploads/{filename}"
+            print(f"✓ Uploaded to: {gcs_uri}")
+            
+            return self.process_invoice(gcs_uri, mime_type)
+        except Exception as e:
+            print(f"✗ Error uploading file to GCS: {str(e)}")
+            return {
+                'status': 'error',
+                'error': f"Failed to upload file: {str(e)}",
+                'details': 'Check Google Cloud credentials and bucket permissions'
+            }
