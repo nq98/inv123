@@ -32,6 +32,10 @@ args = "python app.py"
 waitForPort = 5000
 
 [[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
 localPort = 8000
 externalPort = 8000
 
@@ -40,9 +44,9 @@ localPort = 37409
 externalPort = 80
 
 [[ports]]
-localPort = 44659
-externalPort = 3000
+localPort = 43059
+externalPort = 3001
 
 [[ports]]
-localPort = 5000
-externalPort = 80
+localPort = 44659
+externalPort = 3000

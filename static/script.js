@@ -90,49 +90,65 @@ function displayResults(data) {
     }
     
     const validated = data.validated_data || {};
+    const rawEntities = data.layers?.layer1_document_ai?.entities || {};
     
     let html = `<span class="success-badge">✓ Processing Complete</span>`;
     
-    if (validated.vendor_name || validated.vendor_id) {
+    if (data.status === 'partial' || data.status === 'warning') {
+        html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
+    }
+    
+    const displayData = Object.keys(validated).length > 0 ? validated : {
+        vendor_name: rawEntities.supplier_name,
+        invoice_number: rawEntities.invoice_id,
+        invoice_date: rawEntities.invoice_date,
+        total_amount: rawEntities.total_amount,
+        currency: rawEntities.currency,
+        line_items: rawEntities.line_item || []
+    };
+    
+    if (displayData.vendor_name || displayData.vendor_id || displayData.vendor?.name) {
+        const vendorName = displayData.vendor?.name || displayData.vendor_name;
+        const vendorId = displayData.vendor?.matched_db_id || displayData.vendor_id;
         html += `
             <div class="result-section">
                 <h3>Vendor Information</h3>
                 <div class="result-grid">
-                    ${validated.vendor_name ? `<div class="result-item"><strong>Vendor Name</strong><span>${validated.vendor_name}</span></div>` : ''}
-                    ${validated.vendor_id ? `<div class="result-item"><strong>Vendor ID</strong><span>${validated.vendor_id}</span></div>` : ''}
+                    ${vendorName ? `<div class="result-item"><strong>Vendor Name</strong><span>${vendorName}</span></div>` : ''}
+                    ${vendorId ? `<div class="result-item"><strong>Vendor ID</strong><span>${vendorId}</span></div>` : ''}
                 </div>
             </div>
         `;
     }
     
-    if (validated.invoice_number || validated.invoice_date || validated.due_date) {
+    if (displayData.invoice_number || displayData.invoice_date || displayData.due_date) {
         html += `
             <div class="result-section">
                 <h3>Invoice Details</h3>
                 <div class="result-grid">
-                    ${validated.invoice_number ? `<div class="result-item"><strong>Invoice Number</strong><span>${validated.invoice_number}</span></div>` : ''}
-                    ${validated.invoice_date ? `<div class="result-item"><strong>Invoice Date</strong><span>${validated.invoice_date}</span></div>` : ''}
-                    ${validated.due_date ? `<div class="result-item"><strong>Due Date</strong><span>${validated.due_date}</span></div>` : ''}
-                    ${validated.currency ? `<div class="result-item"><strong>Currency</strong><span>${validated.currency}</span></div>` : ''}
+                    ${displayData.invoice_number ? `<div class="result-item"><strong>Invoice Number</strong><span>${displayData.invoice_number}</span></div>` : ''}
+                    ${displayData.invoice_date ? `<div class="result-item"><strong>Invoice Date</strong><span>${displayData.invoice_date}</span></div>` : ''}
+                    ${displayData.due_date ? `<div class="result-item"><strong>Due Date</strong><span>${displayData.due_date}</span></div>` : ''}
+                    ${displayData.currency ? `<div class="result-item"><strong>Currency</strong><span>${displayData.currency}</span></div>` : ''}
                 </div>
             </div>
         `;
     }
     
-    if (validated.total_amount || validated.tax_amount || validated.subtotal) {
+    if (displayData.total_amount || displayData.tax_amount || displayData.subtotal) {
         html += `
             <div class="result-section">
                 <h3>Amounts</h3>
                 <div class="result-grid">
-                    ${validated.subtotal ? `<div class="result-item"><strong>Subtotal</strong><span>${validated.subtotal}</span></div>` : ''}
-                    ${validated.tax_amount ? `<div class="result-item"><strong>Tax</strong><span>${validated.tax_amount}</span></div>` : ''}
-                    ${validated.total_amount ? `<div class="result-item"><strong>Total Amount</strong><span>${validated.total_amount}</span></div>` : ''}
+                    ${displayData.subtotal ? `<div class="result-item"><strong>Subtotal</strong><span>${displayData.subtotal}</span></div>` : ''}
+                    ${displayData.tax_amount ? `<div class="result-item"><strong>Tax</strong><span>${displayData.tax_amount}</span></div>` : ''}
+                    ${displayData.total_amount ? `<div class="result-item"><strong>Total Amount</strong><span>${displayData.total_amount}</span></div>` : ''}
                 </div>
             </div>
         `;
     }
     
-    if (validated.line_items && validated.line_items.length > 0) {
+    if (displayData.line_items && displayData.line_items.length > 0) {
         html += `
             <div class="result-section">
                 <h3>Line Items</h3>
@@ -148,12 +164,12 @@ function displayResults(data) {
                     <tbody>
         `;
         
-        validated.line_items.forEach(item => {
+        displayData.line_items.forEach(item => {
             html += `
                 <tr>
                     <td>${item.description || '-'}</td>
                     <td>${item.quantity || '-'}</td>
-                    <td>${item.unit_price || '-'}</td>
+                    <td>${item.unit_price || item.unit_cost || '-'}</td>
                     <td>${item.amount || '-'}</td>
                 </tr>
             `;
@@ -166,12 +182,24 @@ function displayResults(data) {
         `;
     }
     
-    if (validated.math_verification) {
-        const mathStatus = validated.math_verification.all_valid ? 'success' : 'warning';
+    if (displayData.math_verification) {
+        const mathStatus = displayData.math_verification.all_valid ? 'success' : 'warning';
         html += `
             <div class="result-section">
                 <h3>Math Verification</h3>
-                <span class="${mathStatus}-badge">${validated.math_verification.all_valid ? '✓ All Calculations Valid' : '⚠ Some Calculations Need Review'}</span>
+                <span class="${mathStatus}-badge">${displayData.math_verification.all_valid ? '✓ All Calculations Valid' : '⚠ Some Calculations Need Review'}</span>
+            </div>
+        `;
+    }
+    
+    if (!html.includes('result-section')) {
+        html += `
+            <div class="result-section">
+                <p>No structured data could be extracted. Check the console for raw data.</p>
+                <details style="margin-top: 15px;">
+                    <summary style="cursor: pointer; font-weight: 600;">View Raw Response</summary>
+                    <pre style="background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto; margin-top: 10px;">${JSON.stringify(data, null, 2)}</pre>
+                </details>
             </div>
         `;
     }

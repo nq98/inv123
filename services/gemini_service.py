@@ -24,7 +24,7 @@ Rule 3 (Global Dates): If the invoice is from the US, read dates as MM/DD/YYYY. 
 
 Rule 4: Return ONLY valid JSON. No markdown, no code blocks, just pure JSON."""
         
-        self.model_name = 'gemini-1.5-pro-002'
+        self.model_name = 'gemini-1.5-pro'
     
     def validate_invoice(self, gcs_uri, raw_text, extracted_entities, rag_context):
         """
