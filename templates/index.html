@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Invoice Extraction System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧾 Invoice Extraction System</h1>
+            <p class="subtitle">3-Layer Hybrid AI: Document AI + Vertex Search + Gemini 1.5 Pro</p>
+        </header>
+
+        <div class="card">
+            <h2>Upload Invoice</h2>
+            <p>Upload an invoice PDF or image to extract structured data with 100% semantic accuracy</p>
+            
+            <form id="uploadForm">
+                <div class="upload-area" id="uploadArea">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p>Drag & drop your invoice here or click to browse</p>
+                    <p class="file-info">Supports: PDF, PNG, JPG, TIFF (Max 16MB)</p>
+                    <input type="file" id="fileInput" name="file" accept=".pdf,.png,.jpg,.jpeg,.tiff,.gif" hidden>
+                </div>
+                <button type="submit" id="submitBtn" disabled>Process Invoice</button>
+            </form>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Processing invoice through 3-layer pipeline...</p>
+            <small>Document AI → Vertex Search → Gemini Validation</small>
+        </div>
+
+        <div id="results" class="card hidden">
+            <h2>Extraction Results</h2>
+            <div id="resultContent"></div>
+        </div>
+
+        <div class="info-cards">
+            <div class="info-card">
+                <h3>Layer 1: Document AI</h3>
+                <p>Extracts structured data and bounding boxes from invoice layouts</p>
+            </div>
+            <div class="info-card">
+                <h3>Layer 2: Vertex Search (RAG)</h3>
+                <p>Retrieves vendor history to correct OCR errors</p>
+            </div>
+            <div class="info-card">
+                <h3>Layer 3: Gemini 1.5 Pro</h3>
+                <p>Semantic validation, math checking, and date normalization</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

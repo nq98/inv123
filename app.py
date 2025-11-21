@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from invoice_processor import InvoiceProcessor
 from config import config
@@ -28,6 +28,10 @@ def allowed_file(filename):
 
 @app.route('/', methods=['GET'])
 def index():
+    return render_template('index.html')
+
+@app.route('/api', methods=['GET'])
+def api_info():
     return jsonify({
         'service': 'Enterprise Invoice Extraction API',
         'version': '1.0.0',
@@ -101,5 +105,5 @@ def upload_invoice():
     return jsonify(result), 200
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8000))
+    port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
