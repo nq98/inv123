@@ -1,2 +1,8 @@
+modules = ["python-3.11"]
 [agent]
 expertMode = true
+integrations = ["python_gemini:1.0.0", "web_scraper:1.0.0"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["freetype", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]
