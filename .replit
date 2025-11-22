@@ -4,6 +4,10 @@ modules = ["python-3.11"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 44371
+externalPort = 3000
+
 [agent]
 expertMode = true
 
@@ -30,3 +34,7 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[nix]
+channel = "stable-25_05"
+packages = ["cargo", "freetype", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]

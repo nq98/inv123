@@ -1,0 +1,71 @@
+System Architecture: Gmail Invoice Scanner & "The Brain"
+1. The Connection (OAuth2 Setup)
+Flow:
+
+User clicks "Connect Gmail" in the app.
+App redirects to Google's OAuth2 Consent Screen.
+User grants permissions (gmail.readonly, gmail.modify).
+Google returns an auth_code.
+App exchanges auth_code for access_token and refresh_token.
+Persistence: These tokens are encrypted and stored in the database linked to the specific Client ID. This allows the app to scan in the background later without re-login.
+2. The "Wide Net" (Initial Gmail API Filter)
+When a sync is triggered (e.g., "Last 30 Days"), the app doesn't scan every email. It constructs a specific Gmail API Query to grab only potential candidates.
+
+The Query Logic:
+
+after:[TIMESTAMP] 
+-label:chat -label:draft -label:spam -label:trash 
+(has:attachment OR has:link) 
+("invoice" OR "receipt" OR "bill" OR "payment" OR "order" OR "subscription" OR "statement")
+What this does:
+
+Timebox: Only looks at emails after the selected date.
+Exclusions: Ignores chats, drafts, spam, and trash.
+Content Requirement: MUST have an attachment OR a link (since invoices are files).
+Keyword Match: MUST contain at least one financial keyword in the subject or body.
+Result: This reduces 10,000 emails down to maybe 100 "Potential Candidates".
+
+3. Pre-Processing (The Gatekeepers)
+Before asking the AI, we run cheap checks to save money and time:
+
+Deduplication: Checks the database (metadata->>'gmailMessageId') to see if we've already processed this specific email ID.
+Trusted Domain Check: Checks the 
+
+From
+ address against a hardcoded list of known financial senders (Stripe, PayPal, Amazon, Zoom, etc.). This sets a flag isTrustedDomain for the AI.
+4. "The Brain" (AI Classification)
+This is the core intelligence. We send the email metadata to Gemini 2.5 Flash with a specific persona.
+
+The Persona: "Financial Auditor" The Input: Subject, Sender, Body Snippet (first 1500 chars), Has Attachments flag, Is Trusted Domain flag.
+
+The Logic (The "Turing Test" for Invoices): The AI is explicitly instructed to distinguish between Human-Facing Documents and System Logs.
+
+✅ ACCEPT (isInvoice: true):
+
+"Is this a document I would give to an accountant?"
+Invoices, Receipts, Payment Confirmations (human-readable).
+Subscription renewals.
+Reasoning: It represents a financial transaction intended for a human record-keeper.
+❌ REJECT (isInvoice: false):
+
+System Logs: "Event name: payment.succeeded", Webhook notifications.
+Developer Logs: JSON dumps, API error alerts.
+Marketing: Newsletters, "Upgrade now" emails without a transaction.
+Notifications: "Password reset", "New login detected".
+Retry Mechanism: If the AI is overwhelmed (Rate Limit 429), the system waits (exponential backoff) and retries up to 10 times to ensure no email is skipped due to traffic.
+
+5. The Extraction (Getting the File)
+If "The Brain" says YES:
+
+Attachment Scan: It looks for PDF/Image attachments.
+Link Scan (Fallback): If no attachments, it uses a headless browser (Playwright) to visit links in the email (e.g., "View Invoice") and attempts to download the PDF.
+Upload: The file is uploaded to Google Cloud Storage (GCS).
+Pipeline Trigger: The main Invoice Processing Pipeline is triggered with the file and the metadata.
+Summary of the Funnel
+Inbox: 10,000 emails.
+Gmail Query: Filters down to 200 "Potential" emails (has keywords + attachment).
+Deduplication: Filters down to 150 "New" emails.
+"The Brain" (AI): Reads the 150 emails.
+Rejects 100 (Newsletters, System Logs, Alerts).
+Accepts 50 (Real Invoices/Receipts).
+Result: 50 clean invoices sent to the dashboard.

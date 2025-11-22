@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enterprise Invoice Extraction System</title>
-    <link rel="stylesheet" href="/static/style.css?v=4">
+    <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
     <div class="container">
@@ -14,7 +14,37 @@
         </header>
 
         <div class="card">
-            <h2>Upload Invoice</h2>
+            <h2>📧 Import from Gmail</h2>
+            <p>Automatically scan your Gmail for invoices and receipts</p>
+            
+            <div id="gmailStatus" style="margin-bottom: 15px;"></div>
+            
+            <div id="gmailConnectSection">
+                <button id="gmailConnectBtn" class="gmail-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin-right: 8px;">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                        <polyline points="22,6 12,13 2,6"></polyline>
+                    </svg>
+                    Connect Gmail
+                </button>
+            </div>
+            
+            <div id="gmailImportSection" class="hidden">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="number" id="gmailMaxResults" value="20" min="1" max="100" style="width: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Count">
+                    <button id="gmailImportBtn" class="gmail-btn">
+                        🔍 Scan & Import Invoices
+                    </button>
+                    <button id="gmailDisconnectBtn" class="gmail-disconnect-btn">
+                        Disconnect
+                    </button>
+                </div>
+                <div id="gmailImportResults"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📤 Upload Invoice</h2>
             <p>Upload an invoice PDF or image to extract structured data with semantic accuracy</p>
             
             <form id="uploadForm">
@@ -59,6 +89,6 @@
         </div>
     </div>
 
-    <script src="/static/script.js?v=4"></script>
+    <script src="/static/script.js?v=5"></script>
 </body>
 </html>

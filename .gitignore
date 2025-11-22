@@ -59,3 +59,8 @@ processed/
 # Replit
 .replit
 .upm
+
+# Secure token storage (NEVER commit sensitive tokens!)
+secure_tokens/
+*.enc
+.key

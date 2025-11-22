@@ -6,7 +6,159 @@ const loading = document.getElementById('loading');
 const results = document.getElementById('results');
 const resultContent = document.getElementById('resultContent');
 
+const gmailConnectBtn = document.getElementById('gmailConnectBtn');
+const gmailImportBtn = document.getElementById('gmailImportBtn');
+const gmailDisconnectBtn = document.getElementById('gmailDisconnectBtn');
+const gmailStatus = document.getElementById('gmailStatus');
+const gmailConnectSection = document.getElementById('gmailConnectSection');
+const gmailImportSection = document.getElementById('gmailImportSection');
+const gmailImportResults = document.getElementById('gmailImportResults');
+const gmailMaxResults = document.getElementById('gmailMaxResults');
+
 let selectedFile = null;
+
+async function checkGmailStatus() {
+    try {
+        const response = await fetch('/api/ap-automation/gmail/status');
+        const data = await response.json();
+        
+        if (data.connected) {
+            gmailStatus.innerHTML = '<div style="padding: 10px; background: #e8f5e9; border-radius: 6px; color: #2e7d32;">✅ Gmail Connected</div>';
+            gmailConnectSection.classList.add('hidden');
+            gmailImportSection.classList.remove('hidden');
+        } else {
+            gmailStatus.innerHTML = '<div style="padding: 10px; background: #fff3e0; border-radius: 6px; color: #e65100;">ℹ️ Connect Gmail to import invoices automatically</div>';
+            gmailConnectSection.classList.remove('hidden');
+            gmailImportSection.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error checking Gmail status:', error);
+    }
+}
+
+gmailConnectBtn.addEventListener('click', () => {
+    window.location.href = '/api/ap-automation/gmail/auth';
+});
+
+gmailDisconnectBtn.addEventListener('click', async () => {
+    if (confirm('Disconnect Gmail? You will need to reconnect to import invoices.')) {
+        try {
+            await fetch('/api/ap-automation/gmail/disconnect', { method: 'POST' });
+            checkGmailStatus();
+            gmailImportResults.innerHTML = '';
+        } catch (error) {
+            alert('Failed to disconnect Gmail: ' + error.message);
+        }
+    }
+});
+
+gmailImportBtn.addEventListener('click', async () => {
+    const maxResults = parseInt(gmailMaxResults.value) || 20;
+    
+    gmailImportBtn.disabled = true;
+    gmailImportBtn.textContent = '🔍 Scanning Gmail...';
+    gmailImportResults.innerHTML = '<div style="padding: 15px; text-align: center;"><div class="spinner"></div><p>Scanning your Gmail for invoices...</p></div>';
+    
+    try {
+        const response = await fetch('/api/ap-automation/gmail/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_results: maxResults })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Import failed');
+        }
+        
+        displayGmailImportResults(data);
+        
+    } catch (error) {
+        gmailImportResults.innerHTML = `<div style="padding: 15px; background: #ffebee; border-radius: 6px; color: #c62828;">❌ Error: ${error.message}</div>`;
+    } finally {
+        gmailImportBtn.disabled = false;
+        gmailImportBtn.textContent = '🔍 Scan & Import Invoices';
+    }
+});
+
+function displayGmailImportResults(data) {
+    let html = `
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+            <h3 style="margin: 0 0 10px 0;">Import Summary</h3>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div style="text-align: center; background: #fff; padding: 10px; border-radius: 4px;">
+                    <div style="font-size: 24px; font-weight: bold; color: #1976d2;">${data.total_found}</div>
+                    <div style="font-size: 12px; color: #666;">Emails Found</div>
+                </div>
+                <div style="text-align: center; background: #fff; padding: 10px; border-radius: 4px;">
+                    <div style="font-size: 24px; font-weight: bold; color: #388e3c;">${data.processed.length}</div>
+                    <div style="font-size: 12px; color: #666;">Imported</div>
+                </div>
+                <div style="text-align: center; background: #fff; padding: 10px; border-radius: 4px;">
+                    <div style="font-size: 24px; font-weight: bold; color: #f57c00;">${data.skipped.length}</div>
+                    <div style="font-size: 12px; color: #666;">Skipped</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    if (data.processed.length > 0) {
+        html += '<h3>✅ Successfully Imported</h3>';
+        data.processed.forEach(item => {
+            const vendor = item.extraction?.validated?.vendor?.name || 'Unknown';
+            const total = item.extraction?.validated?.totals?.total || 'N/A';
+            const currency = item.extraction?.validated?.currency || '';
+            
+            html += `
+                <div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #4caf50;">
+                    <div style="font-weight: bold;">${item.subject}</div>
+                    <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                        From: ${item.from} | Date: ${item.date}
+                    </div>
+                    <div style="margin-top: 5px;">
+                        Vendor: <strong>${vendor}</strong> | Total: <strong>${currency} ${total}</strong>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    if (data.skipped.length > 0) {
+        html += '<details style="margin-top: 15px;"><summary style="cursor: pointer; font-weight: 600; padding: 10px; background: #fff3e0; border-radius: 6px;">⚠️ Skipped Emails (' + data.skipped.length + ')</summary><div style="margin-top: 10px;">';
+        data.skipped.forEach(item => {
+            html += `
+                <div style="background: #fff; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #ff9800; font-size: 13px;">
+                    <div style="font-weight: bold;">${item.subject || 'No subject'}</div>
+                    <div style="color: #666; margin-top: 3px;">Reason: ${item.reason}</div>
+                </div>
+            `;
+        });
+        html += '</div></details>';
+    }
+    
+    if (data.errors.length > 0) {
+        html += '<details style="margin-top: 15px;"><summary style="cursor: pointer; font-weight: 600; padding: 10px; background: #ffebee; border-radius: 6px;">❌ Errors (' + data.errors.length + ')</summary><div style="margin-top: 10px;">';
+        data.errors.forEach(item => {
+            html += `
+                <div style="background: #fff; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #f44336; font-size: 13px;">
+                    <div style="color: #c62828;">${item.error}</div>
+                </div>
+            `;
+        });
+        html += '</div></details>';
+    }
+    
+    gmailImportResults.innerHTML = html;
+}
+
+checkGmailStatus();
+
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('gmail_connected') === 'true') {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    checkGmailStatus();
+}
 
 uploadArea.addEventListener('click', () => fileInput.click());
 
