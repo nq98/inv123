@@ -2104,3 +2104,220 @@ if (copyApiKeyBtn) {
         });
     });
 }
+
+// ==================== INVOICE MATCH HISTORY ====================
+let currentInvoicePage = 1;
+let currentInvoiceStatus = '';
+
+/**
+ * Load invoice matches from API
+ */
+async function loadInvoiceMatches(page = 1, status = '') {
+    const container = document.getElementById('invoiceMatchList');
+    
+    if (!container) return;
+    
+    container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading invoices...</p></div>';
+    
+    try {
+        let url = `/api/invoices/matches?page=${page}&limit=20`;
+        if (status) {
+            url += `&status=${status}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        currentInvoicePage = page;
+        currentInvoiceStatus = status;
+        
+        renderInvoiceMatches(data);
+        renderInvoicePagination(data);
+        
+    } catch (error) {
+        console.error('Error loading invoices:', error);
+        container.innerHTML = `
+            <div class="alert alert-error">
+                <strong>❌ Error loading invoices</strong>
+                <p>${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Render invoice matches
+ */
+function renderInvoiceMatches(data) {
+    const container = document.getElementById('invoiceMatchList');
+    
+    if (!data.invoices || data.invoices.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <h3 class="empty-title">No invoices found</h3>
+                <p class="empty-desc">Upload an invoice to see vendor matches here</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div class="invoice-cards">';
+    
+    data.invoices.forEach(invoice => {
+        const statusBadge = getStatusBadge(invoice.status);
+        const confidence = invoice.match_confidence || 'N/A';
+        const reasoning = invoice.match_reasoning || 'No reasoning available';
+        const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'N/A';
+        const createdAt = invoice.created_at ? new Date(invoice.created_at).toLocaleString() : 'N/A';
+        
+        html += `
+            <div class="invoice-card">
+                <div class="invoice-card-header">
+                    <div class="invoice-card-title">
+                        <strong>${invoice.invoice_id}</strong>
+                        ${statusBadge}
+                    </div>
+                    <div class="invoice-card-amount">
+                        ${invoice.amount.toLocaleString()} ${invoice.currency}
+                    </div>
+                </div>
+                
+                <div class="invoice-card-body">
+                    <div class="invoice-info-grid">
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Vendor:</span>
+                            <span class="invoice-info-value">${invoice.vendor_name}</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Invoice Date:</span>
+                            <span class="invoice-info-value">${invoiceDate}</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Uploaded:</span>
+                            <span class="invoice-info-value">${createdAt}</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Confidence:</span>
+                            <span class="invoice-info-value">${confidence}</span>
+                        </div>
+                    </div>
+                    
+                    <details class="invoice-details">
+                        <summary class="invoice-details-toggle">View Match Reasoning</summary>
+                        <div class="invoice-details-content">
+                            <p>${reasoning}</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+/**
+ * Get status badge HTML
+ */
+function getStatusBadge(status) {
+    const badges = {
+        'matched': '<span class="status-badge status-matched">✓ MATCHED</span>',
+        'unmatched': '<span class="status-badge status-unmatched">+ NEW VENDOR</span>',
+        'ambiguous': '<span class="status-badge status-ambiguous">? AMBIGUOUS</span>'
+    };
+    
+    return badges[status] || '<span class="status-badge status-unknown">UNKNOWN</span>';
+}
+
+/**
+ * Render invoice pagination controls
+ */
+function renderInvoicePagination(data) {
+    const container = document.getElementById('invoicePagination');
+    
+    if (!container) return;
+    
+    const totalPages = Math.ceil(data.total_count / data.limit);
+    
+    if (totalPages <= 1) {
+        container.classList.add('hidden');
+        return;
+    }
+    
+    container.classList.remove('hidden');
+    
+    const prevDisabled = data.page <= 1;
+    const nextDisabled = data.page >= totalPages;
+    
+    container.innerHTML = `
+        <button 
+            id="invoicePrevBtn" 
+            class="btn btn-secondary" 
+            ${prevDisabled ? 'disabled' : ''}
+        >
+            ← Previous
+        </button>
+        <div class="page-info">
+            Page ${data.page} of ${totalPages} (${data.total_count} total)
+        </div>
+        <button 
+            id="invoiceNextBtn" 
+            class="btn btn-secondary" 
+            ${nextDisabled ? 'disabled' : ''}
+        >
+            Next →
+        </button>
+    `;
+    
+    // Add event listeners
+    const prevBtn = document.getElementById('invoicePrevBtn');
+    const nextBtn = document.getElementById('invoiceNextBtn');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            loadInvoiceMatches(currentInvoicePage - 1, currentInvoiceStatus);
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            loadInvoiceMatches(currentInvoicePage + 1, currentInvoiceStatus);
+        });
+    }
+}
+
+// Initialize invoice match history when Matching tab is opened
+document.addEventListener('DOMContentLoaded', function() {
+    const matchingTabButton = document.querySelector('[data-tab="matching"]');
+    
+    if (matchingTabButton) {
+        matchingTabButton.addEventListener('click', function() {
+            // Load invoices when tab is opened
+            setTimeout(() => {
+                loadInvoiceMatches(1, '');
+            }, 100);
+        });
+    }
+    
+    // Refresh button
+    const refreshBtn = document.getElementById('refreshInvoicesBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            loadInvoiceMatches(currentInvoicePage, currentInvoiceStatus);
+        });
+    }
+    
+    // Status filter
+    const statusFilter = document.getElementById('invoiceStatusFilter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', function() {
+            loadInvoiceMatches(1, this.value);
+        });
+    }
+});

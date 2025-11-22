@@ -393,6 +393,53 @@ def upload_invoice():
     if vendor_match_result:
         result['vendor_match'] = vendor_match_result
     
+    # SAVE INVOICE-VENDOR MATCH TO BIGQUERY
+    if result.get('status') == 'completed' and 'validated_data' in result:
+        validated_data = result.get('validated_data', {})
+        
+        # Extract invoice data
+        invoice_id = validated_data.get('invoiceId', 'Unknown')
+        total_amount = validated_data.get('totalAmount', 0)
+        currency_code = validated_data.get('currencyCode', 'USD')
+        invoice_date = validated_data.get('invoiceDate', None)
+        vendor_data = validated_data.get('vendor', {})
+        vendor_name = vendor_data.get('name', 'Unknown')
+        
+        # Determine status from vendor match verdict
+        status = 'unmatched'
+        vendor_id = None
+        
+        if vendor_match_result:
+            verdict = vendor_match_result.get('verdict', 'NEW_VENDOR')
+            vendor_id = vendor_match_result.get('vendor_id')
+            
+            if verdict == 'MATCH':
+                status = 'matched'
+            elif verdict == 'NEW_VENDOR':
+                status = 'unmatched'
+            elif verdict == 'AMBIGUOUS':
+                status = 'ambiguous'
+        
+        # Prepare invoice data for BigQuery
+        invoice_data = {
+            'invoice_id': invoice_id,
+            'vendor_id': vendor_id,
+            'vendor_name': vendor_name,
+            'client_id': 'default_client',
+            'amount': total_amount,
+            'currency': currency_code,
+            'invoice_date': invoice_date,
+            'status': status,
+            'metadata': vendor_match_result if vendor_match_result else {}
+        }
+        
+        # Insert into BigQuery
+        try:
+            bigquery_service = get_bigquery_service()
+            bigquery_service.insert_invoice(invoice_data)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not save invoice to BigQuery: {e}")
+    
     return jsonify(result), 200
 
 @app.route('/api/vendor/match', methods=['POST'])
@@ -470,6 +517,57 @@ def match_vendor():
         return jsonify({
             'success': False,
             'error': str(e)
+        }), 500
+
+@app.route('/api/invoices/matches', methods=['GET'])
+def get_invoice_matches():
+    """
+    Get invoice match history with pagination and filtering
+    
+    Query parameters:
+    - page: Page number (default 1)
+    - limit: Number of invoices per page (default 20)
+    - status: Optional status filter (matched/unmatched/ambiguous)
+    
+    Response:
+    {
+        "invoices": [...],
+        "total_count": 50,
+        "page": 1,
+        "limit": 20
+    }
+    """
+    try:
+        # Get query parameters
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 20, type=int)
+        status = request.args.get('status', None, type=str)
+        
+        # Validate parameters
+        if page < 1:
+            page = 1
+        if limit < 1 or limit > 100:
+            limit = 20
+        
+        # Fetch invoices from BigQuery
+        bigquery_service = get_bigquery_service()
+        result = bigquery_service.get_invoices(page=page, limit=limit, status=status)
+        
+        return jsonify({
+            'invoices': result['invoices'],
+            'total_count': result['total_count'],
+            'page': page,
+            'limit': limit
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error fetching invoice matches: {e}")
+        return jsonify({
+            'error': str(e),
+            'invoices': [],
+            'total_count': 0,
+            'page': page,
+            'limit': limit
         }), 500
 
 @app.route('/api/ap-automation/gmail/auth', methods=['GET'])

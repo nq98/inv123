@@ -270,6 +270,45 @@
         <!-- ==================== MATCHING TAB ==================== -->
         <div class="tab-content" id="tab-matching">
             
+            <!-- Invoice Match History Section -->
+            <section class="card">
+                <div class="card-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h2 class="card-title">📋 Invoice-Vendor Match History</h2>
+                            <p class="card-desc">View all invoices and their vendor matches</p>
+                        </div>
+                        <button id="refreshInvoicesBtn" class="btn btn-secondary">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Filter and Controls -->
+                <div class="invoice-filters">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="invoiceStatusFilter" class="form-label">Filter by Status:</label>
+                        <select id="invoiceStatusFilter" class="form-select">
+                            <option value="">All Invoices</option>
+                            <option value="matched">✓ Matched</option>
+                            <option value="unmatched">+ New Vendor</option>
+                            <option value="ambiguous">? Ambiguous</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Invoice List -->
+                <div id="invoiceMatchList">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading invoices...</p>
+                    </div>
+                </div>
+                
+                <!-- Pagination Controls -->
+                <div id="invoicePagination" class="pagination-controls hidden"></div>
+            </section>
+            
             <section class="card">
                 <div class="card-header">
                     <h2 class="card-title">⚖️ Vendor Matching Engine</h2>

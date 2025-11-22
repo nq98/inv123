@@ -455,3 +455,170 @@ class BigQueryService:
         except Exception as e:
             print(f"❌ Error executing DML query: {e}")
             raise
+    
+    def insert_invoice(self, invoice_data):
+        """
+        Insert invoice data into vendors_ai.invoices table
+        
+        Args:
+            invoice_data: Dict with invoice fields:
+                - invoice_id: str
+                - vendor_id: str (optional)
+                - vendor_name: str
+                - client_id: str
+                - amount: float
+                - currency: str
+                - invoice_date: str (YYYY-MM-DD format)
+                - status: str (matched/unmatched/ambiguous)
+                - metadata: dict (will be converted to JSON)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
+        
+        try:
+            # Prepare the row data
+            row = {
+                "invoice_id": invoice_data.get("invoice_id"),
+                "vendor_id": invoice_data.get("vendor_id"),
+                "vendor_name": invoice_data.get("vendor_name"),
+                "client_id": invoice_data.get("client_id", "default_client"),
+                "amount": invoice_data.get("amount"),
+                "currency": invoice_data.get("currency"),
+                "invoice_date": invoice_data.get("invoice_date"),
+                "status": invoice_data.get("status"),
+                "metadata": json.dumps(invoice_data.get("metadata", {}))
+            }
+            
+            # Insert the row
+            errors = self.client.insert_rows_json(invoices_table_id, [row])
+            
+            if errors:
+                print(f"❌ Error inserting invoice: {errors}")
+                return False
+            
+            print(f"✓ Inserted invoice {invoice_data.get('invoice_id')} into BigQuery")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error inserting invoice: {e}")
+            return False
+    
+    def get_invoices(self, page=1, limit=20, status=None):
+        """
+        Get invoices with pagination and optional status filter
+        
+        Args:
+            page: Page number (default 1)
+            limit: Number of invoices per page (default 20)
+            status: Optional status filter (matched/unmatched/ambiguous)
+        
+        Returns:
+            dict with 'invoices' list and 'total_count' integer
+        """
+        invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
+        
+        # Calculate offset
+        offset = (page - 1) * limit
+        
+        # Build WHERE clause for status filter
+        where_clause = ""
+        query_params = [
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        
+        if status:
+            where_clause = "WHERE status = @status"
+            query_params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+        
+        # Get total count
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM `{invoices_table_id}`
+        {where_clause}
+        """
+        
+        # Get paginated invoices
+        invoices_query = f"""
+        SELECT 
+            invoice_id,
+            vendor_id,
+            vendor_name,
+            client_id,
+            amount,
+            currency,
+            invoice_date,
+            status,
+            created_at,
+            metadata
+        FROM `{invoices_table_id}`
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT @limit
+        OFFSET @offset
+        """
+        
+        try:
+            # Create job configs
+            if status:
+                count_job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("status", "STRING", status)
+                    ]
+                )
+            else:
+                count_job_config = None
+            
+            data_job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+            
+            # Get total count
+            count_result = self.client.query(count_query, job_config=count_job_config).result()
+            total_count = list(count_result)[0].total
+            
+            # Get invoices
+            results = self.client.query(invoices_query, job_config=data_job_config).result()
+            invoices = []
+            
+            for row in results:
+                # Parse metadata JSON
+                metadata = {}
+                if row.metadata:
+                    if isinstance(row.metadata, str):
+                        try:
+                            metadata = json.loads(row.metadata)
+                        except:
+                            metadata = {}
+                    elif isinstance(row.metadata, dict):
+                        metadata = row.metadata
+                
+                invoice = {
+                    "invoice_id": row.invoice_id,
+                    "vendor_id": row.vendor_id,
+                    "vendor_name": row.vendor_name,
+                    "client_id": row.client_id,
+                    "amount": float(row.amount) if row.amount else 0,
+                    "currency": row.currency,
+                    "invoice_date": row.invoice_date.isoformat() if row.invoice_date else None,
+                    "status": row.status,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "match_verdict": metadata.get("verdict"),
+                    "match_confidence": metadata.get("confidence"),
+                    "match_reasoning": metadata.get("reasoning"),
+                    "match_method": metadata.get("method")
+                }
+                
+                invoices.append(invoice)
+            
+            return {
+                "invoices": invoices,
+                "total_count": total_count
+            }
+            
+        except Exception as e:
+            print(f"❌ Error fetching invoices: {e}")
+            return {
+                "invoices": [],
+                "total_count": 0
+            }

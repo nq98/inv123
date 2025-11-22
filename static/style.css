@@ -1956,3 +1956,204 @@ button {
         margin: 0 auto;
     }
 }
+
+/* ========== INVOICE MATCH HISTORY ========== */
+.invoice-filters {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--gray-50);
+    border-radius: var(--radius);
+}
+
+.invoice-cards {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.invoice-card {
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: var(--transition-fast);
+}
+
+.invoice-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--purple-500);
+}
+
+.invoice-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.invoice-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.invoice-card-title strong {
+    font-size: 1.125rem;
+    color: var(--gray-900);
+}
+
+.invoice-card-amount {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--purple-600);
+    white-space: nowrap;
+}
+
+.invoice-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.invoice-info-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+@media (min-width: 640px) {
+    .invoice-info-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.invoice-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.invoice-info-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.invoice-info-value {
+    font-size: 0.9375rem;
+    color: var(--gray-900);
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-matched {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.status-unmatched {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.status-ambiguous {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.status-unknown {
+    background: var(--gray-100);
+    color: var(--gray-600);
+    border: 1px solid var(--gray-300);
+}
+
+/* Invoice Details (Expandable) */
+.invoice-details {
+    margin-top: 12px;
+    border-top: 1px solid var(--gray-200);
+    padding-top: 12px;
+}
+
+.invoice-details-toggle {
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--purple-600);
+    padding: 8px 12px;
+    background: var(--purple-50);
+    border-radius: var(--radius-sm);
+    transition: var(--transition-fast);
+    list-style: none;
+}
+
+.invoice-details-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.invoice-details-toggle:hover {
+    background: var(--purple-100);
+}
+
+.invoice-details-content {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--gray-50);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--gray-700);
+}
+
+/* Pagination Controls */
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--gray-200);
+}
+
+.pagination-controls .page-info {
+    flex: 1;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--gray-600);
+    font-weight: 500;
+}
+
+/* Tablet & Desktop Styles */
+@media (min-width: 768px) {
+    .invoice-cards {
+        gap: 20px;
+    }
+    
+    .invoice-card {
+        padding: 20px;
+    }
+    
+    .invoice-info-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
