@@ -240,6 +240,21 @@ class VertexSearchService:
             currency = extracted_data.get('currency', 'USD')
             confidence_score = extracted_data.get('extractionConfidence', 0.0)
             
+            # Extract multi-currency metadata
+            multi_currency_data = extracted_data.get('multiCurrency', {})
+            is_multi_currency = multi_currency_data.get('isMultiCurrency', False)
+            base_currency = multi_currency_data.get('baseCurrency', currency)
+            settlement_currency = multi_currency_data.get('settlementCurrency', currency)
+            exchange_rate = multi_currency_data.get('exchangeRate')
+            
+            # Build currencies_involved list
+            currencies_involved = [currency]
+            if is_multi_currency:
+                if base_currency not in currencies_involved:
+                    currencies_involved.append(base_currency)
+                if settlement_currency not in currencies_involved:
+                    currencies_involved.append(settlement_currency)
+            
             # Create searchable metadata
             metadata = {
                 'extraction_type': 'invoice_extraction',
@@ -249,6 +264,12 @@ class VertexSearchService:
                 'confidence_score': confidence_score,
                 'extraction_timestamp': timestamp,
                 'success': success,
+                # Multi-currency metadata
+                'is_multi_currency': is_multi_currency,
+                'currencies_involved': currencies_involved,
+                'base_currency': base_currency,
+                'settlement_currency': settlement_currency,
+                'exchange_rate': exchange_rate,
                 'extracted_data': {
                     'invoiceNumber': extracted_data.get('invoiceNumber'),
                     'documentDate': extracted_data.get('documentDate'),
@@ -257,10 +278,21 @@ class VertexSearchService:
                     'vendor': extracted_data.get('vendor', {}),
                     'buyer': extracted_data.get('buyer', {}),
                     'currency': currency,
+                    'multiCurrency': multi_currency_data,
                 }
             }
             
             # Create searchable text content for better RAG retrieval
+            multi_currency_info = ""
+            if is_multi_currency:
+                multi_currency_info = f"""
+            Multi-Currency Invoice:
+            - Base Currency (unit prices): {base_currency}
+            - Settlement Currency (totals): {settlement_currency}
+            - Exchange Rate: {exchange_rate if exchange_rate else 'N/A'}
+            - Currencies Involved: {', '.join(currencies_involved)}
+            """
+            
             text_content = f"""
             Invoice Extraction Knowledge Base Entry
             
@@ -268,7 +300,7 @@ class VertexSearchService:
             Document Type: {document_type}
             Invoice Number: {extracted_data.get('invoiceNumber', 'N/A')}
             Date: {extracted_data.get('documentDate', 'N/A')}
-            Currency: {currency}
+            Currency: {currency}{multi_currency_info}
             Total: {extracted_data.get('totals', {}).get('total', 'N/A')}
             
             Confidence Score: {confidence_score * 100:.1f}%

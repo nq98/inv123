@@ -1,18 +1,21 @@
 import json
 from services import DocumentAIService, VertexSearchService, GeminiService
 from utils import extract_vendor_name, format_search_results
+from utils.multi_currency_detector import MultiCurrencyDetector
 from config import config
 
 class InvoiceProcessor:
     """
     Main invoice processing pipeline orchestrating the 3-layer architecture:
     Layer 1: Document AI for structure extraction
+    Layer 1.5: Multi-Currency Detection and Analysis
     Layer 2: Vertex AI Search (RAG) for context retrieval
     Layer 3: Gemini for semantic validation and reasoning
     """
     
     def __init__(self):
         self.doc_ai_service = DocumentAIService()
+        self.multi_currency_detector = MultiCurrencyDetector()
         self.vertex_search_service = VertexSearchService()
         self.gemini_service = GeminiService()
     
@@ -72,6 +75,50 @@ class InvoiceProcessor:
             }
             return result
         
+        # LAYER 1.5: Multi-Currency Detection
+        currency_context = None
+        try:
+            print("\nLAYER 1.5: Multi-Currency Detection & Analysis")
+            print("-" * 60)
+            currency_context = self.multi_currency_detector.analyze_invoice_currencies(
+                document_text=raw_text,
+                document_ai_result=extracted_entities
+            )
+            
+            is_multi = currency_context.get('is_multi_currency', False)
+            currencies_found = currency_context.get('currency_symbols_found', [])
+            exchange_rates = currency_context.get('exchange_rates', {})
+            
+            if is_multi:
+                print(f"⚠️  MULTI-CURRENCY INVOICE DETECTED")
+                print(f"✓ Currencies found: {', '.join(currencies_found)}")
+                if exchange_rates:
+                    for rate_key, rate_value in exchange_rates.items():
+                        print(f"✓ Exchange rate: {rate_key.replace('_TO_', ' → ')} = {rate_value}")
+                base_curr = currency_context.get('base_currency', 'N/A')
+                settlement_curr = currency_context.get('settlement_currency', 'N/A')
+                print(f"✓ Base currency (unit prices): {base_curr}")
+                print(f"✓ Settlement currency (totals): {settlement_curr}")
+            else:
+                print("✓ Single-currency invoice detected")
+                if currencies_found:
+                    print(f"✓ Currency: {currencies_found[0] if currencies_found else 'N/A'}")
+            
+            result['layers']['layer1_5_multi_currency'] = {
+                'status': 'success',
+                'is_multi_currency': is_multi,
+                'currencies_found': currencies_found,
+                'exchange_rates': exchange_rates,
+                'base_currency': currency_context.get('base_currency'),
+                'settlement_currency': currency_context.get('settlement_currency')
+            }
+        except Exception as e:
+            print(f"⚠ Multi-currency detection error (non-critical): {str(e)}")
+            result['layers']['layer1_5_multi_currency'] = {
+                'status': 'warning',
+                'error': str(e)
+            }
+        
         try:
             print("\nLAYER 2: Vertex AI Search (RAG) - Context Retrieval")
             print("-" * 60)
@@ -129,7 +176,8 @@ class InvoiceProcessor:
                 gcs_uri,
                 raw_text,
                 extracted_entities,
-                rag_context
+                rag_context,
+                currency_context=currency_context
             )
             
             if 'error' in validated_data:

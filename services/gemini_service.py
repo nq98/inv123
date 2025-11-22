@@ -51,7 +51,7 @@ Return ONLY valid JSON. No markdown. No commentary."""
         
         self.model_name = 'gemini-2.0-flash-exp'
     
-    def validate_invoice(self, gcs_uri, raw_text, extracted_entities, rag_context):
+    def validate_invoice(self, gcs_uri, raw_text, extracted_entities, rag_context, currency_context=None):
         """
         Perform semantic validation and reasoning on invoice data
         
@@ -60,12 +60,18 @@ Return ONLY valid JSON. No markdown. No commentary."""
             raw_text: Raw OCR text from Document AI
             extracted_entities: Structured entities from Document AI
             rag_context: Context from Vertex AI Search (defaults to "No vendor history" if None/empty)
+            currency_context: Multi-currency analysis context from MultiCurrencyDetector (optional)
             
         Returns:
             Validated JSON structure
         """
         if not rag_context or rag_context.strip() == "":
             rag_context = "No vendor history found in database."
+        
+        # Format currency context for the prompt
+        currency_analysis = ""
+        if currency_context:
+            currency_analysis = f"\n5. **Multi-Currency Analysis**: {currency_context.get('context_summary', 'No multi-currency context available')}"
         
         prompt = f"""
 🧠 AI-FIRST SEMANTIC EXTRACTION - CHAIN OF THOUGHT PROTOCOL
@@ -75,7 +81,41 @@ Return ONLY valid JSON. No markdown. No commentary."""
 2. **OCR Text** (Search Index Only): {raw_text[:3000]}
    ⚠️ Warning: OCR may be REVERSED for Hebrew/Arabic (RTL). Validate visually.
 3. **Document AI Entities** (Structured): {json.dumps(extracted_entities, indent=2)[:2000]}
-4. **Database Knowledge (RAG)**: {rag_context}
+4. **Database Knowledge (RAG)**: {rag_context}{currency_analysis}
+
+### 🧠 PHASE 0: MULTI-CURRENCY FORENSIC ANALYSIS (CRITICAL - Execute FIRST)
+
+**CROSS-CURRENCY DETECTION:**
+1. Scan for MULTIPLE currency symbols in the document (₪, $, €, £, ¥, etc.)
+2. Look for EXCHANGE RATE statements:
+   - Patterns: "1 USD = 3.27 ILS", "(1USD=3.27ILS)", "Exchange rate: 3.27"
+   - Location: Often near line items or in fine print
+3. Identify CURRENCY HIERARCHY:
+   - Base Currency: What currency are unit prices in? (e.g., USD)
+   - Settlement Currency: What currency is the final total in? (e.g., ILS)
+
+**MATH VERIFICATION PROTOCOL:**
+If multi-currency detected:
+1. Line Item Conversion: 
+   - Calculate: Quantity × Unit Price (base currency)
+   - Convert: Result × Exchange Rate = Line Total (settlement currency)
+   - Example: 29 × $8 USD × 3.27 = 758.64 ILS
+2. Discount Application:
+   - Apply discount in settlement currency
+   - Example: 758.64 ILS - 379.32 ILS = 379.32 ILS
+3. Tax Calculation:
+   - Calculate tax on discounted amount
+   - Example: 379.32 ILS × 18% = 68.28 ILS
+4. Final Total:
+   - Subtotal after discount + Tax = Final Total
+   - Example: 379.32 + 68.28 = 447.60 ILS
+
+**AUDIT REASONING (Required):**
+In your `auditReasoning` field, you MUST explain:
+- "Found multi-currency scenario: Unit prices in [BASE_CURRENCY], totals in [SETTLEMENT_CURRENCY]"
+- "Detected exchange rate: 1 [BASE] = X [SETTLEMENT]"
+- "Verified math: [show calculation step-by-step]"
+- "Currency symbols validated: [list where each currency appears]"
 
 ### SEMANTIC REASONING PROTOCOL (Think Through These Steps)
 
@@ -192,7 +232,11 @@ Return ONLY valid JSON. No markdown. No commentary."""
       "description": "Item description (translate to English if foreign language)",
       "quantity": float,
       "unitPrice": float,
-      "currency": "USD",
+      "unitPriceCurrency": "USD (ISO 4217 code for unit price currency)",
+      "currency": "USD (DEPRECATED - use unitPriceCurrency)",
+      "lineTotal": float,
+      "lineTotalCurrency": "ILS (ISO 4217 code for line total currency, may differ from unitPriceCurrency)",
+      "exchangeRateApplied": float or null,
       "taxPercent": float,
       "taxAmount": float,
       "lineSubtotal": float,
@@ -204,12 +248,33 @@ Return ONLY valid JSON. No markdown. No commentary."""
 
   "totals": {{
     "subtotal": float,
+    "subtotalCurrency": "ILS (ISO 4217)",
     "tax": float,
+    "taxCurrency": "ILS (ISO 4217)",
     "taxPercent": float,
     "discounts": float,
+    "discountCurrency": "ILS (ISO 4217)",
     "fees": float,
+    "feesCurrency": "ILS (ISO 4217)",
     "shipping": float,
-    "total": float
+    "shippingCurrency": "ILS (ISO 4217)",
+    "total": float,
+    "totalCurrency": "ILS (ISO 4217)"
+  }},
+
+  "multiCurrency": {{
+    "isMultiCurrency": true|false,
+    "baseCurrency": "USD (ISO 4217 - currency of unit prices)",
+    "settlementCurrency": "ILS (ISO 4217 - currency of final totals)",
+    "exchangeRate": 3.27 or null,
+    "exchangeRateSource": "Document states: (1USD = 3.27ILS) or null",
+    "mathVerification": {{
+      "lineItemCalculation": "29 × $8.00 USD = $232.00 USD",
+      "currencyConversion": "$232.00 × 3.27 = 758.64 ILS",
+      "afterDiscount": "758.64 - 379.32 = 379.32 ILS",
+      "afterTax": "379.32 + 68.28 = 447.60 ILS",
+      "verified": true|false
+    }}
   }},
 
   "vendorMatch": {{
