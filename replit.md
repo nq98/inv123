@@ -8,8 +8,9 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 - **Layer 2**: Vertex AI Search (RAG) for vendor context retrieval
 - **Layer 3**: Gemini 1.5 Pro for semantic validation and math checking
 
-### Vendor Database Management (AI-Powered CSV Import)
-- **Universal CSV Mapper**: Gemini AI analyzes ANY vendor CSV (SAP, Oracle, QuickBooks, Excel) and automatically maps columns to standardized schema
+### Vendor Database Management (AI-Powered CSV Import with RAG)
+- **Self-Improving Universal CSV Mapper**: Gemini AI + Vertex AI Search RAG analyzes ANY vendor CSV (SAP, Oracle, QuickBooks, Excel) and automatically maps columns to standardized schema
+- **Vertex AI Search RAG Knowledge Base**: Stores successful mappings and retrieves similar past mappings to improve accuracy over time (zero-shot → few-shot → many-shot learning)
 - **Multi-Language Support**: Handles German (Firma_Name), Spanish (Empresa), Hebrew (ספק), and 40+ languages
 - **Smart Deduplication**: BigQuery MERGE operations prevent duplicates
 - **Dynamic Schema**: Custom CSV columns stored in JSON field for flexibility
@@ -21,11 +22,13 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 2. **Vertex AI Search (RAG)** - Retrieves vendor history and canonical IDs from datastore
 3. **Gemini 1.5 Pro** - Semantic reasoning, OCR correction, date normalization, and automated math verification
 
-### Vendor Management Pipeline
-1. **CSV Upload & Analysis** - AI analyzes headers and sample data to understand schema
-2. **Chain of Thought Mapping** - Gemini explains WHY each column maps to which field
-3. **Data Transformation** - Normalizes emails, countries, domains into arrays
-4. **BigQuery Merge** - Smart deduplication using MERGE operations on vendor_id
+### Vendor Management Pipeline (with RAG Learning Loop)
+1. **Vertex AI Search RAG Query** - Search for similar CSV mappings from past uploads
+2. **CSV Upload & Analysis** - AI analyzes headers with historical context to understand schema
+3. **Chain of Thought Mapping** - Gemini explains WHY each column maps to which field, using past successful mappings
+4. **Data Transformation** - Normalizes emails, countries, domains into arrays
+5. **BigQuery Merge** - Smart deduplication using MERGE operations on vendor_id
+6. **Feedback Loop** - Store successful mappings back to Vertex AI Search for future learning
 
 ## Project Structure
 ```
@@ -34,13 +37,14 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 ├── config.py                   # Configuration and environment setup
 ├── invoice_processor.py        # Main invoice processing pipeline
 ├── services/
-│   ├── document_ai_service.py  # Document AI integration
-│   ├── vertex_search_service.py # Vertex AI Search (RAG)
-│   ├── gemini_service.py       # Gemini semantic validation (invoices)
-│   ├── vendor_csv_mapper.py    # AI-powered CSV column mapping
-│   ├── bigquery_service.py     # BigQuery vendor database operations
-│   ├── gmail_service.py        # Gmail OAuth & invoice import
-│   └── token_storage.py        # Secure OAuth token management
+│   ├── document_ai_service.py          # Document AI integration
+│   ├── vertex_search_service.py        # Vertex AI Search (RAG) for invoices
+│   ├── vertex_vendor_mapping_search.py # Vertex AI Search (RAG) for vendor CSV mappings
+│   ├── gemini_service.py               # Gemini semantic validation (invoices)
+│   ├── vendor_csv_mapper.py            # AI-powered CSV column mapping with RAG
+│   ├── bigquery_service.py             # BigQuery vendor database operations
+│   ├── gmail_service.py                # Gmail OAuth & invoice import
+│   └── token_storage.py                # Secure OAuth token management
 ├── utils/
 │   ├── date_normalizer.py      # Global date format handling
 │   ├── vendor_extractor.py     # Vendor name extraction
@@ -52,7 +56,8 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 - **Project ID**: invoicereader-477008
 - **GCS Bucket**: payouts-invoices
 - **Document AI Processor**: 919c19aabdb1802d (us region)
-- **Vertex Search Datastore**: invoices-ds
+- **Vertex Search Datastore (Invoice RAG)**: invoices-ds
+- **Vertex Search Datastore (Vendor Mapping RAG)**: vendor_csv_mappings
 - **BigQuery Dataset**: vendors_ai
 - **BigQuery Table**: global_vendors (vendor master data with dynamic custom_attributes JSON column)
 - **Service Accounts**: 
@@ -63,6 +68,16 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 See `.env` for required configuration including API keys, processor IDs, and service account paths.
 
 ## Recent Changes
+- 2025-11-22: **BREAKTHROUGH: Self-Improving Vendor CSV Mapping with Vertex AI Search RAG** - Implemented learning system for vendor CSV import:
+  - Created Vertex AI Search datastore `vendor_csv_mappings` as knowledge base for past successful mappings
+  - Enhanced VendorCSVMapper to query RAG before analysis (retrieves top 3 similar past mappings)
+  - Modified Gemini prompt to include historical context with proven column mappings
+  - Implemented feedback loop: successful imports are stored back to Vertex AI Search
+  - System now learns from each upload: zero-shot → few-shot → many-shot learning capability
+  - Each stored mapping includes: CSV fingerprint, detected language, source system, confidence scores, upload count, success rate
+  - RAG context shows past mappings with example column assignments to improve future accuracy
+  - New service: `services/vertex_vendor_mapping_search.py` for RAG operations
+  - Integration points: `vendor_csv_mapper.py` (query RAG + store mappings), `app.py` (trigger feedback loop after import)
 - 2025-11-22: **NEW FEATURE: Universal AI Vendor CSV Import** - Built complete vendor management system:
   - AI-First CSV column mapping with Chain of Thought reasoning (Gemini 2.0 Flash)
   - Multi-language support (German Firma_Name, Spanish Empresa, Hebrew ספק, 40+ languages)
@@ -118,16 +133,20 @@ See `.env` for required configuration including API keys, processor IDs, and ser
 - Server-Sent Events (SSE) for real-time progress monitoring
 - Auto-reconnect on connection timeout
 
-### Vendor CSV Import
-- **Universal AI Mapper**: Upload ANY vendor CSV from ANY system (SAP, Oracle, QuickBooks, Excel)
+### Vendor CSV Import (Self-Improving with RAG)
+- **Self-Learning Universal AI Mapper**: Upload ANY vendor CSV from ANY system (SAP, Oracle, QuickBooks, Excel)
+- **Vertex AI Search RAG**: Queries knowledge base for similar past CSV mappings before analysis
+- **Historical Context**: AI uses proven mappings from past uploads to improve accuracy
 - **Multi-Language Support**: German (Firma_Name), Spanish (Empresa), Hebrew (ספק), Arabic, Chinese, etc.
-- **Chain of Thought Mapping**: AI explains WHY each column maps to which field
+- **Chain of Thought Mapping**: AI explains WHY each column maps to which field, informed by past successes
 - **Smart Deduplication**: BigQuery MERGE prevents duplicates
 - **Dynamic Schema**: Custom columns stored in JSON (e.g., "Payment Terms", "Credit Limit")
 - **Confidence Scoring**: AI rates mapping certainty (1.0 = perfect, 0.4 = weak)
-- **2-Step Process**: 
-  1. Analyze → AI generates column mapping with reasoning
-  2. Import → Transform & merge into BigQuery
+- **Learning Feedback Loop**: Successful imports are automatically stored to Vertex AI Search for future use
+- **3-Step Process**: 
+  1. RAG Query → Retrieve similar past mappings from Vertex AI Search
+  2. Analyze → AI generates column mapping with reasoning + historical context
+  3. Import → Transform & merge into BigQuery → Store mapping back to RAG
 
 ## Web UI
 The web interface (templates/index.html) provides:
