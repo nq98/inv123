@@ -161,65 +161,191 @@ function displayInvoiceData(invoices) {
     
     invoices.forEach((invoice, idx) => {
         const fullData = invoice.full_data || {};
-        const lineItems = invoice.line_items || [];
+        const vendor = fullData.vendor || {};
+        const buyer = fullData.buyer || {};
+        const totals = fullData.totals || {};
+        const payment = fullData.payment || {};
+        const lineItems = fullData.lineItems || [];
         
         html += `
             <div style="background: white; border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px; border-bottom: 2px solid #667eea; padding-bottom: 15px;">
                     <div>
-                        <h4 style="margin: 0 0 5px 0; color: #667eea; font-size: 18px;">Invoice #${idx + 1}: ${invoice.vendor || 'Unknown Vendor'}</h4>
-                        <p style="margin: 0; color: #666; font-size: 13px;">From: ${invoice.sender || 'Unknown'}</p>
-                        <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">Date: ${invoice.date || 'N/A'}</p>
+                        <h4 style="margin: 0 0 8px 0; color: #667eea; font-size: 20px;">${vendor.name || invoice.vendor || 'Unknown Vendor'}</h4>
+                        <div style="font-size: 12px; color: #666;">
+                            <div><strong>📄 Type:</strong> ${fullData.documentType || 'Invoice'} | <strong>🌐 Language:</strong> ${fullData.language || 'en'}</div>
+                            <div style="margin-top: 4px;"><strong>📧 From:</strong> ${invoice.sender || 'Unknown'}</div>
+                            <div style="margin-top: 4px;"><strong>📅 Email Date:</strong> ${invoice.date || 'N/A'}</div>
+                        </div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 24px; font-weight: bold; color: #2e7d32;">${invoice.currency || ''} ${invoice.total || 'N/A'}</div>
-                        <div style="font-size: 12px; color: #666;">Invoice #${invoice.invoice_number || 'N/A'}</div>
+                        <div style="font-size: 28px; font-weight: bold; color: #2e7d32;">${fullData.currency || 'USD'} ${totals.total || invoice.total || 'N/A'}</div>
+                        <div style="font-size: 13px; color: #666; margin-top: 5px;">Invoice #${fullData.invoiceNumber || invoice.invoice_number || 'N/A'}</div>
+                        ${fullData.issueDate ? `<div style="font-size: 12px; color: #888; margin-top: 3px;">Issued: ${fullData.issueDate}</div>` : ''}
+                        ${fullData.dueDate ? `<div style="font-size: 12px; color: #d32f2f; margin-top: 3px;">Due: ${fullData.dueDate}</div>` : ''}
                     </div>
+                </div>
+
+                <div style="background: #f9f9f9; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                    <strong style="color: #555;">📧 Email Subject:</strong>
+                    <p style="margin: 8px 0 0 0; color: #333; font-size: 14px;">${invoice.subject || 'N/A'}</p>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
-                    <div>
-                        <strong style="color: #555;">📧 Email Subject:</strong>
-                        <p style="margin: 5px 0; color: #333;">${invoice.subject || 'N/A'}</p>
+                    <div style="background: #f0f7ff; padding: 12px; border-radius: 6px; border-left: 3px solid #2196f3;">
+                        <strong style="color: #1976d2; font-size: 14px;">🏢 Vendor Information</strong>
+                        <div style="margin-top: 8px; font-size: 13px; color: #333;">
+                            <div><strong>Name:</strong> ${vendor.name || 'N/A'}</div>
+                            ${vendor.address ? `<div style="margin-top: 4px;"><strong>Address:</strong> ${vendor.address}</div>` : ''}
+                            ${vendor.country ? `<div style="margin-top: 4px;"><strong>Country:</strong> ${vendor.country}</div>` : ''}
+                            ${vendor.email ? `<div style="margin-top: 4px;"><strong>Email:</strong> ${vendor.email}</div>` : ''}
+                            ${vendor.phone ? `<div style="margin-top: 4px;"><strong>Phone:</strong> ${vendor.phone}</div>` : ''}
+                            ${vendor.taxId ? `<div style="margin-top: 4px;"><strong>Tax ID:</strong> ${vendor.taxId}</div>` : ''}
+                            ${vendor.registrationNumber ? `<div style="margin-top: 4px;"><strong>Reg #:</strong> ${vendor.registrationNumber}</div>` : ''}
+                        </div>
                     </div>
-                    <div>
-                        <strong style="color: #555;">🏢 Vendor:</strong>
-                        <p style="margin: 5px 0; color: #333;">${invoice.vendor || 'N/A'}</p>
+                    
+                    <div style="background: #f0f7ff; padding: 12px; border-radius: 6px; border-left: 3px solid #2196f3;">
+                        <strong style="color: #1976d2; font-size: 14px;">👤 Buyer Information</strong>
+                        <div style="margin-top: 8px; font-size: 13px; color: #333;">
+                            ${buyer.name ? `<div><strong>Name:</strong> ${buyer.name}</div>` : '<div style="color: #999;">Not available</div>'}
+                            ${buyer.address ? `<div style="margin-top: 4px;"><strong>Address:</strong> ${buyer.address}</div>` : ''}
+                            ${buyer.country ? `<div style="margin-top: 4px;"><strong>Country:</strong> ${buyer.country}</div>` : ''}
+                            ${buyer.email ? `<div style="margin-top: 4px;"><strong>Email:</strong> ${buyer.email}</div>` : ''}
+                            ${buyer.taxId ? `<div style="margin-top: 4px;"><strong>Tax ID:</strong> ${buyer.taxId}</div>` : ''}
+                        </div>
                     </div>
                 </div>
+
+                <div style="background: #fff3e0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff9800; margin-bottom: 15px;">
+                    <strong style="color: #e65100; font-size: 14px;">💰 Financial Breakdown</strong>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; font-size: 13px;">
+                        <div>
+                            <div style="color: #666;">Subtotal:</div>
+                            <div style="font-weight: bold; color: #333; margin-top: 3px;">${fullData.currency || 'USD'} ${totals.subtotal || 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div style="color: #666;">Tax ${totals.taxPercent ? `(${totals.taxPercent}%)` : ''}:</div>
+                            <div style="font-weight: bold; color: #333; margin-top: 3px;">${fullData.currency || 'USD'} ${totals.tax || 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div style="color: #666;">Total:</div>
+                            <div style="font-weight: bold; color: #2e7d32; font-size: 16px; margin-top: 3px;">${fullData.currency || 'USD'} ${totals.total || 'N/A'}</div>
+                        </div>
+                        ${totals.discounts && totals.discounts > 0 ? `
+                            <div>
+                                <div style="color: #666;">Discounts:</div>
+                                <div style="font-weight: bold; color: #d32f2f; margin-top: 3px;">-${fullData.currency || 'USD'} ${totals.discounts}</div>
+                            </div>
+                        ` : ''}
+                        ${totals.fees && totals.fees > 0 ? `
+                            <div>
+                                <div style="color: #666;">Fees:</div>
+                                <div style="font-weight: bold; color: #333; margin-top: 3px;">${fullData.currency || 'USD'} ${totals.fees}</div>
+                            </div>
+                        ` : ''}
+                        ${totals.shipping && totals.shipping > 0 ? `
+                            <div>
+                                <div style="color: #666;">Shipping:</div>
+                                <div style="font-weight: bold; color: #333; margin-top: 3px;">${fullData.currency || 'USD'} ${totals.shipping}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+
+                ${fullData.paymentTerms || fullData.dueDate || payment.iban || payment.swift ? `
+                    <div style="background: #e8f5e9; padding: 12px; border-radius: 6px; border-left: 3px solid #4caf50; margin-bottom: 15px;">
+                        <strong style="color: #2e7d32; font-size: 14px;">💳 Payment Information</strong>
+                        <div style="margin-top: 8px; font-size: 13px; color: #333;">
+                            ${fullData.paymentTerms ? `<div><strong>Terms:</strong> ${fullData.paymentTerms}</div>` : ''}
+                            ${fullData.dueDate ? `<div style="margin-top: 4px;"><strong>Due Date:</strong> ${fullData.dueDate}</div>` : ''}
+                            ${payment.iban ? `<div style="margin-top: 4px;"><strong>IBAN:</strong> ${payment.iban}</div>` : ''}
+                            ${payment.swift ? `<div style="margin-top: 4px;"><strong>SWIFT:</strong> ${payment.swift}</div>` : ''}
+                            ${payment.bankName ? `<div style="margin-top: 4px;"><strong>Bank:</strong> ${payment.bankName}</div>` : ''}
+                            ${payment.accountNumber ? `<div style="margin-top: 4px;"><strong>Account:</strong> ${payment.accountNumber}</div>` : ''}
+                            ${payment.paymentInstructions ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #c8e6c9;"><em>${payment.paymentInstructions}</em></div>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
                 
                 ${lineItems.length > 0 ? `
                     <div style="margin-top: 15px;">
-                        <strong style="color: #555;">📝 Line Items:</strong>
-                        <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                        <strong style="color: #555; font-size: 14px;">📝 Line Items (${lineItems.length})</strong>
+                        <table style="width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 13px;">
                             <thead>
                                 <tr style="background: #f5f5f5;">
-                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Description</th>
-                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Quantity</th>
-                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Unit Price</th>
-                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Total</th>
+                                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Description</th>
+                                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Qty</th>
+                                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Unit Price</th>
+                                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Tax</th>
+                                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Total</th>
+                                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">✓</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${lineItems.map(item => `
                                     <tr>
-                                        <td style="padding: 8px; border: 1px solid #ddd;">${item.description || 'N/A'}</td>
-                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.quantity || '-'}</td>
-                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.unit_price || '-'}</td>
-                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.total || '-'}</td>
+                                        <td style="padding: 10px; border: 1px solid #ddd;">
+                                            <strong>${item.description || 'N/A'}</strong>
+                                            ${item.productCode ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">SKU: ${item.productCode}</div>` : ''}
+                                            ${item.category ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">Category: ${item.category}</div>` : ''}
+                                        </td>
+                                        <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">${item.quantity || '-'}</td>
+                                        <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.currency || fullData.currency || 'USD'} ${item.unitPrice || '-'}</td>
+                                        <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">
+                                            ${item.taxAmount ? `${item.currency || fullData.currency || 'USD'} ${item.taxAmount}` : '-'}
+                                            ${item.taxPercent ? `<div style="font-size: 11px; color: #888;">(${item.taxPercent}%)</div>` : ''}
+                                        </td>
+                                        <td style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${item.currency || fullData.currency || 'USD'} ${item.lineSubtotal || item.total || '-'}</td>
+                                        <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">${item.mathVerified ? '✅' : '⚠️'}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
                     </div>
                 ` : ''}
+
+                ${fullData.reasoning || fullData.warnings ? `
+                    <div style="margin-top: 15px; padding: 12px; background: #fff9e6; border-radius: 6px; border-left: 3px solid #ffc107;">
+                        ${fullData.reasoning ? `
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #f57c00; font-size: 13px;">🧠 AI Reasoning:</strong>
+                                <p style="margin: 6px 0 0 0; font-size: 12px; color: #666; line-height: 1.5;">${fullData.reasoning}</p>
+                            </div>
+                        ` : ''}
+                        ${fullData.warnings && fullData.warnings.length > 0 ? `
+                            <div>
+                                <strong style="color: #f57c00; font-size: 13px;">⚠️ Warnings:</strong>
+                                <ul style="margin: 6px 0 0 20px; font-size: 12px; color: #d84315;">
+                                    ${fullData.warnings.map(w => `<li style="margin-top: 3px;">${w}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                ${fullData.extractionConfidence || fullData.classificationConfidence ? `
+                    <div style="margin-top: 15px; display: flex; gap: 10px; font-size: 12px;">
+                        ${fullData.classificationConfidence ? `
+                            <div style="padding: 6px 12px; background: #e3f2fd; border-radius: 4px; color: #1976d2;">
+                                <strong>Classification Confidence:</strong> ${Math.round(fullData.classificationConfidence * 100)}%
+                            </div>
+                        ` : ''}
+                        ${fullData.extractionConfidence ? `
+                            <div style="padding: 6px 12px; background: #e8f5e9; border-radius: 4px; color: #2e7d32;">
+                                <strong>Extraction Confidence:</strong> ${Math.round(fullData.extractionConfidence * 100)}%
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
                 
-                <button onclick="toggleFullData(${idx})" style="margin-top: 15px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-                    View Full Extracted Data
+                <button onclick="toggleFullData(${idx})" style="margin-top: 15px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                    📄 View Complete JSON Schema
                 </button>
                 
-                <div id="fullData${idx}" style="display: none; margin-top: 15px; background: #f9f9f9; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto;">
-                    <pre style="margin: 0; font-size: 12px; white-space: pre-wrap;">${JSON.stringify(fullData, null, 2)}</pre>
+                <div id="fullData${idx}" style="display: none; margin-top: 15px; background: #1e1e1e; padding: 15px; border-radius: 4px; max-height: 500px; overflow-y: auto;">
+                    <pre style="margin: 0; font-size: 12px; white-space: pre-wrap; color: #d4d4d4; font-family: 'Courier New', monospace;">${JSON.stringify(fullData, null, 2)}</pre>
                 </div>
             </div>
         `;
