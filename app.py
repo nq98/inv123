@@ -6,6 +6,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from invoice_processor import InvoiceProcessor
 from services.gmail_service import GmailService
 from services.token_storage import SecureTokenStorage
+from services.bigquery_service import BigQueryService
+from services.vendor_csv_mapper import VendorCSVMapper
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -27,6 +29,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 _processor = None
 _gmail_service = None
 _token_storage = None
+_bigquery_service = None
+_csv_mapper = None
 
 def get_processor():
     """Lazy initialization of InvoiceProcessor to avoid blocking app startup"""
@@ -49,7 +53,22 @@ def get_token_storage():
         _token_storage = SecureTokenStorage()
     return _token_storage
 
+def get_bigquery_service():
+    """Lazy initialization of BigQueryService"""
+    global _bigquery_service
+    if _bigquery_service is None:
+        _bigquery_service = BigQueryService()
+    return _bigquery_service
+
+def get_csv_mapper():
+    """Lazy initialization of VendorCSVMapper"""
+    global _csv_mapper
+    if _csv_mapper is None:
+        _csv_mapper = VendorCSVMapper()
+    return _csv_mapper
+
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'gif'}
+ALLOWED_CSV_EXTENSIONS = {'csv', 'txt'}
 MIME_TYPES = {
     'pdf': 'application/pdf',
     'png': 'image/png',
@@ -61,6 +80,9 @@ MIME_TYPES = {
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_csv_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_CSV_EXTENSIONS
 
 @app.after_request
 def add_header(response):
@@ -580,6 +602,127 @@ def gmail_import():
         
     except Exception as e:
         return jsonify({'error': f'Gmail import failed: {str(e)}'}), 500
+
+# ===== VENDOR CSV UPLOAD ENDPOINTS =====
+
+@app.route('/api/vendors/csv/analyze', methods=['POST'])
+def analyze_vendor_csv():
+    """
+    Analyze uploaded CSV file and generate AI-powered column mapping
+    Step 1 of 2-step CSV import process
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_csv_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Only CSV files allowed.'}), 400
+        
+        # Read CSV content
+        csv_content = file.read()
+        
+        # Get AI-powered column mapping
+        csv_mapper = get_csv_mapper()
+        analysis_result = csv_mapper.analyze_csv_headers(csv_content, file.filename)
+        
+        if not analysis_result.get('success'):
+            return jsonify({'error': analysis_result.get('error', 'Analysis failed')}), 400
+        
+        # Store CSV content in session for step 2
+        session['pending_csv_content'] = csv_content.decode('utf-8-sig')
+        session['pending_csv_filename'] = file.filename
+        
+        return jsonify({
+            'success': True,
+            'filename': file.filename,
+            'analysis': analysis_result['mapping'],
+            'headers': analysis_result['headers'],
+            'sampleRows': analysis_result['sampleRows']
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error analyzing CSV: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vendors/csv/import', methods=['POST'])
+def import_vendor_csv():
+    """
+    Import vendor CSV data using AI-generated mapping
+    Step 2 of 2-step CSV import process
+    """
+    try:
+        # Get CSV content from session
+        csv_content = session.get('pending_csv_content')
+        filename = session.get('pending_csv_filename', 'upload.csv')
+        
+        if not csv_content:
+            return jsonify({'error': 'No pending CSV upload found. Please analyze CSV first.'}), 400
+        
+        # Get mapping from request (user can override AI mapping if needed)
+        data = request.get_json()
+        column_mapping = data.get('columnMapping')
+        source_system = data.get('sourceSystem', 'csv_upload')
+        
+        if not column_mapping:
+            return jsonify({'error': 'Column mapping required'}), 400
+        
+        # Transform CSV data using mapping
+        csv_mapper = get_csv_mapper()
+        transformed_vendors = csv_mapper.transform_csv_data(csv_content, {
+            'columnMapping': column_mapping,
+            'sourceSystemGuess': source_system
+        })
+        
+        if not transformed_vendors:
+            return jsonify({'error': 'No valid vendor records found in CSV'}), 400
+        
+        # Initialize BigQuery and ensure table exists
+        bq_service = get_bigquery_service()
+        bq_service.ensure_table_schema()
+        
+        # Merge vendors into BigQuery
+        merge_result = bq_service.merge_vendors(transformed_vendors, source_system)
+        
+        # Clear session
+        session.pop('pending_csv_content', None)
+        session.pop('pending_csv_filename', None)
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'vendorsProcessed': len(transformed_vendors),
+            'inserted': merge_result['inserted'],
+            'updated': merge_result['updated'],
+            'errors': merge_result['errors']
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error importing CSV: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vendors/search', methods=['GET'])
+def search_vendors():
+    """Search vendors in BigQuery database by name"""
+    try:
+        query = request.args.get('q', '')
+        limit = int(request.args.get('limit', 10))
+        
+        if not query:
+            return jsonify({'vendors': []}), 200
+        
+        bq_service = get_bigquery_service()
+        vendors = bq_service.search_vendor_by_name(query, limit)
+        
+        return jsonify({'vendors': vendors}), 200
+        
+    except Exception as e:
+        print(f"❌ Error searching vendors: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
