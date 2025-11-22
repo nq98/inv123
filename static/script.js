@@ -72,8 +72,10 @@ function clearTerminal() {
     terminalOutput.innerHTML = '';
 }
 
+const gmailTimeRange = document.getElementById('gmailTimeRange');
+
 gmailImportBtn.addEventListener('click', async () => {
-    const maxResults = parseInt(gmailMaxResults.value) || 20;
+    const days = parseInt(gmailTimeRange.value) || 7;
     
     gmailImportBtn.disabled = true;
     gmailImportBtn.textContent = '⏳ Importing...';
@@ -86,7 +88,7 @@ gmailImportBtn.addEventListener('click', async () => {
     
     try {
         // Use Server-Sent Events for real-time progress (EventSource only supports GET)
-        const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?max_results=${maxResults}`);
+        const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?days=${days}`);
         
         let importResults = {
             imported: 0,
@@ -102,7 +104,8 @@ gmailImportBtn.addEventListener('click', async () => {
                     importResults = {
                         imported: data.imported,
                         skipped: data.skipped,
-                        total: data.total
+                        total: data.total,
+                        invoices: data.invoices || []
                     };
                     eventSource.close();
                     
@@ -110,10 +113,11 @@ gmailImportBtn.addEventListener('click', async () => {
                     addTerminalLine('✅ Import session completed successfully!', 'success');
                     
                     gmailImportBtn.disabled = false;
-                    gmailImportBtn.textContent = '🔍 Start Import';
+                    gmailImportBtn.textContent = '🔍 Start Smart Scan';
                     
-                    // Show summary
+                    // Show summary and invoice details
                     displayImportSummary(importResults);
+                    displayInvoiceData(importResults.invoices);
                     
                 } else if (data.type === 'error') {
                     addTerminalLine(data.message, 'error');
@@ -135,15 +139,105 @@ gmailImportBtn.addEventListener('click', async () => {
             addTerminalLine('❌ Connection error occurred', 'error');
             eventSource.close();
             gmailImportBtn.disabled = false;
-            gmailImportBtn.textContent = '🔍 Start Import';
+            gmailImportBtn.textContent = '🔍 Start Smart Scan';
         };
         
     } catch (error) {
         addTerminalLine(`❌ Error: ${error.message}`, 'error');
         gmailImportBtn.disabled = false;
-        gmailImportBtn.textContent = '🔍 Start Import';
+        gmailImportBtn.textContent = '🔍 Start Smart Scan';
     }
 });
+
+function displayInvoiceData(invoices) {
+    if (!invoices || invoices.length === 0) {
+        return;
+    }
+    
+    let html = `
+        <div style="margin-top: 30px;">
+            <h3 style="margin-bottom: 20px; color: #333;">📋 Extracted Invoice Data (${invoices.length} invoices)</h3>
+    `;
+    
+    invoices.forEach((invoice, idx) => {
+        const fullData = invoice.full_data || {};
+        const lineItems = invoice.line_items || [];
+        
+        html += `
+            <div style="background: white; border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
+                    <div>
+                        <h4 style="margin: 0 0 5px 0; color: #667eea; font-size: 18px;">Invoice #${idx + 1}: ${invoice.vendor || 'Unknown Vendor'}</h4>
+                        <p style="margin: 0; color: #666; font-size: 13px;">From: ${invoice.sender || 'Unknown'}</p>
+                        <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">Date: ${invoice.date || 'N/A'}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 24px; font-weight: bold; color: #2e7d32;">${invoice.currency || ''} ${invoice.total || 'N/A'}</div>
+                        <div style="font-size: 12px; color: #666;">Invoice #${invoice.invoice_number || 'N/A'}</div>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <strong style="color: #555;">📧 Email Subject:</strong>
+                        <p style="margin: 5px 0; color: #333;">${invoice.subject || 'N/A'}</p>
+                    </div>
+                    <div>
+                        <strong style="color: #555;">🏢 Vendor:</strong>
+                        <p style="margin: 5px 0; color: #333;">${invoice.vendor || 'N/A'}</p>
+                    </div>
+                </div>
+                
+                ${lineItems.length > 0 ? `
+                    <div style="margin-top: 15px;">
+                        <strong style="color: #555;">📝 Line Items:</strong>
+                        <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #f5f5f5;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Description</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Quantity</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Unit Price</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${lineItems.map(item => `
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">${item.description || 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.quantity || '-'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.unit_price || '-'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${item.total || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : ''}
+                
+                <button onclick="toggleFullData(${idx})" style="margin-top: 15px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                    View Full Extracted Data
+                </button>
+                
+                <div id="fullData${idx}" style="display: none; margin-top: 15px; background: #f9f9f9; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto;">
+                    <pre style="margin: 0; font-size: 12px; white-space: pre-wrap;">${JSON.stringify(fullData, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    gmailImportResults.innerHTML += html;
+}
+
+window.toggleFullData = function(idx) {
+    const element = document.getElementById(`fullData${idx}`);
+    if (element.style.display === 'none') {
+        element.style.display = 'block';
+    } else {
+        element.style.display = 'none';
+    }
+};
 
 function displayImportSummary(results) {
     const html = `

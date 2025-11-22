@@ -1,7 +1,9 @@
 import os
 import json
 import base64
-from datetime import datetime
+import re
+import requests
+from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -95,17 +97,26 @@ class GmailService:
         
         return build('gmail', 'v1', credentials=credentials)
     
-    def search_invoice_emails(self, service, max_results=20):
+    def search_invoice_emails(self, service, max_results=20, days=30):
         """
         Search for emails containing invoices using semantic queries
         
+        Args:
+            service: Gmail API service
+            max_results: Maximum number of emails to return
+            days: Number of days to look back (default: 30)
+        
         Returns list of message IDs that likely contain invoices
         """
+        # Calculate date for Gmail query (format: YYYY/MM/DD)
+        after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
+        time_filter = f'after:{after_date}'
+        
         invoice_queries = [
-            'subject:(invoice OR receipt OR billing OR payment) has:attachment',
-            'from:(noreply OR billing OR invoices OR payments) has:attachment',
-            'filename:pdf (invoice OR receipt OR statement)',
-            'subject:(order confirmation OR purchase receipt) has:attachment'
+            f'{time_filter} subject:(invoice OR receipt OR billing OR payment)',
+            f'{time_filter} from:(noreply OR billing OR invoices OR payments)',
+            f'{time_filter} filename:pdf (invoice OR receipt OR statement)',
+            f'{time_filter} subject:(order confirmation OR purchase receipt)'
         ]
         
         all_messages = []
@@ -230,6 +241,86 @@ class GmailService:
                 metadata['subject'] = value
         
         return metadata
+    
+    def extract_links_from_body(self, message):
+        """
+        Extract PDF download links from email body
+        
+        Returns list of URLs that might contain invoice PDFs
+        """
+        links = []
+        
+        try:
+            # Get email body
+            body_data = ''
+            parts = message.get('payload', {}).get('parts', [])
+            
+            def extract_body_recursive(part):
+                nonlocal body_data
+                if part.get('mimeType') == 'text/html' and 'data' in part.get('body', {}):
+                    body_data += base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                elif part.get('mimeType') == 'text/plain' and 'data' in part.get('body', {}):
+                    body_data += base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                if 'parts' in part:
+                    for subpart in part['parts']:
+                        extract_body_recursive(subpart)
+            
+            for part in parts:
+                extract_body_recursive(part)
+            
+            # If no parts, try payload body directly
+            if not body_data and 'body' in message.get('payload', {}) and 'data' in message['payload']['body']:
+                body_data = base64.urlsafe_b64decode(message['payload']['body']['data']).decode('utf-8', errors='ignore')
+            
+            # Find URLs that likely contain PDFs
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            urls = re.findall(url_pattern, body_data)
+            
+            for url in urls:
+                # Look for invoice/receipt/billing URLs
+                url_lower = url.lower()
+                if any(keyword in url_lower for keyword in ['invoice', 'receipt', 'bill', 'download', 'pdf', 'document']):
+                    links.append(url)
+            
+        except Exception as e:
+            print(f"Error extracting links from body: {e}")
+        
+        return links
+    
+    def download_pdf_from_link(self, url, timeout=30):
+        """
+        Download PDF from a URL
+        
+        Returns: (filename, pdf_data) or None if failed
+        """
+        try:
+            response = requests.get(url, timeout=timeout, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            
+            if response.status_code == 200:
+                content_type = response.headers.get('Content-Type', '')
+                
+                if 'pdf' in content_type.lower() or url.lower().endswith('.pdf'):
+                    # Extract filename from URL or Content-Disposition header
+                    filename = 'invoice.pdf'
+                    
+                    if 'Content-Disposition' in response.headers:
+                        cd = response.headers['Content-Disposition']
+                        if 'filename=' in cd:
+                            filename = cd.split('filename=')[1].strip('"')
+                    else:
+                        # Extract from URL
+                        url_parts = url.split('/')
+                        if url_parts[-1] and '.pdf' in url_parts[-1].lower():
+                            filename = url_parts[-1].split('?')[0]  # Remove query params
+                    
+                    return (filename, response.content)
+        
+        except Exception as e:
+            print(f"Error downloading PDF from {url}: {e}")
+        
+        return None
     
     def classify_invoice_email(self, metadata, gemini_service=None):
         """

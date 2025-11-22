@@ -229,68 +229,106 @@ def gmail_import_stream():
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail session expired'})}\n\n"
                 return
             
-            max_results = request.args.get('max_results', 20, type=int)
+            days = request.args.get('days', 7, type=int)
             
-            yield f"data: {json.dumps({'type': 'status', 'message': '✓ Gmail Scanner Initialized'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Lookback period: Last 30 days'})}\n\n"
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Authenticating with Gmail...'})}\n\n"
+            time_label = f'{days} days' if days < 9999 else 'all time'
+            
+            yield f"data: {json.dumps({'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'⏰ Time range: Last {time_label}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Authenticating with Gmail API...'})}\n\n"
             
             gmail_service = get_gmail_service()
             service = gmail_service.build_service(credentials)
             
             email = credentials.get('email', 'Gmail account')
             yield f"data: {json.dumps({'type': 'success', 'message': f'Connected to {email}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'status', 'message': f'Counting total emails from the last 30 days...'})}\n\n"
             
-            messages = gmail_service.search_invoice_emails(service, max_results)
+            # Stage 1: Smart pre-filtering with Gmail queries
+            stage1_msg = '\n🔍 STAGE 1: Smart Pre-Filtering (Gmail semantic search)'
+            yield f"data: {json.dumps({'type': 'status', 'message': stage1_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': 'Filtering by: invoice keywords, billing senders, PDF attachments...'})}\n\n"
+            
+            messages = gmail_service.search_invoice_emails(service, 500, days)  # Get up to 500 for filtering
             
             total_found = len(messages)
-            yield f"data: {json.dumps({'type': 'success', 'message': f'Found {total_found} total emails in the last 30 days'})}\n\n"
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Filtering for potential invoices...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Found {total_found} potential invoice emails out of {total_found} total'})}\n\n"
-            yield f"data: {json.dumps({'type': 'status', 'message': f'Analyzing {total_found} potential invoice emails (filtered from {total_found} total)...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'success', 'message': f'📧 Found {total_found} emails matching invoice patterns'})}\n\n"
+            
+            # Stage 2: AI Classification - which are REAL invoices
+            stage2_msg = '\n🧠 STAGE 2: AI Semantic Classification'
+            yield f"data: {json.dumps({'type': 'status', 'message': stage2_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Analyzing {total_found} emails to identify real invoices/receipts...'})}\n\n"
             
             processor = get_processor()
-            processed_count = 0
-            imported_count = 0
-            skipped_count = 0
+            classified_invoices = []
+            non_invoices = []
             
+            # First pass: Classify all emails
             for idx, msg_ref in enumerate(messages, 1):
                 try:
-                    yield f"data: {json.dumps({'type': 'analyzing', 'message': f'Analyzing email {idx} of {total_found}'})}\n\n"
-                    
                     message = gmail_service.get_message_details(service, msg_ref['id'])
                     
                     if not message:
-                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Failed to fetch message'})}\n\n"
-                        skipped_count += 1
+                        non_invoices.append(('Failed to fetch', None))
                         continue
                     
                     metadata = gmail_service.get_email_metadata(message)
                     subject = metadata.get('subject', 'No subject')
-                    subject_msg = f'  Subject: "{subject}"'
-                    
-                    yield f"data: {json.dumps({'type': 'info', 'message': subject_msg})}\n\n"
                     
                     is_invoice, confidence, reasoning = gmail_service.classify_invoice_email(metadata)
                     
-                    if not is_invoice or confidence < 0.3:
-                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Not an invoice - {reasoning}'})}\n\n"
-                        skipped_count += 1
-                        continue
+                    if is_invoice and confidence >= 0.3:
+                        classified_invoices.append((message, metadata, confidence))
+                        invoice_msg = f'  ✓ [{idx}/{total_found}] Invoice: "{subject[:60]}..."'
+                        yield f"data: {json.dumps({'type': 'success', 'message': invoice_msg})}\n\n"
+                    else:
+                        non_invoices.append((subject, reasoning))
+                        skip_msg = f'  ⚠️ [{idx}/{total_found}] Skipped: "{subject[:60]}..." - {reasoning}'
+                        yield f"data: {json.dumps({'type': 'warning', 'message': skip_msg})}\n\n"
                     
-                    sender = metadata.get('from', 'Unknown sender')
-                    yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Invoice detected: {sender}'})}\n\n"
+                except Exception as e:
+                    non_invoices.append((f'Error: {str(e)}', None))
+            
+            invoice_count = len(classified_invoices)
+            non_invoice_count = len(non_invoices)
+            
+            filter_results_msg = '\n📊 FILTERING RESULTS:'
+            yield f"data: {json.dumps({'type': 'success', 'message': filter_results_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Total emails scanned: {total_found}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Relevant (potential invoices): {total_found}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'success', 'message': f'  • Clean invoices/receipts: {invoice_count} ✓'})}\n\n"
+            yield f"data: {json.dumps({'type': 'warning', 'message': f'  • Filtered out (not invoices): {non_invoice_count}'})}\n\n"
+            
+            # Stage 3: Extract invoice data through 3-layer AI
+            stage3_msg = f'\n🤖 STAGE 3: Deep AI Extraction ({invoice_count} invoices)'
+            yield f"data: {json.dumps({'type': 'status', 'message': stage3_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': '3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic'})}\n\n"
+            
+            imported_invoices = []
+            extraction_failures = []
+            
+            for idx, (message, metadata, confidence) in enumerate(classified_invoices, 1):
+                try:
+                    subject = metadata.get('subject', 'No subject')
+                    sender = metadata.get('from', 'Unknown')
                     
+                    processing_msg = f'\n[{idx}/{invoice_count}] Processing: "{subject[:50]}..."'
+                    yield f"data: {json.dumps({'type': 'analyzing', 'message': processing_msg})}\n\n"
+                    yield f"data: {json.dumps({'type': 'info', 'message': f'  From: {sender}'})}\n\n"
+                    
+                    # Extract attachments
                     attachments = gmail_service.extract_attachments(service, message)
                     
-                    if not attachments:
-                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ No PDF attachments found'})}\n\n"
-                        skipped_count += 1
+                    # Extract links
+                    links = gmail_service.extract_links_from_body(message)
+                    
+                    if not attachments and not links:
+                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ No PDFs or download links found'})}\n\n"
+                        extraction_failures.append(subject)
                         continue
                     
+                    # Process attachments
                     for filename, file_data in attachments:
-                        yield f"data: {json.dumps({'type': 'status', 'message': f'  Downloading: {filename}'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'  📎 Attachment: {filename}'})}\n\n"
                         
                         secure_name = secure_filename(filename)
                         filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
@@ -298,30 +336,96 @@ def gmail_import_stream():
                         with open(filepath, 'wb') as f:
                             f.write(file_data)
                         
-                        yield f"data: {json.dumps({'type': 'status', 'message': f'  Processing through AI pipeline...'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})}\n\n"
                         
                         invoice_result = processor.process_local_file(filepath, 'application/pdf')
                         
                         os.remove(filepath)
                         
-                        vendor = invoice_result.get('validated', {}).get('vendor', {}).get('name', 'Unknown')
-                        total = invoice_result.get('validated', {}).get('totals', {}).get('total', 0)
-                        currency = invoice_result.get('validated', {}).get('currency', '')
+                        validated = invoice_result.get('validated', {})
+                        vendor_data = validated.get('vendor', {})
+                        totals = validated.get('totals', {})
                         
-                        yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Extracted: {vendor} | {currency} {total}'})}\n\n"
-                        imported_count += 1
+                        vendor = vendor_data.get('name', 'Unknown')
+                        total = totals.get('total', 0)
+                        currency = validated.get('currency', '')
+                        invoice_num = validated.get('invoice_number', 'N/A')
+                        
+                        if vendor and vendor != 'Unknown' and total and total > 0:
+                            yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})}\n\n"
+                            
+                            imported_invoices.append({
+                                'subject': subject,
+                                'sender': sender,
+                                'date': metadata.get('date'),
+                                'vendor': vendor,
+                                'invoice_number': invoice_num,
+                                'total': total,
+                                'currency': currency,
+                                'line_items': validated.get('line_items', []),
+                                'full_data': validated
+                            })
+                        else:
+                            yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Extraction incomplete: Vendor={vendor}, Total={total}'})}\n\n"
+                            extraction_failures.append(subject)
                     
-                    processed_count += 1
+                    # Process links
+                    for link_url in links[:2]:  # Limit to first 2 links per email
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'  🔗 Downloading from link...'})}\n\n"
+                        
+                        pdf_result = gmail_service.download_pdf_from_link(link_url)
+                        
+                        if pdf_result:
+                            filename, file_data = pdf_result
+                            yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})}\n\n"
+                            
+                            secure_name = secure_filename(filename)
+                            filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
+                            
+                            with open(filepath, 'wb') as f:
+                                f.write(file_data)
+                            
+                            yield f"data: {json.dumps({'type': 'status', 'message': '    → Processing through 3-layer AI...'})}\n\n"
+                            
+                            invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                            
+                            os.remove(filepath)
+                            
+                            validated = invoice_result.get('validated', {})
+                            vendor = validated.get('vendor', {}).get('name', 'Unknown')
+                            total = validated.get('totals', {}).get('total', 0)
+                            currency = validated.get('currency', '')
+                            
+                            if vendor and vendor != 'Unknown':
+                                yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | {currency} {total}'})}\n\n"
+                                imported_invoices.append({
+                                    'subject': subject,
+                                    'sender': sender,
+                                    'date': metadata.get('date'),
+                                    'vendor': vendor,
+                                    'total': total,
+                                    'currency': currency,
+                                    'full_data': validated
+                                })
                     
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Error: {str(e)}'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})}\n\n"
+                    extraction_failures.append(subject)
+            
+            imported_count = len(imported_invoices)
+            failed_extraction = len(extraction_failures)
             
             complete_msg = '\n✅ Import Complete!'
             yield f"data: {json.dumps({'type': 'success', 'message': complete_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Total processed: {processed_count}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Invoices imported: {imported_count}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Emails skipped: {skipped_count}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'complete', 'imported': imported_count, 'skipped': skipped_count, 'total': total_found})}\n\n"
+            final_results_msg = '\n📈 FINAL RESULTS:'
+            yield f"data: {json.dumps({'type': 'info', 'message': final_results_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Emails scanned: {total_found}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Clean invoices found: {invoice_count}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'success', 'message': f'  • Successfully extracted: {imported_count} ✓'})}\n\n"
+            yield f"data: {json.dumps({'type': 'warning', 'message': f'  • Extraction failed: {failed_extraction}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'imported': imported_count, 'skipped': non_invoice_count, 'total': total_found, 'invoices': imported_invoices})}\n\n"
             
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Import failed: {str(e)}'})}\n\n"
