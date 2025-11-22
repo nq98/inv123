@@ -4,6 +4,10 @@ modules = ["python-3.11"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 36011
+externalPort = 3000
+
 [agent]
 expertMode = true
 integrations = ["python_gemini_ai_integrations:1.0.0"]

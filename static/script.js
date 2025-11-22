@@ -1,5 +1,7 @@
 // ==================== TAB NAVIGATION ====================
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOM Content Loaded - Initializing Invoice AI...');
+    
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
     
@@ -19,6 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    // Initialize invoice upload functionality
+    initializeInvoiceUpload();
 });
 
 // ==================== PROGRESS TRACKING HELPERS ====================
@@ -169,13 +174,8 @@ function showProgressWithSteps(containerId, step, totalSteps, message, steps) {
 }
 
 // ==================== INVOICE UPLOAD ====================
-const uploadArea = document.getElementById('uploadArea');
-const fileInput = document.getElementById('fileInput');
-const uploadForm = document.getElementById('uploadForm');
-const submitBtn = document.getElementById('submitBtn');
-const loading = document.getElementById('loading');
-const results = document.getElementById('results');
-const resultContent = document.getElementById('resultContent');
+// Wait for DOM to be ready before attaching event listeners
+let uploadArea, fileInput, uploadForm, submitBtn, loading, results, resultContent;
 
 const gmailConnectBtn = document.getElementById('gmailConnectBtn');
 const gmailImportBtn = document.getElementById('gmailImportBtn');
@@ -694,6 +694,143 @@ function displayGmailImportResults(data) {
     gmailImportResults.innerHTML = html;
 }
 
+// Initialize invoice upload functionality when DOM is ready
+function initializeInvoiceUpload() {
+    console.log('🔧 Initializing invoice upload...');
+    
+    // Get upload elements
+    uploadArea = document.getElementById('uploadArea');
+    fileInput = document.getElementById('fileInput');
+    uploadForm = document.getElementById('uploadForm');
+    submitBtn = document.getElementById('submitBtn');
+    loading = document.getElementById('loading');
+    results = document.getElementById('results');
+    resultContent = document.getElementById('resultContent');
+    
+    // Debug: Verify all elements exist
+    console.log('Upload Elements Check:', {
+        uploadArea: !!uploadArea,
+        fileInput: !!fileInput,
+        uploadForm: !!uploadForm,
+        submitBtn: !!submitBtn,
+        loading: !!loading,
+        results: !!results,
+        resultContent: !!resultContent
+    });
+    
+    if (!uploadArea || !fileInput || !uploadForm || !submitBtn) {
+        console.error('❌ Invoice upload elements missing! Check HTML IDs.');
+        return;
+    }
+    
+    console.log('✅ All invoice upload elements found');
+    
+    uploadArea.addEventListener('click', () => {
+        console.log('📂 Upload area clicked');
+        fileInput.click();
+    });
+
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            console.log('📎 File dropped:', files[0].name);
+            handleFileSelect(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        console.log('📎 File input changed');
+        if (e.target.files.length > 0) {
+            console.log('📄 File selected:', e.target.files[0].name);
+            handleFileSelect(e.target.files[0]);
+        }
+    });
+
+    function handleFileSelect(file) {
+        console.log('✅ File selected for upload:', file.name, 'Size:', file.size, 'bytes');
+        selectedFile = file;
+        uploadArea.querySelector('p').textContent = `Selected: ${file.name}`;
+        submitBtn.disabled = false;
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        console.log('🚀 Form submitted!');
+        
+        if (!selectedFile) {
+            console.error('❌ No file selected');
+            return;
+        }
+        
+        console.log('📤 Uploading file:', selectedFile.name);
+        
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const filename = selectedFile.name;
+        
+        // Hide old UI elements
+        loading.classList.add('hidden');
+        results.classList.add('hidden');
+        submitBtn.disabled = true;
+        
+        // Show progress container
+        const uploadProgressDiv = document.getElementById('uploadProgress');
+        uploadProgressDiv.classList.remove('hidden');
+        uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Uploading file...</p></div>';
+        
+        try {
+            // Upload and process file
+            console.log('⏳ Sending POST request to /upload...');
+            uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Processing invoice...</p></div>';
+            
+            const uploadResponse = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            console.log('📥 Response received:', uploadResponse.status);
+            
+            const data = await uploadResponse.json();
+            console.log('📊 Response data:', data);
+            
+            uploadProgressDiv.classList.add('hidden');
+            submitBtn.disabled = false;
+            
+            if (!uploadResponse.ok || data.status === 'error') {
+                throw new Error(data.error || `Upload failed: ${uploadResponse.status}`);
+            }
+            
+            console.log('✅ Upload successful, displaying results');
+            displayResults(data);
+            
+        } catch (error) {
+            console.error('❌ Upload error:', error);
+            uploadProgressDiv.classList.add('hidden');
+            submitBtn.disabled = false;
+            results.classList.remove('hidden');
+            resultContent.innerHTML = `
+                <div class="error-message">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
+        }
+    });
+    
+    console.log('✅ Invoice upload initialization complete');
+}
+
 checkGmailStatus();
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -701,91 +838,6 @@ if (urlParams.get('gmail_connected') === 'true') {
     window.history.replaceState({}, document.title, window.location.pathname);
     checkGmailStatus();
 }
-
-uploadArea.addEventListener('click', () => fileInput.click());
-
-uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadArea.classList.add('dragover');
-});
-
-uploadArea.addEventListener('dragleave', () => {
-    uploadArea.classList.remove('dragover');
-});
-
-uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        handleFileSelect(files[0]);
-    }
-});
-
-fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleFileSelect(e.target.files[0]);
-    }
-});
-
-function handleFileSelect(file) {
-    selectedFile = file;
-    uploadArea.querySelector('p').textContent = `Selected: ${file.name}`;
-    submitBtn.disabled = false;
-}
-
-uploadForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    if (!selectedFile) return;
-    
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    const filename = selectedFile.name;
-    
-    // Hide old UI elements
-    loading.classList.add('hidden');
-    results.classList.add('hidden');
-    submitBtn.disabled = true;
-    
-    // Show progress container
-    const uploadProgressDiv = document.getElementById('uploadProgress');
-    uploadProgressDiv.classList.remove('hidden');
-    uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Uploading file...</p></div>';
-    
-    try {
-        // Upload and process file
-        uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Processing invoice...</p></div>';
-        
-        const uploadResponse = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const data = await uploadResponse.json();
-        
-        uploadProgressDiv.classList.add('hidden');
-        submitBtn.disabled = false;
-        
-        if (!uploadResponse.ok || data.status === 'error') {
-            throw new Error(data.error || `Upload failed: ${uploadResponse.status}`);
-        }
-        
-        displayResults(data);
-        
-    } catch (error) {
-        uploadProgressDiv.classList.add('hidden');
-        submitBtn.disabled = false;
-        results.classList.remove('hidden');
-        resultContent.innerHTML = `
-            <div class="error-message">
-                <strong>Error:</strong> ${error.message}
-            </div>
-        `;
-        console.error('Upload error:', error);
-    }
-});
 
 function displayResults(data) {
     results.classList.remove('hidden');
@@ -1522,9 +1574,11 @@ let totalVendorPages = 0;
 let allVendors = [];
 let filteredVendors = [];
 let searchTimeout = null;
+let currentSearchTerm = '';
 
-async function loadVendorList(page = 1) {
+async function loadVendorList(page = 1, searchTerm = '') {
     currentVendorPage = page;
+    currentSearchTerm = searchTerm;
     
     vendorLoading.classList.remove('hidden');
     vendorEmptyState.classList.add('hidden');
@@ -1532,7 +1586,12 @@ async function loadVendorList(page = 1) {
     vendorPagination.classList.add('hidden');
     
     try {
-        const response = await fetch(`/api/vendors/list?page=${page}&limit=${currentVendorLimit}`);
+        let url = `/api/vendors/list?page=${page}&limit=${currentVendorLimit}`;
+        if (searchTerm) {
+            url += `&search=${encodeURIComponent(searchTerm)}`;
+        }
+        
+        const response = await fetch(url);
         const data = await response.json();
         
         vendorLoading.classList.add('hidden');
@@ -1740,13 +1799,13 @@ window.toggleVendorDetails = function(vendorId) {
 
 vendorPrevBtn.addEventListener('click', () => {
     if (currentVendorPage > 1) {
-        loadVendorList(currentVendorPage - 1);
+        loadVendorList(currentVendorPage - 1, currentSearchTerm);
     }
 });
 
 vendorNextBtn.addEventListener('click', () => {
     if (currentVendorPage < totalVendorPages) {
-        loadVendorList(currentVendorPage + 1);
+        loadVendorList(currentVendorPage + 1, currentSearchTerm);
     }
 });
 
@@ -1754,19 +1813,11 @@ vendorSearchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     
     searchTimeout = setTimeout(() => {
-        const searchTerm = e.target.value.toLowerCase().trim();
+        const searchTerm = e.target.value.trim();
         
-        if (searchTerm === '') {
-            filteredVendors = allVendors;
-        } else {
-            filteredVendors = allVendors.filter(vendor => 
-                vendor.global_name.toLowerCase().includes(searchTerm) ||
-                (vendor.normalized_name && vendor.normalized_name.toLowerCase().includes(searchTerm)) ||
-                vendor.vendor_id.toLowerCase().includes(searchTerm)
-            );
-        }
-        
-        renderVendorList(filteredVendors);
+        // Perform server-side search by calling API with search parameter
+        // This searches across ALL vendors in BigQuery, not just current page
+        loadVendorList(1, searchTerm);
     }, 300);
 });
 

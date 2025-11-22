@@ -247,22 +247,41 @@ class BigQueryService:
             print(f"❌ Error searching vendors: {e}")
             return []
     
-    def get_all_vendors(self, limit=20, offset=0):
+    def get_all_vendors(self, limit=20, offset=0, search_term=None):
         """
-        Get all vendors with pagination
+        Get all vendors with pagination and optional search
         
         Args:
             limit: Number of vendors per page (default 20)
             offset: Starting offset for pagination (default 0)
+            search_term: Optional search string to filter vendors (default None)
         
         Returns:
             dict with 'vendors' list and 'total_count' integer
         """
         
+        # Build WHERE clause for search
+        where_clause = ""
+        query_params = [
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        
+        if search_term:
+            # Search across global_name, normalized_name, and vendor_id
+            search_pattern = f"%{search_term.lower()}%"
+            where_clause = """
+            WHERE LOWER(global_name) LIKE @search
+               OR LOWER(normalized_name) LIKE @search
+               OR LOWER(vendor_id) LIKE @search
+            """
+            query_params.append(bigquery.ScalarQueryParameter("search", "STRING", search_pattern))
+        
         # Get total count
         count_query = f"""
         SELECT COUNT(*) as total
         FROM `{self.full_table_id}`
+        {where_clause}
         """
         
         # Get paginated vendors
@@ -279,25 +298,33 @@ class BigQueryService:
             last_updated,
             created_at
         FROM `{self.full_table_id}`
+        {where_clause}
         ORDER BY last_updated DESC
         LIMIT @limit
         OFFSET @offset
         """
         
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                bigquery.ScalarQueryParameter("offset", "INT64", offset),
-            ]
-        )
-        
         try:
+            # Create separate job configs for count and data queries
+            # COUNT query only needs @search parameter (if search_term exists)
+            if search_term:
+                count_job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("search", "STRING", f"%{search_term.lower()}%")
+                    ]
+                )
+            else:
+                count_job_config = None
+            
+            # Data query needs @limit, @offset, and @search (if search_term exists)
+            data_job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+            
             # Get total count
-            count_result = self.client.query(count_query).result()
+            count_result = self.client.query(count_query, job_config=count_job_config).result()
             total_count = list(count_result)[0].total
             
             # Get vendors
-            results = self.client.query(vendors_query, job_config=job_config).result()
+            results = self.client.query(vendors_query, job_config=data_job_config).result()
             vendors = []
             
             for row in results:

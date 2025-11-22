@@ -1096,11 +1096,12 @@ def search_vendors():
 @app.route('/api/vendors/list', methods=['GET'])
 def list_vendors():
     """
-    Get paginated list of all vendors from BigQuery
+    Get paginated list of all vendors from BigQuery with optional search
     
     Query parameters:
         - page: Page number (default: 1)
         - limit: Items per page (default: 20)
+        - search: Optional search term to filter vendors
     
     Returns:
         {
@@ -1108,12 +1109,14 @@ def list_vendors():
             "total_count": int,
             "page": int,
             "limit": int,
-            "total_pages": int
+            "total_pages": int,
+            "search": str (if provided)
         }
     """
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
+        search_term = request.args.get('search', '').strip()
         
         # Validate parameters
         if page < 1:
@@ -1124,21 +1127,31 @@ def list_vendors():
         # Calculate offset
         offset = (page - 1) * limit
         
-        # Get vendors from BigQuery
+        # Get vendors from BigQuery with optional search
         bq_service = get_bigquery_service()
-        result = bq_service.get_all_vendors(limit=limit, offset=offset)
+        result = bq_service.get_all_vendors(
+            limit=limit, 
+            offset=offset,
+            search_term=search_term if search_term else None
+        )
         
         # Calculate total pages
         total_count = result['total_count']
         total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
         
-        return jsonify({
+        response = {
             'vendors': result['vendors'],
             'total_count': total_count,
             'page': page,
             'limit': limit,
             'total_pages': total_pages
-        }), 200
+        }
+        
+        # Include search term in response if provided
+        if search_term:
+            response['search'] = search_term
+        
+        return jsonify(response), 200
         
     except Exception as e:
         print(f"❌ Error listing vendors: {e}")
