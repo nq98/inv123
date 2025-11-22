@@ -5,6 +5,7 @@ load_dotenv()
 
 class Config:
     GOOGLE_CLOUD_PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT_ID', 'invoicereader-477008')
+    GOOGLE_CLOUD_PROJECT_NUMBER = os.getenv('GOOGLE_CLOUD_PROJECT_NUMBER', '437918215047')
     GCS_INPUT_BUCKET = os.getenv('GCS_INPUT_BUCKET') or os.getenv('GCS_BUCKET_NAME', 'payouts-invoices')
     REGION = os.getenv('REGION', 'us-central1')
     
@@ -28,6 +29,7 @@ class Config:
     
     @property
     def VERTEX_SEARCH_SERVING_CONFIG(self):
-        return f"projects/{self.GOOGLE_CLOUD_PROJECT_ID}/locations/global/collections/{self.VERTEX_SEARCH_COLLECTION}/dataStores/{self.VERTEX_SEARCH_DATA_STORE_ID}/servingConfigs/default_search"
+        project = self.GOOGLE_CLOUD_PROJECT_NUMBER
+        return f"projects/{project}/locations/global/collections/{self.VERTEX_SEARCH_COLLECTION}/dataStores/{self.VERTEX_SEARCH_DATA_STORE_ID}/servingConfigs/default_search"
 
 config = Config()

@@ -24,7 +24,7 @@ Rule 3 (Global Dates): If the invoice is from the US, read dates as MM/DD/YYYY. 
 
 Rule 4: Return ONLY valid JSON. No markdown, no code blocks, just pure JSON."""
         
-        self.model_name = 'gemini-1.5-pro'
+        self.model_name = 'gemini-2.0-flash-exp'
     
     def validate_invoice(self, gcs_uri, raw_text, extracted_entities, rag_context):
         """
@@ -76,6 +76,7 @@ Return ONLY valid JSON matching this schema:
 """
         
         max_retries = 2
+        response = None
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
@@ -122,11 +123,11 @@ Return ONLY valid JSON matching this schema:
                 if attempt < max_retries - 1:
                     continue
                 
-                response_text = response.text if 'response' in locals() and response and hasattr(response, 'text') else "No response"
+                response_text = response.text if response and hasattr(response, 'text') else "No response"
                 print(f"Raw response: {response_text}")
                 return {
                     "error": "Failed to parse Gemini response after retries",
-                    "raw_response": response_text[:500],
+                    "raw_response": response_text[:500] if response_text else "No response",
                     "vendor": {"name": "Unknown", "address": "", "matched_db_id": None},
                     "validation_flags": ["JSON parsing failed"]
                 }
