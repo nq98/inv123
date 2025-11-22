@@ -147,7 +147,7 @@ def process_invoice():
 @app.route('/upload', methods=['POST'])
 def upload_invoice():
     """
-    Upload and process an invoice file
+    Upload and process an invoice file with automatic vendor matching
     """
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -167,9 +167,188 @@ def upload_invoice():
     ext = filename.rsplit('.', 1)[1].lower()
     mime_type = MIME_TYPES.get(ext, 'application/pdf')
     
-    result = get_processor().process_local_file(filepath, mime_type)
+    # FIX ISSUE 1: Cache processor instance to prevent re-entrancy deadlock
+    processor = get_processor()
+    result = processor.process_local_file(filepath, mime_type)
     
     os.remove(filepath)
+    
+    # AUTOMATIC VENDOR MATCHING: Trigger vendor matching if invoice extraction succeeded
+    vendor_match_result = None
+    if result.get('status') == 'completed' and 'validated_data' in result:
+        validated_data = result.get('validated_data', {})
+        vendor_data = validated_data.get('vendor', {})
+        
+        # Extract vendor information from invoice
+        vendor_name = vendor_data.get('name', '')
+        tax_id = vendor_data.get('taxId', '') or vendor_data.get('tax_id', '')
+        address = vendor_data.get('address', '')
+        country = vendor_data.get('country', '')
+        email = vendor_data.get('email', '')
+        phone = vendor_data.get('phone', '')
+        
+        # Extract email domain if email is available
+        email_domain = ''
+        if email and '@' in email:
+            email_domain = '@' + email.split('@')[1]
+        
+        # Only run vendor matching if we have at least a vendor name
+        if vendor_name and vendor_name != 'Unknown':
+            print(f"\n{'='*60}")
+            print(f"AUTOMATIC VENDOR MATCHING: {vendor_name}")
+            print(f"{'='*60}\n")
+            
+            try:
+                # FIX ISSUE 3: Add logging for troubleshooting
+                print(f"⚡ Starting automatic vendor matching for vendor: {vendor_name}")
+                
+                # FIX ISSUE 1: Reuse cached processor instance (no re-entrancy)
+                bigquery_service = get_bigquery_service()
+                
+                # Create VendorMatcher instance
+                matcher = VendorMatcher(
+                    bigquery_service=bigquery_service,
+                    vertex_search_service=processor.vertex_search_service,
+                    gemini_service=processor.gemini_service
+                )
+                
+                # Prepare vendor data for matching
+                matching_input = {
+                    'vendor_name': vendor_name,
+                    'tax_id': tax_id or 'Unknown',
+                    'address': address or '',
+                    'email_domain': email_domain or '',
+                    'phone': phone or '',
+                    'country': country or ''
+                }
+                
+                # Run vendor matching
+                match_result = matcher.match_vendor(matching_input)
+                
+                # Build vendor match response with invoice and database vendor data
+                verdict = match_result.get('verdict')
+                vendor_id = match_result.get('vendor_id')
+                
+                vendor_match_result = {
+                    'verdict': verdict,
+                    'vendor_id': vendor_id,
+                    'confidence': match_result.get('confidence'),
+                    'reasoning': match_result.get('reasoning'),
+                    'method': match_result.get('method'),
+                    'risk_analysis': match_result.get('risk_analysis'),
+                    'database_updates': match_result.get('database_updates', {}),
+                    'parent_child_logic': match_result.get('parent_child_logic', {
+                        'is_subsidiary': False,
+                        'parent_company_detected': None
+                    }),
+                    'invoice_vendor': {
+                        'name': vendor_name,
+                        'tax_id': tax_id or 'Unknown',
+                        'address': address or 'Unknown',
+                        'country': country or 'Unknown',
+                        'email': email or 'Unknown',
+                        'phone': phone or 'Unknown'
+                    },
+                    'database_vendor': None  # FIX ISSUE 1: Always initialize, will be populated if MATCH
+                }
+                
+                # If match found, fetch database vendor details
+                if verdict == 'MATCH' and vendor_id:
+                    try:
+                        vendor_id = match_result['vendor_id']
+                        print(f"✓ Fetching database vendor details for {vendor_id}...")
+                        
+                        # Query BigQuery for vendor details
+                        query = f"""
+                        SELECT 
+                            vendor_id,
+                            global_name,
+                            normalized_name,
+                            emails,
+                            domains,
+                            countries,
+                            custom_attributes
+                        FROM `{bigquery_service.full_table_id}`
+                        WHERE vendor_id = @vendor_id
+                        LIMIT 1
+                        """
+                        
+                        from google.cloud import bigquery as bq
+                        job_config = bq.QueryJobConfig(
+                            query_parameters=[
+                                bq.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
+                            ]
+                        )
+                        
+                        results = list(bigquery_service.client.query(query, job_config=job_config).result())
+                        
+                        if results:
+                            row = results[0]
+                            
+                            # Parse custom attributes if it's a JSON string
+                            custom_attrs = row.custom_attributes
+                            if isinstance(custom_attrs, str):
+                                try:
+                                    custom_attrs = json.loads(custom_attrs)
+                                except:
+                                    custom_attrs = {}
+                            
+                            # Extract addresses from custom attributes
+                            addresses = []
+                            if custom_attrs and custom_attrs.get('address'):
+                                addresses.append(custom_attrs['address'])
+                            
+                            vendor_match_result['database_vendor'] = {
+                                'vendor_id': row.vendor_id,
+                                'name': row.global_name,
+                                'normalized_name': row.normalized_name or '',
+                                'tax_id': custom_attrs.get('tax_id', 'Unknown') if custom_attrs else 'Unknown',
+                                'addresses': addresses,
+                                'countries': row.countries if isinstance(row.countries, list) else [],
+                                'emails': row.emails if isinstance(row.emails, list) else [],
+                                'domains': row.domains if isinstance(row.domains, list) else []
+                            }
+                        
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
+                        vendor_match_result['database_vendor_error'] = str(e)
+                
+                print(f"✓ Vendor matching complete: {match_result.get('verdict')}")
+                
+            except Exception as e:
+                # FIX ISSUE 3: Add explicit error logging
+                print(f"❌ Vendor matching failed: {e}")
+                
+                # FIX ISSUE 2: Complete error fallback with all required fields
+                vendor_match_result = {
+                    'verdict': 'ERROR',
+                    'vendor_id': None,
+                    'confidence': 0.0,
+                    'method': 'ERROR',
+                    'reasoning': f'Vendor matching error: {str(e)}',
+                    'risk_analysis': 'HIGH',
+                    'database_updates': {},
+                    'parent_child_logic': {
+                        'is_subsidiary': False,
+                        'parent_company_detected': None
+                    },
+                    'invoice_vendor': {
+                        'name': vendor_name,
+                        'tax_id': tax_id or 'Unknown',
+                        'address': address or 'Unknown',
+                        'country': country or 'Unknown',
+                        'email': email or 'Unknown',
+                        'phone': phone or 'Unknown'
+                    },
+                    'database_vendor': None,
+                    'error': str(e)
+                }
+        else:
+            print("ℹ️ Skipping vendor matching: No vendor name extracted from invoice")
+    
+    # Add vendor matching result to response
+    if vendor_match_result:
+        result['vendor_match'] = vendor_match_result
     
     return jsonify(result), 200
 

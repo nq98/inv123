@@ -626,6 +626,142 @@ function displayResults(data) {
         `;
     }
     
+    // AUTOMATIC VENDOR MATCHING Section
+    if (data.vendor_match) {
+        const vendorMatch = data.vendor_match;
+        const verdict = vendorMatch.verdict || 'UNKNOWN';
+        const confidence = vendorMatch.confidence || 0;
+        const method = vendorMatch.method || 'UNKNOWN';
+        const reasoning = vendorMatch.reasoning || 'No reasoning provided';
+        const invoiceVendor = vendorMatch.invoice_vendor || {};
+        const databaseVendor = vendorMatch.database_vendor || null;
+        
+        // Verdict badge styling
+        let verdictBadge = '';
+        let verdictColor = '';
+        let verdictBg = '';
+        
+        if (verdict === 'MATCH') {
+            verdictBadge = '✅ Vendor Matched';
+            verdictColor = '#2e7d32';
+            verdictBg = '#e8f5e9';
+        } else if (verdict === 'NEW_VENDOR') {
+            verdictBadge = '🆕 New Vendor Detected';
+            verdictColor = '#1565c0';
+            verdictBg = '#e3f2fd';
+        } else if (verdict === 'AMBIGUOUS') {
+            verdictBadge = '⚠️ Ambiguous Match';
+            verdictColor = '#f57c00';
+            verdictBg = '#fff3e0';
+        }
+        
+        // Method badge
+        let methodLabel = '';
+        if (method === 'TAX_ID_HARD_MATCH') {
+            methodLabel = '🔐 Tax ID Match (100%)';
+        } else if (method === 'SEMANTIC_MATCH') {
+            methodLabel = '🧠 AI Semantic Match';
+        } else if (method === 'NEW_VENDOR') {
+            methodLabel = '🆕 Not in Database';
+        }
+        
+        html += `
+            <div class="result-section" style="border: 2px solid ${verdictColor}; background: linear-gradient(to right, ${verdictBg}, #ffffff);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: ${verdictColor};">⚖️ Automatic Vendor Matching</h3>
+                    <span style="padding: 8px 16px; background: ${verdictColor}; color: white; border-radius: 20px; font-weight: bold; font-size: 14px;">
+                        ${verdictBadge}
+                    </span>
+                </div>
+                
+                <!-- Matching Method and Confidence -->
+                <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                    <div style="flex: 1; background: white; padding: 12px; border-radius: 6px; border-left: 3px solid ${verdictColor};">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Matching Method</div>
+                        <div style="font-weight: bold; color: ${verdictColor};">${methodLabel}</div>
+                    </div>
+                    <div style="flex: 1; background: white; padding: 12px; border-radius: 6px; border-left: 3px solid ${verdictColor};">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Confidence Score</div>
+                        <div style="font-weight: bold; color: ${verdictColor};">
+                            ${(confidence * 100).toFixed(1)}%
+                            <div style="background: #e0e0e0; height: 6px; border-radius: 3px; margin-top: 4px; overflow: hidden;">
+                                <div style="background: ${verdictColor}; height: 100%; width: ${confidence * 100}%; transition: width 0.3s;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Side-by-Side Comparison -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <!-- Left: What the Invoice Says -->
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px solid #dee2e6;">
+                        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 18px; margin-right: 8px;">📄</span>
+                            <h4 style="margin: 0; color: #495057; font-size: 15px;">Invoice Says</h4>
+                        </div>
+                        <div style="font-size: 13px; color: #333; line-height: 1.8;">
+                            <div><strong>Name:</strong> ${invoiceVendor.name || 'Unknown'}</div>
+                            <div style="margin-top: 6px;"><strong>Tax ID:</strong> ${invoiceVendor.tax_id || 'Unknown'}</div>
+                            <div style="margin-top: 6px;"><strong>Address:</strong> ${invoiceVendor.address || 'Unknown'}</div>
+                            <div style="margin-top: 6px;"><strong>Country:</strong> ${invoiceVendor.country || 'Unknown'}</div>
+                            ${invoiceVendor.email && invoiceVendor.email !== 'Unknown' ? `<div style="margin-top: 6px;"><strong>Email:</strong> ${invoiceVendor.email}</div>` : ''}
+                            ${invoiceVendor.phone && invoiceVendor.phone !== 'Unknown' ? `<div style="margin-top: 6px;"><strong>Phone:</strong> ${invoiceVendor.phone}</div>` : ''}
+                        </div>
+                    </div>
+                    
+                    <!-- Right: What the Database Says -->
+                    <div style="background: ${databaseVendor ? '#e8f5e9' : '#fff3e0'}; padding: 15px; border-radius: 8px; border: 2px solid ${databaseVendor ? '#4caf50' : '#ff9800'};">
+                        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 18px; margin-right: 8px;">${databaseVendor ? '💾' : '❓'}</span>
+                            <h4 style="margin: 0; color: ${databaseVendor ? '#2e7d32' : '#e65100'}; font-size: 15px;">Database Says</h4>
+                        </div>
+                        ${databaseVendor && databaseVendor.name ? `
+                            <div style="font-size: 13px; color: #333; line-height: 1.8;">
+                                <div><strong>Name:</strong> ${escapeHtml(databaseVendor.name)}</div>
+                                <div style="margin-top: 6px;"><strong>Vendor ID:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${escapeHtml(databaseVendor.vendor_id || 'N/A')}</code></div>
+                                <div style="margin-top: 6px;"><strong>Tax ID:</strong> ${escapeHtml(databaseVendor.tax_id || 'Unknown')}</div>
+                                ${databaseVendor.addresses && Array.isArray(databaseVendor.addresses) && databaseVendor.addresses.length > 0 ? `<div style="margin-top: 6px;"><strong>Address:</strong> ${escapeHtml(databaseVendor.addresses[0])}</div>` : ''}
+                                ${databaseVendor.countries && Array.isArray(databaseVendor.countries) && databaseVendor.countries.length > 0 ? `<div style="margin-top: 6px;"><strong>Countries:</strong> ${databaseVendor.countries.map(c => escapeHtml(c)).join(', ')}</div>` : ''}
+                                ${databaseVendor.emails && Array.isArray(databaseVendor.emails) && databaseVendor.emails.length > 0 ? `<div style="margin-top: 6px;"><strong>Emails:</strong> ${databaseVendor.emails.map(e => escapeHtml(e)).join(', ')}</div>` : ''}
+                                ${databaseVendor.domains && Array.isArray(databaseVendor.domains) && databaseVendor.domains.length > 0 ? `<div style="margin-top: 6px;"><strong>Domains:</strong> ${databaseVendor.domains.map(d => escapeHtml(d)).join(', ')}</div>` : ''}
+                            </div>
+                        ` : `
+                            <div style="font-size: 13px; color: #666; line-height: 1.8; font-style: italic;">
+                                Not found in database
+                            </div>
+                        `}
+                    </div>
+                </div>
+                
+                <!-- Supreme Judge Reasoning -->
+                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 16px; margin-right: 8px;">⚖️</span>
+                        <strong style="color: #667eea;">Supreme Judge Reasoning</strong>
+                    </div>
+                    <p style="margin: 0; color: #555; font-size: 14px; line-height: 1.6;">${reasoning}</p>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    ${verdict === 'MATCH' ? `
+                        <button style="padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;" disabled>
+                            ✅ Vendor Matched
+                        </button>
+                    ` : verdict === 'NEW_VENDOR' ? `
+                        <button onclick="alert('Add to Database feature coming soon!')" style="padding: 10px 20px; background: #2196f3; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                            ➕ Add Vendor to Database
+                        </button>
+                    ` : verdict === 'AMBIGUOUS' ? `
+                        <button onclick="alert('Manual review feature coming soon!')" style="padding: 10px 20px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                            ⚠️ Review Match
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
     // Invoice Details Section
     if (displayData.invoiceNumber || displayData.issueDate) {
         html += `
@@ -1482,12 +1618,13 @@ function displayMatchResults(result) {
         verdictBg = '#ffebee';
     }
     
-    // Risk color coding
+    // Risk color coding with defensive null check
     let riskColor, riskBg;
-    if (risk_analysis === 'NONE' || risk_analysis === 'LOW') {
+    const safeRiskAnalysis = risk_analysis || 'UNKNOWN';
+    if (safeRiskAnalysis === 'NONE' || safeRiskAnalysis === 'LOW') {
         riskColor = '#2e7d32';
         riskBg = '#e8f5e9';
-    } else if (risk_analysis === 'MEDIUM') {
+    } else if (safeRiskAnalysis === 'MEDIUM') {
         riskColor = '#f57c00';
         riskBg = '#fff3e0';
     } else {
@@ -1571,12 +1708,14 @@ function displayMatchResults(result) {
                     </div>
                 </div>
                 
-                <div>
-                    <div style="font-size: 13px; color: #666; font-weight: 600; margin-bottom: 5px;">RISK LEVEL</div>
-                    <div style="background: ${riskBg}; color: ${riskColor}; padding: 6px 16px; border-radius: 6px; font-weight: 700; display: inline-block;">
-                        ${risk_analysis}
+                ${safeRiskAnalysis && safeRiskAnalysis !== 'UNKNOWN' ? `
+                    <div>
+                        <div style="font-size: 13px; color: #666; font-weight: 600; margin-bottom: 5px;">RISK LEVEL</div>
+                        <div style="background: ${riskBg}; color: ${riskColor}; padding: 6px 16px; border-radius: 6px; font-weight: 700; display: inline-block;">
+                            ${safeRiskAnalysis}
+                        </div>
                     </div>
-                </div>
+                ` : ''}
             </div>
         </div>
         

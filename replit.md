@@ -68,6 +68,16 @@ A 3-step semantic matching system that links invoices to the correct vendor ID i
 - **Output**: verdict, vendor_id, confidence, reasoning, risk_analysis, database_updates, method
 - **Method Values**: TAX_ID_HARD_MATCH, SEMANTIC_MATCH, or NEW_VENDOR (strictly enforced)
 
+**Automatic Integration (Nov 22, 2025)**:
+The vendor matching system is now automatically integrated into the invoice upload pipeline:
+- When a user uploads an invoice via `/upload`, vendor matching runs automatically after extraction
+- No manual API calls needed - matching happens seamlessly in the background
+- Results include both `validated_data` (invoice extraction) and `vendor_match` (matching results)
+- UI displays side-by-side comparison: "Invoice Says" vs "Database Says"
+- Visual indicators show match quality (confidence meter, verdict badges, Supreme Judge reasoning)
+- Action buttons appear based on verdict: MATCH (green checkmark), NEW_VENDOR (add button), AMBIGUOUS (review button)
+- Error handling ensures invoice extraction results are always shown, even if matching fails
+
 ### Feature Specifications
 -   **Multi-Language Support**: Handles over 40 languages for both invoice extraction and CSV mapping, including German, Spanish, and Hebrew.
 -   **Secure OAuth**: Implemented for Gmail integration with specific configurations for Replit's environment to prevent "State mismatch" errors and ensure secure cookie handling.
