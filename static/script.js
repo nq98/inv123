@@ -168,148 +168,6 @@ function showProgressWithSteps(containerId, step, totalSteps, message, steps) {
     container.innerHTML = html;
 }
 
-// ==================== SSE STREAMING HELPERS ====================
-
-/**
- * Stream SSE from a POST endpoint (manual parsing since EventSource only supports GET)
- * @param {string} url - The URL to fetch from
- * @param {string} method - HTTP method (POST, GET)
- * @param {Object|null} body - Request body (will be JSON stringified)
- * @param {Function} onProgress - Callback for progress events
- * @param {Function} onComplete - Callback for complete events
- * @param {Function} onError - Callback for error events
- */
-async function streamSSE(url, method, body, onProgress, onComplete, onError) {
-    try {
-        const response = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: body ? JSON.stringify(body) : null
-        });
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-            const {done, value} = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, {stream: true});
-            
-            // Split by double newline (SSE message boundary)
-            const messages = buffer.split('\n\n');
-            buffer = messages.pop() || ''; // Keep incomplete message in buffer
-
-            for (const message of messages) {
-                if (!message.trim()) continue;
-                
-                // Parse SSE message format:
-                // event: progress
-                // data: {...}
-                const lines = message.split('\n');
-                let eventType = 'message'; // default
-                let dataLines = []; // Collect all data: lines for multi-line JSON support
-                
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        eventType = line.substring(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        dataLines.push(line.substring(6)); // Collect each data: line
-                    }
-                }
-                
-                // Join all data lines and parse (handles multi-line JSON)
-                if (dataLines.length > 0) {
-                    try {
-                        const jsonStr = dataLines.join('\n'); // Multi-line JSON support
-                        const data = JSON.parse(jsonStr);
-                        
-                        // Dispatch based on event type
-                        if (eventType === 'progress' && onProgress) {
-                            onProgress(data);
-                        } else if (eventType === 'complete' && onComplete) {
-                            onComplete(data);
-                        } else if (eventType === 'error' && onError) {
-                            onError(data);
-                        } else if (eventType === 'funnel_stats' && onProgress) {
-                            onProgress({type: 'funnel_stats', ...data});
-                        }
-                    } catch (e) {
-                        console.error('Error parsing SSE data:', e, dataLines);
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('SSE stream error:', error);
-        if (onError) {
-            onError({error: error.message});
-        }
-    }
-}
-
-/**
- * Step tracker to manage progress state across SSE events
- * @param {number} totalSteps - Total number of steps in the process
- * @returns {Object} - Step tracker object with updateStep and getStepsHTML methods
- */
-function createStepTracker(totalSteps) {
-    const steps = [];
-    
-    // Initialize all steps as pending with null messages (will be set from backend)
-    for (let i = 0; i < totalSteps; i++) {
-        steps.push({
-            number: i + 1,
-            message: null, // Will be set from backend
-            status: 'pending',
-            details: ''
-        });
-    }
-    
-    return {
-        steps: steps,
-        updateStep: function(stepNum, message, details, status) {
-            if (stepNum > 0 && stepNum <= totalSteps) {
-                const step = this.steps[stepNum - 1];
-                if (message) step.message = message; // Use backend message
-                if (details) step.details = details;
-                step.status = status || 'complete';
-                
-                // Mark previous steps as complete
-                for (let i = 0; i < stepNum - 1; i++) {
-                    if (this.steps[i].status === 'pending') {
-                        this.steps[i].status = 'complete';
-                    }
-                }
-            }
-        },
-        getStepsHTML: function() {
-            return this.steps.map(step => {
-                const icon = step.status === 'complete' ? '✓' : 
-                           step.status === 'current' ? '⏳' : 
-                           step.status === 'error' ? '✗' : '⬜';
-                           
-                const statusClass = `step-${step.status}`;
-                const label = step.message || `Step ${step.number}`; // Fallback to generic label
-                const details = step.details ? ` - ${step.details}` : '';
-                
-                return `<div class="${statusClass}">${icon} ${label}${details}</div>`;
-            }).join('');
-        },
-        // Backward compatibility: convert new format to old format
-        getSteps: function() {
-            return this.steps.map(step => ({
-                message: step.message || `Step ${step.number}`,
-                completed: step.status === 'complete',
-                current: step.status === 'current',
-                error: step.status === 'error',
-                details: step.details
-            }));
-        }
-    };
-}
-
 // ==================== INVOICE UPLOAD ====================
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
@@ -897,64 +755,24 @@ uploadForm.addEventListener('submit', async (e) => {
     uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Uploading file...</p></div>';
     
     try {
-        // Step 1: Upload file to server
+        // Upload and process file
+        uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Processing invoice...</p></div>';
+        
         const uploadResponse = await fetch('/upload', {
             method: 'POST',
             body: formData
         });
         
-        if (!uploadResponse.ok) {
-            throw new Error(`Upload failed: ${uploadResponse.status}`);
+        const data = await uploadResponse.json();
+        
+        uploadProgressDiv.classList.add('hidden');
+        submitBtn.disabled = false;
+        
+        if (!uploadResponse.ok || data.status === 'error') {
+            throw new Error(data.error || `Upload failed: ${uploadResponse.status}`);
         }
         
-        // Step 2: Stream processing progress via SSE
-        const encodedFilename = btoa(filename);
-        const stepTracker = createStepTracker(7);
-        
-        await streamSSE(
-            `/upload/stream?filename=${encodedFilename}`,
-            'GET',
-            null,
-            // onProgress
-            (data) => {
-                const step = data.step || 0;
-                const totalSteps = data.total_steps || 7;
-                const message = data.message || 'Processing...';
-                const details = data.details || null;
-                
-                // Use new updateStep API with backend-provided messages
-                stepTracker.updateStep(
-                    step,
-                    message,      // Backend-provided message
-                    details,      // Backend-provided details
-                    step === totalSteps ? 'complete' : 'current'
-                );
-                showProgressWithSteps('uploadProgress', step, totalSteps, message, stepTracker.getSteps());
-            },
-            // onComplete
-            (data) => {
-                uploadProgressDiv.classList.add('hidden');
-                submitBtn.disabled = false;
-                
-                if (data.result) {
-                    displayResults(data.result);
-                } else {
-                    results.classList.remove('hidden');
-                    resultContent.innerHTML = '<div class="success-badge">✓ Processing Complete</div>';
-                }
-            },
-            // onError
-            (data) => {
-                uploadProgressDiv.classList.add('hidden');
-                submitBtn.disabled = false;
-                results.classList.remove('hidden');
-                resultContent.innerHTML = `
-                    <div class="error-message">
-                        <strong>Error:</strong> ${data.message || data.error || 'Unknown error occurred'}
-                    </div>
-                `;
-            }
-        );
+        displayResults(data);
         
     } catch (error) {
         uploadProgressDiv.classList.add('hidden');
@@ -1575,70 +1393,43 @@ csvImportBtn.addEventListener('click', async () => {
     // Hide previous results
     csvImportResults.classList.add('hidden');
     
-    const stepTracker = createStepTracker(7);
-    
     try {
-        await streamSSE(
-            '/api/vendors/csv/import/stream',
-            'POST',
-            {
+        csvImportProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Importing to BigQuery...</p></div>';
+        
+        const importResponse = await fetch('/api/vendors/csv/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 uploadId: csvAnalysisData.uploadId,
                 columnMapping: csvAnalysisData.analysis.columnMapping,
                 sourceSystem: csvAnalysisData.analysis.sourceSystemGuess || 'csv_upload'
-            },
-            // onProgress
-            (data) => {
-                const step = data.step || 0;
-                const totalSteps = data.total_steps || 7;
-                const message = data.message || 'Processing...';
-                const details = data.details || null;
-                const completed = data.completed || false;
-                
-                stepTracker.update(step, message, details, completed, false);
-                showProgressWithSteps('csvImportProgress', step, totalSteps, message, stepTracker.getSteps());
-            },
-            // onComplete
-            (data) => {
-                csvImportProgressDiv.classList.add('hidden');
-                csvImportBtn.disabled = false;
-                csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
-                
-                if (data.result) {
-                    displayCsvImportResults(data.result);
-                } else {
-                    csvImportResults.innerHTML = '<div class="success-badge">✓ Import Complete</div>';
-                    csvImportResults.classList.remove('hidden');
-                }
-                
-                // Reset form state
-                csvMappingReview.classList.add('hidden');
-                csvUploadArea.querySelector('p').textContent = 'Drag & drop your vendor CSV here or click to browse';
-                csvSubmitBtn.disabled = true;
-                selectedCsvFile = null;
-                csvAnalysisData = null;
-            },
-            // onError
-            (data) => {
-                csvImportProgressDiv.classList.add('hidden');
-                csvImportBtn.disabled = false;
-                csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
-                
-                csvImportResults.innerHTML = `
-                    <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
-                        <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Import Failed</h3>
-                        <p style="margin: 0; color: #666;">${data.message || 'Unknown error occurred'}</p>
-                    </div>
-                `;
-                csvImportResults.classList.remove('hidden');
-            }
-        );
+            })
+        });
+        
+        const data = await importResponse.json();
+        
+        csvImportProgressDiv.classList.add('hidden');
+        csvImportBtn.disabled = false;
+        csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
+        
+        if (!importResponse.ok || data.error) {
+            throw new Error(data.error || 'Import failed');
+        }
+        
+        displayCsvImportResults(data);
         
     } catch (error) {
         csvImportProgressDiv.classList.add('hidden');
         csvImportBtn.disabled = false;
         csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
         
-        alert('CSV import failed: ' + error.message);
+        csvImportResults.innerHTML = `
+            <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
+                <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Import Failed</h3>
+                <p style="margin: 0; color: #666;">${error.message}</p>
+            </div>
+        `;
+        csvImportResults.classList.remove('hidden');
     }
 });
 
@@ -2012,62 +1803,37 @@ vendorMatchForm.addEventListener('submit', async (e) => {
     // Show progress container
     const vendorMatchProgressDiv = document.getElementById('vendorMatchProgress');
     vendorMatchProgressDiv.classList.remove('hidden');
-    vendorMatchProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Starting vendor matching...</p></div>';
-    
-    const stepTracker = createStepTracker(4);
+    vendorMatchProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Matching vendor...</p></div>';
     
     try {
-        await streamSSE(
-            '/api/vendor/match/stream',
-            'POST',
-            {
+        const matchResponse = await fetch('/api/vendor/match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 vendor_name: vendorName,
                 tax_id: taxId || null,
                 email_domain: emailDomain || null,
                 country: country || null,
                 address: address || null,
                 phone: phone || null
-            },
-            // onProgress
-            (data) => {
-                const step = data.step || 0;
-                const totalSteps = data.total_steps || 4;
-                const message = data.message || 'Processing...';
-                const details = data.details || null;
-                const completed = data.completed || false;
-                
-                stepTracker.update(step, message, details, completed, false);
-                showProgressWithSteps('vendorMatchProgress', step, totalSteps, message, stepTracker.getSteps());
-            },
-            // onComplete
-            (data) => {
-                vendorMatchProgressDiv.classList.add('hidden');
-                
-                if (data.result) {
-                    displayMatchResults(data.result);
-                } else {
-                    matchResults.innerHTML = '<div class="success-badge">✓ Matching Complete</div>';
-                    matchResults.classList.remove('hidden');
-                }
-            },
-            // onError
-            (data) => {
-                vendorMatchProgressDiv.classList.add('hidden');
-                matchResults.innerHTML = `
-                    <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
-                        <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Matching Failed</h3>
-                        <p style="margin: 0; color: #666;">${data.message || 'Unknown error occurred'}</p>
-                    </div>
-                `;
-                matchResults.classList.remove('hidden');
-            }
-        );
+            })
+        });
+        
+        const data = await matchResponse.json();
+        
+        vendorMatchProgressDiv.classList.add('hidden');
+        
+        if (!matchResponse.ok || !data.success) {
+            throw new Error(data.error || 'Matching failed');
+        }
+        
+        displayMatchResults(data.result);
         
     } catch (error) {
         vendorMatchProgressDiv.classList.add('hidden');
         matchResults.innerHTML = `
             <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
-                <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Network Error</h3>
+                <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Matching Failed</h3>
                 <p style="margin: 0; color: #666;">${error.message}</p>
             </div>
         `;

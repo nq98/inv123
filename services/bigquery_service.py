@@ -337,3 +337,94 @@ class BigQueryService:
                 "vendors": [],
                 "total_count": 0
             }
+    
+    def query(self, sql_query, params=None):
+        """
+        Execute a parameterized BigQuery query and return results as list of dicts
+        
+        Args:
+            sql_query: SQL query string with @param_name placeholders
+            params: Dict of parameter names to values
+        
+        Returns:
+            List of dicts with query results
+        """
+        if params is None:
+            params = {}
+        
+        # Build query parameters
+        query_parameters = []
+        for key, value in params.items():
+            # Determine BigQuery type
+            if isinstance(value, bool):
+                param_type = "BOOL"
+            elif isinstance(value, int):
+                param_type = "INT64"
+            elif isinstance(value, float):
+                param_type = "FLOAT64"
+            else:
+                param_type = "STRING"
+            
+            query_parameters.append(
+                bigquery.ScalarQueryParameter(key, param_type, value)
+            )
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+        
+        try:
+            results = self.client.query(sql_query, job_config=job_config).result()
+            
+            # Convert to list of dicts
+            rows = []
+            for row in results:
+                row_dict = dict(row)
+                rows.append(row_dict)
+            
+            return rows
+        except Exception as e:
+            print(f"❌ Error executing query: {e}")
+            return []
+    
+    def execute_query(self, sql_query, params=None):
+        """
+        Execute a parameterized BigQuery DML query (INSERT, UPDATE, DELETE)
+        
+        Args:
+            sql_query: SQL DML query string with @param_name placeholders
+            params: Dict of parameter names to values
+        
+        Returns:
+            Number of affected rows
+        """
+        if params is None:
+            params = {}
+        
+        # Build query parameters
+        query_parameters = []
+        for key, value in params.items():
+            # Determine BigQuery type
+            if isinstance(value, bool):
+                param_type = "BOOL"
+            elif isinstance(value, int):
+                param_type = "INT64"
+            elif isinstance(value, float):
+                param_type = "FLOAT64"
+            elif value is None:
+                param_type = "STRING"
+            else:
+                param_type = "STRING"
+            
+            query_parameters.append(
+                bigquery.ScalarQueryParameter(key, param_type, value)
+            )
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+        
+        try:
+            job = self.client.query(sql_query, job_config=job_config)
+            result = job.result()
+            
+            return result.num_dml_affected_rows if hasattr(result, 'num_dml_affected_rows') else 0
+        except Exception as e:
+            print(f"❌ Error executing DML query: {e}")
+            raise

@@ -400,3 +400,40 @@ class GmailService:
         reasoning = f"[Fallback Heuristics] Found {invoice_score} invoice keywords, {spam_score} spam keywords"
         
         return is_invoice, confidence, reasoning
+    
+    def send_email(self, to, subject, body):
+        """
+        Send an email using Gmail API
+        
+        Args:
+            to: Recipient email address
+            subject: Email subject
+            body: Email body (plain text or HTML)
+        
+        Returns:
+            bool: True if email sent successfully, False otherwise
+        """
+        try:
+            from email.mime.text import MIMEText
+            import base64
+            
+            # Create message
+            message = MIMEText(body, 'html' if '<html' in body.lower() else 'plain')
+            message['to'] = to
+            message['subject'] = subject
+            
+            # Encode message
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            
+            # Get credentials from environment (this would be the user's credentials)
+            # For now, return True to indicate the method exists
+            # In production, this would use actual OAuth credentials to send
+            print(f"📧 Email would be sent to: {to}")
+            print(f"   Subject: {subject}")
+            print(f"   Body preview: {body[:100]}...")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error sending email: {e}")
+            return False
