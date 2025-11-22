@@ -39,6 +39,7 @@ class InvoiceProcessor:
         
         raw_text = ""
         extracted_entities = {}
+        vendor_name = None
         rag_context = "No vendor history found in database."
         
         try:
@@ -77,19 +78,42 @@ class InvoiceProcessor:
             vendor_name = extract_vendor_name(extracted_entities)
             print(f"✓ Extracted vendor name: {vendor_name}")
             
-            search_results = []
+            # Search for vendor information
+            vendor_search_results = []
+            vendor_context = "No vendor history found in database."
             
             if vendor_name:
-                search_results = self.vertex_search_service.search_vendor(vendor_name)
-                rag_context = self.vertex_search_service.format_context(search_results)
-                print(f"✓ Found {len(search_results)} vendor matches in RAG datastore")
+                vendor_search_results = self.vertex_search_service.search_vendor(vendor_name)
+                vendor_context = self.vertex_search_service.format_context(vendor_search_results)
+                print(f"✓ Found {len(vendor_search_results)} vendor matches in RAG datastore")
             else:
-                print("⚠ No vendor name found, skipping RAG lookup")
+                print("⚠ No vendor name found, skipping vendor lookup")
+            
+            # Search for similar past invoice extractions (RAG self-learning)
+            print("🧠 Searching for similar past invoice extractions...")
+            invoice_extraction_results = self.vertex_search_service.search_similar_invoices(
+                document_text=raw_text,
+                vendor_name=vendor_name,
+                limit=3
+            )
+            
+            invoice_extraction_context = self.vertex_search_service.format_invoice_extraction_context(
+                invoice_extraction_results
+            )
+            
+            if invoice_extraction_results:
+                print(f"✓ Found {len(invoice_extraction_results)} similar past invoice extractions")
+            else:
+                print("ℹ️ No similar past extractions found - this is a new pattern")
+            
+            # Combine vendor context and invoice extraction context
+            rag_context = f"{vendor_context}\n\n{invoice_extraction_context}"
             
             result['layers']['layer2_vertex_search'] = {
                 'status': 'success',
                 'vendor_query': vendor_name,
-                'matches_found': len(search_results)
+                'vendor_matches_found': len(vendor_search_results),
+                'similar_invoices_found': len(invoice_extraction_results)
             }
         except Exception as e:
             print(f"⚠ Vertex Search error (non-critical): {str(e)}")
@@ -133,6 +157,45 @@ class InvoiceProcessor:
             
             result['status'] = 'completed'
             result['validated_data'] = validated_data
+            
+            # FEEDBACK LOOP: Store successful extraction to knowledge base for future learning
+            try:
+                extraction_confidence = validated_data.get('extractionConfidence', 0.0)
+                if extraction_confidence > 0.7 and 'error' not in validated_data:
+                    print("\n🧠 FEEDBACK LOOP: Storing extraction to knowledge base...")
+                    extracted_vendor_name = validated_data.get('vendor', {}).get('name') or vendor_name
+                    
+                    stored = self.vertex_search_service.store_invoice_extraction(
+                        document_text=raw_text,
+                        vendor_name=extracted_vendor_name,
+                        extracted_data=validated_data,
+                        success=True
+                    )
+                    
+                    if stored:
+                        result['layers']['feedback_loop'] = {
+                            'status': 'success',
+                            'stored_to_knowledge_base': True,
+                            'confidence': extraction_confidence
+                        }
+                    else:
+                        result['layers']['feedback_loop'] = {
+                            'status': 'warning',
+                            'stored_to_knowledge_base': False,
+                            'reason': 'Storage failed but extraction succeeded'
+                        }
+                else:
+                    print(f"ℹ️ Skipping knowledge base storage (confidence={extraction_confidence:.2f}, threshold=0.7)")
+                    result['layers']['feedback_loop'] = {
+                        'status': 'skipped',
+                        'reason': f'Confidence too low ({extraction_confidence:.2f} < 0.7) or extraction had errors'
+                    }
+            except Exception as e:
+                print(f"⚠ Feedback loop error (non-critical): {str(e)}")
+                result['layers']['feedback_loop'] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
             
             print(f"\n{'='*60}")
             print("PROCESSING COMPLETE")

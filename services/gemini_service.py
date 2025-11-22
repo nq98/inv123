@@ -106,11 +106,16 @@ Return ONLY valid JSON. No markdown. No commentary."""
     - Rest of World → DD/MM/YYYY
   * Convert ALL dates to ISO 8601: YYYY-MM-DD
 
-**STEP 3: VENDOR NORMALIZATION (RAG Integration)**
-- Compare extracted vendor name with RAG database context
-- If match found → Use canonical spelling from database
-- Extract: full legal name, address, tax ID, country, contact info
-- Flag confidence score for vendor match
+**STEP 3: RAG-POWERED LEARNING (Vendor & Invoice Pattern Matching)**
+- **Vendor Normalization**: Compare extracted vendor name with RAG database context
+  * If match found → Use canonical spelling from database
+  * Extract: full legal name, address, tax ID, country, contact info
+  * Flag confidence score for vendor match
+- **Past Invoice Pattern Learning**: Review similar past invoice extractions from RAG context
+  * If past extractions found → Learn from successful patterns (line item structure, field locations, common values)
+  * Use past extractions to improve confidence and accuracy for familiar vendors
+  * Apply learned patterns: typical invoice number formats, common line item descriptions, usual totals range
+  * If this vendor has been processed before, maintain consistency with past extractions unless there's clear evidence of change
 
 **STEP 4: FINANCIAL RECONCILIATION & MATH VERIFICATION**
 - **Currency Detection**: Detect symbol (₪, $, €, £, ¥) → Convert to ISO 4217 (ILS, USD, EUR, GBP, JPY)
@@ -132,7 +137,7 @@ Return ONLY valid JSON. No markdown. No commentary."""
 
 ### OUTPUT SCHEMA - Return ONLY valid JSON (NO markdown, NO code blocks):
 {{
-  "auditReasoning": "REQUIRED: Explain your thought process: 1) Did you detect/fix RTL text? 2) Why did you choose this specific date? 3) Is this Receipt/Invoice/Subscription? 4) Did you correct any OCR errors? 5) Did math verify correctly? Example: 'Detected Hebrew (RTL). OCR showed reversed text ת״א, corrected to א״ת. Document is RECEIPT (has קבלה label). Ignored print date 12/11, used transaction date 11/11 (ערך field). Math verified: 10×₪50=₪500✓. Matched vendor to DB: Acme Ltd → Acme Corporation.'",
+  "auditReasoning": "REQUIRED: Explain your thought process: 1) Did you detect/fix RTL text? 2) Why did you choose this specific date? 3) Is this Receipt/Invoice/Subscription? 4) Did you correct any OCR errors? 5) Did math verify correctly? 6) How did you use the RAG context - did you find similar past extractions? 7) Did past patterns influence your extraction? Example: 'Detected Hebrew (RTL). OCR showed reversed text ת״א, corrected to א״ת. Document is RECEIPT (has קבלה label). Ignored print date 12/11, used transaction date 11/11 (ערך field). Math verified: 10×₪50=₪500✓. Matched vendor to DB: Acme Ltd → Acme Corporation. Found 2 past extractions for this vendor - used same invoice number format and line item structure.'",
   
   "documentType": "INVOICE|RECEIPT|CREDIT_NOTE|SUBSCRIPTION|PROFORMA",
   "language": "en|he|ar|es|fr|zh|ja|etc (ISO 639-1 code)",
