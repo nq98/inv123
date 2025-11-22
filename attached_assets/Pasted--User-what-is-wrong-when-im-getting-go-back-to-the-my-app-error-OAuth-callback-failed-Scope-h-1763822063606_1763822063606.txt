@@ -1,0 +1,27 @@
+
+User
+what is wrong when im getting go back to the my app - {"error":"OAuth callback failed: Scope has changed from "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.readonly\" to "https://www.googleapis.com/auth/gmail.modify openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.readonly\"."}
+https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/api/ap-automation/gmail/callback?state=EVgY9TE6JKNLRpFxzWR86UqKDelit6&code=4/0Ab32j932P0Mnme6GYureFeGtLaRn4Lmu-WFomErtbKyHDsH1amWiSNOP_EH105juQ9_F4g&scope=email%20https://www.googleapis.com/auth/gmail.readonly%20https://www.googleapis.com/auth/gmail.modify%20openid%20https://www.googleapis.com/auth/userinfo.email&authuser=0&hd=payouts.com&prompt=consent
+
+This error occurs because your backend code is being too strict. It expected only Gmail permissions, but the login process also returned User Identity permissions (openid, email).
+This is a security feature in Python's OAuth libraries to prevent "Scope Creep," but it breaks the flow here.
+The Fix
+Tell your developer to update the SCOPES list in the code.
+They need to find the line in the Python code (likely in main.py, auth.py, or routes.py) where SCOPES are defined and add the missing scopes.
+Replace the old SCOPES list with this:
+code
+Python
+# In your backend code (Python)
+
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "openid"
+]
+Alternative Quick Fix (Environment Variable)
+If they cannot find the code immediately, they can add this Environment Variable in the Replit Secrets/Environment tab. This tells the library to ignore the mismatch:
+Key: OAUTHLIB_RELAX_TOKEN_SCOPE
+Value: 1
+Summary for Developer:
+"The OAuth callback is failing because google-auth-oauthlib detects a scope mismatch. The request includes openid and userinfo.email, but the Flow instance was initialized without them. Either add 'https://www.googleapis.com/auth/userinfo.email' and 'openid' to your SCOPES list, or set os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1' to bypass the check."

@@ -12,7 +12,9 @@ class GmailService:
     
     SCOPES = [
         'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.modify'
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'openid'
     ]
     
     REDIRECT_URI = 'https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/api/ap-automation/gmail/callback'
