@@ -209,7 +209,7 @@ def gmail_disconnect():
     
     return jsonify({'status': 'disconnected'})
 
-@app.route('/api/ap-automation/gmail/import/stream', methods=['POST'])
+@app.route('/api/ap-automation/gmail/import/stream', methods=['GET'])
 def gmail_import_stream():
     """
     Stream real-time progress of Gmail invoice import using Server-Sent Events
@@ -229,8 +229,7 @@ def gmail_import_stream():
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail session expired'})}\n\n"
                 return
             
-            data = json.loads(request.data.decode('utf-8')) if request.data else {}
-            max_results = data.get('max_results', 20)
+            max_results = request.args.get('max_results', 20, type=int)
             
             yield f"data: {json.dumps({'type': 'status', 'message': '✓ Gmail Scanner Initialized'})}\n\n"
             yield f"data: {json.dumps({'type': 'info', 'message': f'Lookback period: Last 30 days'})}\n\n"

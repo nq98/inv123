@@ -85,8 +85,8 @@ gmailImportBtn.addEventListener('click', async () => {
     gmailImportResults.innerHTML = '';
     
     try {
-        // Use Server-Sent Events for real-time progress
-        const eventSource = new EventSource('/api/ap-automation/gmail/import/stream');
+        // Use Server-Sent Events for real-time progress (EventSource only supports GET)
+        const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?max_results=${maxResults}`);
         
         let importResults = {
             imported: 0,
@@ -106,7 +106,7 @@ gmailImportBtn.addEventListener('click', async () => {
                     };
                     eventSource.close();
                     
-                    addTerminalLine('\\n' + '─'.repeat(60), 'info');
+                    addTerminalLine('\n' + '─'.repeat(60), 'info');
                     addTerminalLine('✅ Import session completed successfully!', 'success');
                     
                     gmailImportBtn.disabled = false;
@@ -137,13 +137,6 @@ gmailImportBtn.addEventListener('click', async () => {
             gmailImportBtn.disabled = false;
             gmailImportBtn.textContent = '🔍 Start Import';
         };
-        
-        // Send request to trigger the stream
-        await fetch('/api/ap-automation/gmail/import/stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ max_results: maxResults })
-        });
         
     } catch (error) {
         addTerminalLine(`❌ Error: ${error.message}`, 'error');
