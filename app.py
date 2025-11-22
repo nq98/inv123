@@ -300,6 +300,7 @@ def gmail_import_stream():
                     
                 except Exception as e:
                     non_invoices.append((f'Error: {str(e)}', None))
+                    yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Error classifying email: {str(e)[:60]}'})}\n\n"
             
             invoice_count = len(classified_invoices)
             non_invoice_count = len(non_invoices)
@@ -352,8 +353,15 @@ def gmail_import_stream():
                         yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})}\n\n"
                         yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})}\n\n"
                         yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'keepalive', 'message': '⏳ Processing invoice (this may take 30-60 seconds)...'})}\n\n"
                         
-                        invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                        try:
+                            invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                        except Exception as proc_error:
+                            os.remove(filepath)
+                            yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Processing failed: {str(proc_error)[:100]}'})}\n\n"
+                            extraction_failures.append(subject)
+                            continue
                         
                         os.remove(filepath)
                         
@@ -401,8 +409,14 @@ def gmail_import_stream():
                                 f.write(file_data)
                             
                             yield f"data: {json.dumps({'type': 'status', 'message': '    → Processing through 3-layer AI...'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'keepalive', 'message': '⏳ Processing downloaded file...'})}\n\n"
                             
-                            invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                            try:
+                                invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                            except Exception as link_proc_error:
+                                os.remove(filepath)
+                                yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Link processing failed: {str(link_proc_error)[:100]}'})}\n\n"
+                                continue
                             
                             os.remove(filepath)
                             
