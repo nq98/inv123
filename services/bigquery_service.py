@@ -8,9 +8,10 @@ class BigQueryService:
     """Service for BigQuery vendor database operations"""
     
     def __init__(self):
-        credentials_path = config.GOOGLE_APPLICATION_CREDENTIALS
+        # Use vertex-runner service account (has BigQuery access)
+        credentials_path = config.VERTEX_RUNNER_SA_PATH
         if not credentials_path or not os.path.exists(credentials_path):
-            raise ValueError("BigQuery service account credentials not found")
+            raise ValueError(f"BigQuery service account credentials not found at {credentials_path}")
         
         credentials = service_account.Credentials.from_service_account_file(
             credentials_path,
