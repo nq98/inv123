@@ -44,6 +44,10 @@ localPort = 37409
 externalPort = 80
 
 [[ports]]
+localPort = 37455
+externalPort = 3002
+
+[[ports]]
 localPort = 43997
 externalPort = 3001
 
@@ -51,10 +55,6 @@ externalPort = 3001
 localPort = 44659
 externalPort = 3000
 
-[[ports]]
-localPort = 45457
-externalPort = 3002
-
 [deployment]
 deploymentTarget = "autoscale"
-run = ["python", "app.py"]
+run = ["bash", "start.sh"]
