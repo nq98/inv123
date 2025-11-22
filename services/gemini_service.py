@@ -14,48 +14,40 @@ class GeminiService:
         
         self.client = genai.Client(api_key=api_key)
         
-        self.system_instruction = """⭐ GEMINI INVOICE INTELLIGENCE ENGINE
-Multilingual · Multicurrency · Multidocument · Semantic Reasoning · Ultra-High Accuracy
+        self.system_instruction = """🧠 AI-FIRST UNIVERSAL SEMANTIC AUDITOR
+You are the world's most advanced **AI Financial Auditor**.
+Your goal is **100% Semantic Accuracy** across 200+ languages and all document types (Invoices, Receipts, Subscriptions, Credit Notes).
 
-You are Payouts.com's Global Invoice Intelligence Engine (GIIE).
-Your job is to understand ANY financial document from ANY country, ANY language, ANY layout, and return PERFECT structured data with FULL semantic reasoning.
+CORE PHILOSOPHY: "AI-First, Not OCR-First"
+- TRUST THE VISUAL IMAGE ABOVE ALL ELSE (pixels > OCR text)
+- THINK LIKE A HUMAN ACCOUNTANT, not a text parser
+- USE CHAIN OF THOUGHT REASONING before outputting data
+- SEMANTIC INTELLIGENCE over keyword matching
 
-You ALWAYS perform:
-- Document classification
-- Semantic extraction
-- Mathematical validation
-- Field normalization
-- Currency normalization
-- Vendor entity normalization
-- Tax interpretation
-- Language translation (internally)
-- Cross-field consistency checks
-- Confidence scoring
-- Metadata extraction
-- RAG integration when context is provided
+CRITICAL CAPABILITIES:
+✓ RTL Language Support (Hebrew/Arabic) - Auto-detect and correct reversed OCR
+✓ Global Date Intelligence - Resolve MM/DD vs DD/MM ambiguity using country context
+✓ Document Type Classification - Receipt vs Invoice vs Subscription logic
+✓ Multi-Currency Normalization - ISO 4217 conversion (₪→ILS, $→USD, €→EUR)
+✓ Mathematical Verification - Line-item and total validation
+✓ RAG-Powered Vendor Matching - Use database context for canonical names
+✓ Translation Layer - Internal translation, English output
+✓ Confidence Scoring - Flag low-confidence extractions
+✓ Audit Trail - Explain ALL reasoning decisions
 
-You NEVER hallucinate. You NEVER guess without labeling it as low confidence.
-You ALWAYS explain your reasoning. You ALWAYS follow the JSON schema exactly.
-You ALWAYS use semantic meaning — never rely only on keyword matching.
-You ALWAYS work for 200+ countries, 40+ languages, 200+ currencies.
+SUPPORTED LANGUAGES: All (English, Hebrew, Arabic, Spanish, French, Chinese, Japanese, Korean, Hindi, Thai, Turkish, Russian, Portuguese, German, Italian, etc.)
 
-SUPPORTED DOCUMENT TYPES: Invoice, Tax Invoice, Credit Note, Debit Note, Proforma Invoice, Receipt, Payment Request, Remittance Advice, Tax Form, Purchase Order, Statements, Supplier Bills.
+SUPPORTED CURRENCIES: All ISO 4217 codes (USD, EUR, GBP, JPY, CNY, ILS, AED, SAR, INR, etc.)
 
-MULTILINGUAL: ALL languages (English, Spanish, French, Hebrew, Arabic, Chinese, Japanese, Korean, Hindi, Thai, Turkish, Russian, Portuguese, German, Italian, etc.)
+REASONING PROTOCOL (Perform internally before extraction):
+1. Visual & Linguistic Analysis - Detect language, direction (RTL?), document layout
+2. Document Classification - Invoice vs Receipt vs Subscription vs Credit Note
+3. Date Logic - Distinguish document_date vs payment_date vs due_date
+4. Vendor Normalization - Match against RAG database for canonical spelling
+5. Mathematical Reconciliation - Verify all calculations
+6. Quality Control - Flag warnings, low-confidence fields
 
-MULTICURRENCY: ALL currencies (USD, EUR, GBP, JPY, CNY, CAD, AUD, ZAR, CHF, SEK, DKK, AED, SAR, ILS, TRY, INR, MXN, etc.)
-
-EXTRACTION RULES:
-- Validate line-item math: (Qty × Unit Price) = Line Total
-- Validate: Subtotal + Tax = Total
-- Flag all mismatches with reasoning
-- Normalize vendor entity names using RAG context when provided
-- Infer missing values logically
-- Detect language automatically, normalize output to English
-- Convert dates to ISO 8601 (YYYY-MM-DD)
-- Convert currency to ISO 4217 codes
-- Provide confidence scores
-- Return ONLY valid JSON, no markdown, no commentary."""
+Return ONLY valid JSON. No markdown. No commentary."""
         
         self.model_name = 'gemini-2.0-flash-exp'
     
@@ -76,40 +68,91 @@ EXTRACTION RULES:
             rag_context = "No vendor history found in database."
         
         prompt = f"""
-INVOICE INTELLIGENCE ENGINE - FULL EXTRACTION
+🧠 AI-FIRST SEMANTIC EXTRACTION - CHAIN OF THOUGHT PROTOCOL
 
-INPUT DATA:
-1. OCR Text from Document AI: {raw_text[:3000]}
+### INPUT CONTEXT (Process in this priority order)
+1. **VISUAL SOURCE (Image)**: {gcs_uri} → **TRUST THIS ABOVE ALL ELSE**
+2. **OCR Text** (Search Index Only): {raw_text[:3000]}
+   ⚠️ Warning: OCR may be REVERSED for Hebrew/Arabic (RTL). Validate visually.
+3. **Document AI Entities** (Structured): {json.dumps(extracted_entities, indent=2)[:2000]}
+4. **Database Knowledge (RAG)**: {rag_context}
 
-2. Structured Entities from Document AI: {json.dumps(extracted_entities, indent=2)[:2000]}
+### SEMANTIC REASONING PROTOCOL (Think Through These Steps)
 
-3. Internal Database Context (RAG): {rag_context}
+**STEP 1: VISUAL & LINGUISTIC ANALYSIS**
+- **Detect Language & Script Direction**: Is this Hebrew/Arabic (RTL)? Japanese (top-to-bottom)? 
+- **If RTL Detected**: Check if OCR text appears backwards (e.g., "ח"פ" instead of "פ"ח"). Mentally reverse it for semantic understanding.
+- **Detect Document Type**:
+  * Is this a **REQUEST for payment**? → INVOICE (has due_date, may have "Invoice" label)
+  * Is this **PROOF that money already moved**? → RECEIPT (has payment_date/transaction_date, may have "Receipt"/"קבלה" label)
+  * Is this a **recurring bill**? → SUBSCRIPTION (has service_period_start/end dates)
+  * Is this a **refund/credit**? → CREDIT_NOTE
 
-YOUR TASKS:
-1. Extract ALL semantic data from the document
-2. Compare "Vendor Name" with RAG context - use database spelling/ID if it's a match
-3. MATH VALIDATION: Verify (Quantity × Unit Price) = Line Total for EACH line item
-4. MATH VALIDATION: Verify Subtotal + Tax + Fees = Grand Total
-5. NORMALIZE dates to ISO 8601 (YYYY-MM-DD)
-6. NORMALIZE currency to ISO 4217 (USD, EUR, ILS, etc.)
-7. DETECT language and document type
-8. PROVIDE confidence scores
-9. EXPLAIN your reasoning
+**STEP 2: DATE INTELLIGENCE (The "Human Accountant" Rule)**
+- **If RECEIPT**: 
+  * Ignore "Print Date" or "Issue Date" (irrelevant)
+  * Find the **"Transaction Date"** / **"Payment Date"** / **"Value Date"** (Hebrew: ערך/תאריך עסקה)
+  * This is the date money ACTUALLY moved - CRITICAL for accounting
+- **If INVOICE**:
+  * document_date = "Issue Date" (when invoice was created)
+  * due_date = "Due Date" / "Payment Terms" (when payment is expected)
+  * payment_date = null (money hasn't moved yet)
+- **If SUBSCRIPTION**:
+  * service_period_start = "Billing Period Start"
+  * service_period_end = "Billing Period End"
+- **Date Format Resolution**: 
+  * Ambiguous dates like "05/04/2024" → Check vendor's country:
+    - US/Canada → MM/DD/YYYY
+    - Rest of World → DD/MM/YYYY
+  * Convert ALL dates to ISO 8601: YYYY-MM-DD
 
-OUTPUT SCHEMA - Return ONLY valid JSON:
+**STEP 3: VENDOR NORMALIZATION (RAG Integration)**
+- Compare extracted vendor name with RAG database context
+- If match found → Use canonical spelling from database
+- Extract: full legal name, address, tax ID, country, contact info
+- Flag confidence score for vendor match
+
+**STEP 4: FINANCIAL RECONCILIATION & MATH VERIFICATION**
+- **Currency Detection**: Detect symbol (₪, $, €, £, ¥) → Convert to ISO 4217 (ILS, USD, EUR, GBP, JPY)
+- **Line Item Math**: For EACH line item, verify: Quantity × Unit Price = Line Total
+  * If mismatch → Trust the MATH, flag warning, use calculated value
+- **Total Math**: Verify: Subtotal + Tax + Fees - Discounts = Grand Total
+  * If mismatch → Flag warning with expected vs actual values
+- Extract tax percentage, shipping, discounts, fees
+
+**STEP 5: BUYER/CUSTOMER INFORMATION**
+- Extract buyer company name, address, tax ID, contact info
+- This is often labeled "Bill To", "Customer", "Client", or on the LEFT side of invoice
+
+**STEP 6: QUALITY CONTROL**
+- Flag ALL low-confidence extractions
+- Flag ALL math mismatches
+- Flag ALL ambiguous fields
+- Provide detailed reasoning for corrections/assumptions
+
+### OUTPUT SCHEMA - Return ONLY valid JSON (NO markdown, NO code blocks):
 {{
-  "documentType": "Invoice|Receipt|Credit Note|Proforma|etc",
-  "language": "en|he|es|fr|etc",
-  "currency": "USD|EUR|ILS|etc",
+  "auditReasoning": "REQUIRED: Explain your thought process: 1) Did you detect/fix RTL text? 2) Why did you choose this specific date? 3) Is this Receipt/Invoice/Subscription? 4) Did you correct any OCR errors? 5) Did math verify correctly? Example: 'Detected Hebrew (RTL). OCR showed reversed text ת״א, corrected to א״ת. Document is RECEIPT (has קבלה label). Ignored print date 12/11, used transaction date 11/11 (ערך field). Math verified: 10×₪50=₪500✓. Matched vendor to DB: Acme Ltd → Acme Corporation.'",
+  
+  "documentType": "INVOICE|RECEIPT|CREDIT_NOTE|SUBSCRIPTION|PROFORMA",
+  "language": "en|he|ar|es|fr|zh|ja|etc (ISO 639-1 code)",
+  "isRTL": true|false,
+  "isSubscription": true|false,
+  "detectedCountry": "IL|US|GB|etc (ISO 3166-1 alpha-2)",
+  "currency": "USD|EUR|ILS|GBP|JPY|etc (ISO 4217)",
   "originalCurrency": "same or different if converted",
-  "exchangeRate": null,
+  "exchangeRate": null|float,
+  
   "invoiceNumber": "string",
-  "issueDate": "YYYY-MM-DD",
-  "dueDate": "YYYY-MM-DD or null",
-  "paymentTerms": "Net 30|Due on receipt|etc",
+  "documentDate": "YYYY-MM-DD (Physical date printed on document)",
+  "paymentDate": "YYYY-MM-DD (CRITICAL for receipts: actual transaction date) or null",
+  "dueDate": "YYYY-MM-DD (for invoices) or null",
+  "servicePeriodStart": "YYYY-MM-DD (for subscriptions) or null",
+  "servicePeriodEnd": "YYYY-MM-DD (for subscriptions) or null",
+  "paymentTerms": "Net 30|Due on receipt|etc or null",
 
   "vendor": {{
-    "name": "Full legal name",
+    "name": "Full legal name (corrected using RAG context if available)",
     "address": "Complete address",
     "country": "Country name",
     "email": "email@domain.com or null",
@@ -129,7 +172,7 @@ OUTPUT SCHEMA - Return ONLY valid JSON:
     "registrationNumber": "reg number or null"
   }},
 
-  "purchaseOrderNumbers": ["PO123", "PO456"],
+  "purchaseOrderNumbers": ["PO123", "PO456"] or [],
   
   "paymentDetails": {{
     "iban": "IBAN or null",
@@ -141,42 +184,43 @@ OUTPUT SCHEMA - Return ONLY valid JSON:
 
   "lineItems": [
     {{
-      "description": "Item description",
-      "quantity": 0,
-      "unitPrice": 0,
+      "description": "Item description (translate to English if foreign language)",
+      "quantity": float,
+      "unitPrice": float,
       "currency": "USD",
-      "taxPercent": 0,
-      "taxAmount": 0,
-      "lineSubtotal": 0,
-      "category": "semantic category",
+      "taxPercent": float,
+      "taxAmount": float,
+      "lineSubtotal": float,
+      "category": "semantic category (e.g., 'Software Subscription', 'Consulting Services')",
       "productCode": "SKU or null",
-      "mathVerified": true
+      "mathVerified": true|false
     }}
   ],
 
   "totals": {{
-    "subtotal": 0,
-    "tax": 0,
-    "taxPercent": 0,
-    "discounts": 0,
-    "fees": 0,
-    "shipping": 0,
-    "total": 0
+    "subtotal": float,
+    "tax": float,
+    "taxPercent": float,
+    "discounts": float,
+    "fees": float,
+    "shipping": float,
+    "total": float
   }},
 
   "vendorMatch": {{
-    "normalizedName": "Canonical vendor name from RAG or semantic normalization",
-    "alternateNames": ["Spelling variant 1", "Abbreviation"],
-    "confidence": 0.95,
-    "matchedDbId": "vendor_id_from_rag or null"
+    "normalizedName": "Canonical vendor name from RAG database or semantically normalized",
+    "alternateNames": ["Spelling variant 1", "Abbreviation", "Previous names"],
+    "confidence": float (0.0-1.0),
+    "matchedDbId": "vendor_id_from_rag or null",
+    "ragMatchReasoning": "Explain how you matched this vendor to the database"
   }},
 
-  "classificationConfidence": 0.99,
-  "extractionConfidence": 0.95,
+  "classificationConfidence": float (0.0-1.0),
+  "extractionConfidence": float (0.0-1.0),
 
-  "reasoning": "Detailed explanation: I extracted vendor from header. Math verified: 10×$50=$500 ✓. Used RAG to correct 'Acme Corp' → 'Acme Corporation Inc.' Tax calculated at 17% (Israel VAT). Date format detected as DD/MM/YYYY based on address.",
+  "reasoning": "LEGACY FIELD - Use auditReasoning instead. Brief explanation of extraction decisions.",
   
-  "warnings": ["Tax calculation mismatch: expected 500, found 510", "Duplicate invoice number detected"]
+  "warnings": ["List of issues: math mismatches, low confidence fields, OCR corrections, ambiguous dates, etc."]
 }}
 """
         
@@ -221,6 +265,18 @@ OUTPUT SCHEMA - Return ONLY valid JSON:
                     validated_data['documentType'] = "Invoice"
                 if 'extractionConfidence' not in validated_data:
                     validated_data['extractionConfidence'] = 0.5
+                if 'auditReasoning' not in validated_data:
+                    validated_data['auditReasoning'] = validated_data.get('reasoning', 'No reasoning provided')
+                
+                # Backward compatibility: map new field names to old ones
+                if 'documentDate' in validated_data and 'issueDate' not in validated_data:
+                    validated_data['issueDate'] = validated_data['documentDate']
+                if 'isRTL' not in validated_data:
+                    validated_data['isRTL'] = False
+                if 'isSubscription' not in validated_data:
+                    validated_data['isSubscription'] = False
+                if 'detectedCountry' not in validated_data:
+                    validated_data['detectedCountry'] = None
                 
                 return validated_data
                 
@@ -247,14 +303,22 @@ OUTPUT SCHEMA - Return ONLY valid JSON:
         """Create a standardized error response matching the comprehensive schema"""
         response = {
             "error": error_message,
+            "auditReasoning": f"Error during extraction: {error_message}",
             "documentType": "Unknown",
             "language": "unknown",
+            "isRTL": False,
+            "isSubscription": False,
+            "detectedCountry": None,
             "currency": "USD",
             "originalCurrency": "USD",
             "exchangeRate": None,
             "invoiceNumber": None,
+            "documentDate": None,
             "issueDate": None,
+            "paymentDate": None,
             "dueDate": None,
+            "servicePeriodStart": None,
+            "servicePeriodEnd": None,
             "paymentTerms": None,
             "vendor": {
                 "name": "Unknown",

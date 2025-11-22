@@ -1,0 +1,105 @@
+Here is the complete specification for Product 3 based on your BigQuery screenshot and your requirements.
+
+I have designed this so the developer knows exactly which table to use (global_vendors) and how to handle the "Dynamic Schema" without breaking your existing data.
+
+Copy and paste this entire block to your developer:
+
+🚀 Feature Spec: Product 3 — Universal AI Vendor CSV Import
+
+Goal: Allow users to upload any vendor CSV (from SAP, Oracle, QuickBooks, Excel) and use Vertex AI to automatically map the messy columns to our clean BigQuery schema.
+
+1. Infrastructure & Credentials (From Screenshot)
+
+We are using the existing BigQuery infrastructure.
+
+Project ID: invoicereader-477008
+
+Dataset: vendors_ai
+
+Target Table: global_vendors
+
+Current Schema (Visible): vendor_id, global_name, normalized_name, emails (ARRAY), domains (ARRAY), countries (ARRAY).
+
+2. The "Dynamic" Schema Strategy
+
+To support "Custom columns per customer" without constantly changing the table structure, add a JSON column to the existing table.
+
+Action: Run this query to prepare the table:
+
+code
+SQL
+download
+content_copy
+expand_less
+ALTER TABLE `invoicereader-477008.vendors_ai.global_vendors`
+ADD COLUMN IF NOT EXISTS custom_attributes JSON,
+ADD COLUMN IF NOT EXISTS source_system STRING,
+ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP;
+3. The AI Workflow (Step-by-Step)
+Step A: Ingestion & Header Analysis
+
+User uploads a CSV.
+
+Read the Headers (Row 1) and a sample row (Row 2).
+
+Send these to Vertex AI (Gemini 1.5 Flash) to get a "Column Mapping JSON".
+
+Step B: The AI Prompt (Semantic Mapping)
+
+Use this prompt logic to map any language/format to our standard schema:
+
+System Prompt:
+"You are a Data Integration Expert. Map the user's CSV headers to our Internal Database Schema.
+
+Internal Schema:
+
+vendor_id (Target for: ID, Supplier No, V_ID, Code)
+
+global_name (Target for: Vendor Name, Payee, Supplier, Company)
+
+emails (Target for: Contact Email, E-mail, Mail)
+
+countries (Target for: Country, Region, IsoCode)
+
+Instructions:
+
+Analyze the User CSV Headers provided below.
+
+Create a JSON map: {"user_csv_header": "internal_db_column"}.
+
+If a CSV column does NOT match a standard field, map it to custom_attributes.original_header_name.
+
+Detect the format. If the CSV has 'Supplier Num' and 'Vendor Name', map them correctly."
+
+Step C: Transformation & Deduplication (BigQuery)
+
+Once the CSV is uploaded to a temporary staging table, run a MERGE operation to prevent duplicates.
+
+code
+SQL
+download
+content_copy
+expand_less
+MERGE `invoicereader-477008.vendors_ai.global_vendors` T
+USING staging_table S
+ON T.vendor_id = S.mapped_vendor_id
+WHEN MATCHED THEN
+  UPDATE SET 
+    T.normalized_name = S.mapped_name,
+    T.custom_attributes = S.remaining_json_data,
+    T.last_updated = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN
+  INSERT (vendor_id, global_name, normalized_name, custom_attributes, last_updated)
+  VALUES (S.mapped_vendor_id, S.mapped_name, S.mapped_name, S.remaining_json_data, CURRENT_TIMESTAMP())
+4. Acceptance Criteria
+
+Upload Test: Upload a CSV with weird headers like Firma_Name, Steuer_ID (German).
+
+AI Check: Vertex AI must correctly map Firma_Name 
+→
+→
+ global_name.
+
+Storage Check: Check BigQuery. The data must appear in global_vendors.
+
+Flexibility: Any extra columns in the CSV (e.g., "Payment Terms") must successfully save into the custom_attributes JSON column.

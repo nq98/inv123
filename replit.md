@@ -40,6 +40,19 @@ Hybrid architecture invoice processing system that extracts structured data from
 See `.env` for required configuration including API keys, processor IDs, and service account paths.
 
 ## Recent Changes
+- 2025-11-22: **MAJOR UPGRADE: AI-First Semantic Intelligence** - Completely overhauled Gemini extraction prompt:
+  - Implemented Chain of Thought reasoning (auditReasoning field forces AI to explain decisions BEFORE extraction)
+  - Added visual supremacy protocol: Image pixels > OCR text (critical for RTL languages)
+  - Enhanced RTL language support (Hebrew/Arabic): Auto-detection and correction of reversed OCR text
+  - Superior date logic: Distinguishes documentDate vs paymentDate vs dueDate (critical for receipts)
+  - Receipt vs Invoice classification: "Request for payment" vs "Proof of payment" logic
+  - Subscription detection: servicePeriodStart/End date extraction
+  - Global date format resolution: MM/DD vs DD/MM based on vendor country context
+  - Enhanced vendor matching with RAG database context and reasoning
+  - Mathematical verification with detailed warning flags
+  - Added new fields: auditReasoning, isRTL, isSubscription, detectedCountry, paymentDate, servicePeriodStart/End
+  - Backward compatibility maintained for legacy field names (issueDate, reasoning)
+- 2025-11-22: **Fixed SSE Connection Timeout** - Switched from Flask dev server to Gunicorn with gevent async workers, 300s timeout, and proper SSE headers for long-running AI processing
 - 2025-11-22: **CRITICAL OAuth Fix** - Applied comprehensive Replit-specific OAuth configuration to prevent "State mismatch" errors:
   - Set static SECRET_KEY (removed os.urandom() fallback) to survive server restarts across Gunicorn workers
   - Added OAUTHLIB_INSECURE_TRANSPORT='1' for Replit's HTTP/HTTPS proxy compatibility
