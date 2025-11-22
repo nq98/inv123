@@ -20,6 +20,16 @@ This pipeline uses Document AI for initial extraction, a Multi-Currency Detector
 #### Vendor Management Pipeline (with RAG Learning Loop)
 This involves AI-powered CSV mapping using Gemini AI with Vertex AI Search RAG to analyze and map columns to a standardized schema, Chain of Thought mapping for rationale, data transformation, and BigQuery integration for smart deduplication and storage of custom CSV columns in a JSON field.
 
+#### AI-First Semantic Entity Validation (Product 7)
+A pure AI-driven validation system to prevent non-vendors (banks, payment processors, government entities) from polluting the vendor database:
+1.  **SemanticEntityClassifier (Gemini 1.5)**: Classifies entities as VENDOR, BANK, PAYMENT_PROCESSOR, GOVERNMENT_ENTITY, or INDIVIDUAL_PERSON using pure semantic understanding of business purpose - NO hardcoded keywords or domain blacklists.
+2.  **Multi-Path Integration**: Validation runs on ALL vendor ingest paths (invoice uploads, CSV imports) before database writes.
+3.  **Supreme Judge Entity Validation**: Enhanced Supreme Judge prompt validates entity types and honors classifier verdicts.
+4.  **RAG Learning Loop**: Rejected entities stored in Vertex Search for continuous learning - system remembers and reuses past rejections.
+5.  **BigQuery Fallback**: Resilient vendor matching with fallback to BigQuery LIKE search when Vertex AI Search is empty/misconfigured.
+
+This validation system is automatically integrated into both invoice upload and CSV import pipelines, with rejection statistics returned in API responses.
+
 #### Vendor Matching Engine (Product 4)
 A 3-step semantic matching system to link invoices to vendor IDs:
 1.  **Hard Tax ID Match**: Fast, exact match on tax registration IDs using BigQuery SQL.
