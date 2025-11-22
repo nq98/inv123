@@ -633,9 +633,11 @@ def analyze_vendor_csv():
         if not analysis_result.get('success'):
             return jsonify({'error': analysis_result.get('error', 'Analysis failed')}), 400
         
-        # Store CSV content in session for step 2
+        # Store CSV content and analysis in session for step 2
         session['pending_csv_content'] = csv_content.decode('utf-8-sig')
         session['pending_csv_filename'] = file.filename
+        session['pending_csv_analysis'] = analysis_result['mapping']  # Store for feedback loop
+        session['pending_csv_headers'] = analysis_result['headers']  # Store headers
         
         return jsonify({
             'success': True,
@@ -688,9 +690,31 @@ def import_vendor_csv():
         # Merge vendors into BigQuery
         merge_result = bq_service.merge_vendors(transformed_vendors, source_system)
         
+        # VERTEX AI SEARCH RAG FEEDBACK LOOP: Store mapping for future learning
+        import_success = len(merge_result.get('errors', [])) == 0
+        
+        if import_success:
+            try:
+                # Get original analysis and headers from session
+                original_analysis = session.get('pending_csv_analysis', {})
+                original_headers = session.get('pending_csv_headers', [])
+                
+                if original_headers and original_analysis:
+                    csv_mapper.store_mapping_to_knowledge_base(
+                        headers=original_headers,
+                        column_mapping=original_analysis,
+                        success=True
+                    )
+                    print("✓ Stored successful mapping to Vertex AI Search knowledge base")
+            except Exception as e:
+                print(f"⚠️ Could not store mapping to knowledge base: {e}")
+                # Don't fail the import if RAG storage fails
+        
         # Clear session
         session.pop('pending_csv_content', None)
         session.pop('pending_csv_filename', None)
+        session.pop('pending_csv_analysis', None)
+        session.pop('pending_csv_headers', None)
         
         return jsonify({
             'success': True,

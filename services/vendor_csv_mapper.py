@@ -6,8 +6,15 @@ from google import genai
 from google.genai import types
 from config import config
 
+try:
+    from services.vertex_vendor_mapping_search import VertexVendorMappingSearch
+    VERTEX_SEARCH_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Vertex AI Search for vendor mappings not available: {e}")
+    VERTEX_SEARCH_AVAILABLE = False
+
 class VendorCSVMapper:
-    """AI-First Universal CSV Mapper using Gemini for semantic column mapping"""
+    """AI-First Universal CSV Mapper using Gemini + Vertex AI Search RAG for semantic column mapping"""
     
     def __init__(self):
         api_key = config.GOOGLE_GEMINI_API_KEY or os.getenv('GEMINI_API_KEY')
@@ -16,6 +23,16 @@ class VendorCSVMapper:
         
         self.client = genai.Client(api_key=api_key)
         self.model_name = 'gemini-2.0-flash-exp'
+        
+        # Initialize Vertex AI Search for RAG-enhanced mapping
+        self.vertex_search = None
+        if VERTEX_SEARCH_AVAILABLE:
+            try:
+                self.vertex_search = VertexVendorMappingSearch()
+                print("✓ Vertex AI Search RAG enabled for vendor mapping")
+            except Exception as e:
+                print(f"⚠️ Vertex AI Search RAG disabled: {e}")
+                self.vertex_search = None
         
         self.system_instruction = """🧠 AI-FIRST UNIVERSAL DATA INTEGRATION EXPERT
 
@@ -88,7 +105,51 @@ Return ONLY valid JSON. No markdown. No commentary."""
                 "mapping": {}
             }
         
-        # Build AI prompt with Chain of Thought reasoning
+        # VERTEX AI SEARCH RAG: Query for similar CSV mappings from past uploads
+        rag_context = ""
+        similar_mappings = []
+        
+        if self.vertex_search:
+            try:
+                print("🔍 Searching Vertex AI for similar CSV mappings from past uploads...")
+                similar_mappings = self.vertex_search.search_similar_mappings(
+                    headers=headers,
+                    detected_language=None,  # Will be detected by AI
+                    limit=3
+                )
+                
+                if similar_mappings:
+                    rag_context = "\n### 🧠 HISTORICAL KNOWLEDGE BASE (Past CSV Mappings)\n"
+                    rag_context += "**You've successfully mapped similar CSVs before. Use this knowledge to improve your mapping:**\n\n"
+                    
+                    for i, mapping in enumerate(similar_mappings, 1):
+                        rag_context += f"**Past Mapping #{i}:**\n"
+                        rag_context += f"- Language: {mapping.get('detected_language', 'unknown')}\n"
+                        rag_context += f"- Source System: {mapping.get('source_system', 'unknown')}\n"
+                        rag_context += f"- Upload Count: {mapping.get('upload_count', 1)} (proven {mapping.get('success_rate', 1.0) * 100:.0f}% success rate)\n"
+                        rag_context += f"- Confidence: {mapping.get('confidence', 0.0) * 100:.0f}%\n"
+                        
+                        # Show a few key column mappings as examples
+                        col_mapping = mapping.get('column_mapping', {})
+                        if col_mapping:
+                            rag_context += "- Example Mappings:\n"
+                            for col_name, col_info in list(col_mapping.items())[:5]:  # First 5 examples
+                                target = col_info.get('targetField', 'unknown')
+                                conf = col_info.get('confidence', 0.0)
+                                rag_context += f"  • `{col_name}` → `{target}` (confidence: {conf * 100:.0f}%)\n"
+                        
+                        rag_context += "\n"
+                    
+                    rag_context += "**Use this historical context to:**\n"
+                    rag_context += "- Recognize similar column patterns\n"
+                    rag_context += "- Apply proven mappings with higher confidence\n"
+                    rag_context += "- Learn from past success patterns\n\n"
+                
+            except Exception as e:
+                print(f"⚠️ Error querying Vertex AI Search for RAG context: {e}")
+                rag_context = ""
+        
+        # Build AI prompt with Chain of Thought reasoning + RAG context
         prompt = f"""
 🧠 AI-FIRST CSV SCHEMA MAPPING - CHAIN OF THOUGHT PROTOCOL
 
@@ -97,7 +158,7 @@ Return ONLY valid JSON. No markdown. No commentary."""
 **CSV Headers Detected**: {json.dumps(headers, ensure_ascii=False)}
 **Sample Data (First 3 Rows)**:
 {json.dumps(sample_rows, indent=2, ensure_ascii=False)}
-
+{rag_context}
 ### SEMANTIC REASONING PROTOCOL (Think Through These Steps)
 
 **STEP 1: LANGUAGE & CONTEXT DETECTION**
@@ -313,3 +374,41 @@ Rate your confidence for each mapping:
                 continue
         
         return transformed_vendors
+    
+    def store_mapping_to_knowledge_base(self, headers, column_mapping, success=True):
+        """
+        Store successful CSV mapping to Vertex AI Search for future learning
+        
+        Args:
+            headers: List of CSV column names
+            column_mapping: Mapping schema from analyze_csv_headers()
+            success: Whether the import was successful
+        
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        
+        if not self.vertex_search:
+            # Vertex AI Search RAG not available
+            return False
+        
+        try:
+            detected_language = column_mapping.get("detectedLanguage", "unknown")
+            source_system = column_mapping.get("sourceSystemGuess", "unknown")
+            overall_confidence = column_mapping.get("overallConfidence", 0.0)
+            col_mapping = column_mapping.get("columnMapping", {})
+            
+            result = self.vertex_search.store_mapping(
+                headers=headers,
+                column_mapping=col_mapping,
+                detected_language=detected_language,
+                source_system=source_system,
+                overall_confidence=overall_confidence,
+                success=success
+            )
+            
+            return result
+            
+        except Exception as e:
+            print(f"⚠️ Error storing mapping to knowledge base: {e}")
+            return False
