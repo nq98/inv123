@@ -15,7 +15,21 @@ const gmailImportSection = document.getElementById('gmailImportSection');
 const gmailImportResults = document.getElementById('gmailImportResults');
 const gmailMaxResults = document.getElementById('gmailMaxResults');
 
+// CSV Upload Elements
+const csvUploadArea = document.getElementById('csvUploadArea');
+const csvFileInput = document.getElementById('csvFileInput');
+const csvUploadForm = document.getElementById('csvUploadForm');
+const csvSubmitBtn = document.getElementById('csvSubmitBtn');
+const csvLoading = document.getElementById('csvLoading');
+const csvMappingReview = document.getElementById('csvMappingReview');
+const csvMappingContent = document.getElementById('csvMappingContent');
+const csvImportBtn = document.getElementById('csvImportBtn');
+const csvCancelBtn = document.getElementById('csvCancelBtn');
+const csvImportResults = document.getElementById('csvImportResults');
+
 let selectedFile = null;
+let selectedCsvFile = null;
+let csvAnalysisData = null;
 
 async function checkGmailStatus() {
     try {
@@ -825,3 +839,273 @@ function buildLayerCard(number, title, status, error, content) {
         </div>
     `;
 }
+
+// ===== CSV UPLOAD HANDLERS =====
+
+// CSV Drag & Drop
+csvUploadArea.addEventListener('click', () => csvFileInput.click());
+
+csvUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    csvUploadArea.style.borderColor = '#667eea';
+    csvUploadArea.style.background = 'rgba(102, 126, 234, 0.05)';
+});
+
+csvUploadArea.addEventListener('dragleave', () => {
+    csvUploadArea.style.borderColor = '#e0e0e0';
+    csvUploadArea.style.background = 'white';
+});
+
+csvUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    csvUploadArea.style.borderColor = '#e0e0e0';
+    csvUploadArea.style.background = 'white';
+    
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.csv') || file.name.endsWith('.txt'))) {
+        csvFileInput.files = e.dataTransfer.files;
+        selectedCsvFile = file;
+        csvSubmitBtn.disabled = false;
+        csvUploadArea.querySelector('p').textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    } else {
+        alert('Please upload a CSV or TXT file');
+    }
+});
+
+csvFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        selectedCsvFile = file;
+        csvSubmitBtn.disabled = false;
+        csvUploadArea.querySelector('p').textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    }
+});
+
+// Step 1: Analyze CSV
+csvUploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!selectedCsvFile) {
+        alert('Please select a CSV file');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', selectedCsvFile);
+    
+    csvSubmitBtn.disabled = true;
+    csvSubmitBtn.textContent = '🧠 Analyzing...';
+    csvLoading.classList.remove('hidden');
+    csvMappingReview.classList.add('hidden');
+    csvImportResults.classList.add('hidden');
+    
+    try {
+        const response = await fetch('/api/vendors/csv/analyze', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Analysis failed');
+        }
+        
+        csvAnalysisData = data;
+        displayCsvMapping(data);
+        
+    } catch (error) {
+        alert('CSV analysis failed: ' + error.message);
+        csvSubmitBtn.disabled = false;
+        csvSubmitBtn.textContent = '🧠 Analyze CSV with AI';
+    } finally {
+        csvLoading.classList.add('hidden');
+    }
+});
+
+// Display AI-generated column mapping
+function displayCsvMapping(data) {
+    const analysis = data.analysis;
+    const mapping = analysis.columnMapping;
+    
+    let html = `
+        <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 15px;">
+            <h4 style="margin-top: 0;">📋 CSV Analysis Summary</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 6px;">
+                    <div style="font-size: 12px; color: #666;">Detected Language</div>
+                    <div style="font-size: 18px; font-weight: 700;">${analysis.detectedLanguage || 'Unknown'}</div>
+                </div>
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 6px;">
+                    <div style="font-size: 12px; color: #666;">Source System</div>
+                    <div style="font-size: 18px; font-weight: 700;">${analysis.sourceSystemGuess || 'Unknown'}</div>
+                </div>
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 6px;">
+                    <div style="font-size: 12px; color: #666;">Total Columns</div>
+                    <div style="font-size: 18px; font-weight: 700;">${analysis.totalColumns || 0}</div>
+                </div>
+                <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+                    <div style="font-size: 12px; color: #666;">Overall Confidence</div>
+                    <div style="font-size: 18px; font-weight: 700;">${((analysis.overallConfidence || 0) * 100).toFixed(0)}%</div>
+                </div>
+            </div>
+            
+            <div style="background: #fff3e0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <strong>🧠 AI Reasoning:</strong>
+                <p style="margin: 10px 0 0 0; line-height: 1.6;">${analysis.mappingReasoning || 'No reasoning provided'}</p>
+            </div>
+        </div>
+        
+        <h4>📊 Column Mappings</h4>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+                <thead>
+                    <tr style="background: #667eea; color: white;">
+                        <th style="padding: 12px; text-align: left;">CSV Column</th>
+                        <th style="padding: 12px; text-align: left;">Maps To</th>
+                        <th style="padding: 12px; text-align: center;">Confidence</th>
+                        <th style="padding: 12px; text-align: left;">AI Reasoning</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const [csvColumn, mappingInfo] of Object.entries(mapping)) {
+        const confidence = ((mappingInfo.confidence || 0) * 100).toFixed(0);
+        const confidenceColor = confidence >= 80 ? '#4caf50' : confidence >= 60 ? '#ff9800' : '#f44336';
+        
+        html += `
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 12px; font-weight: 600;">${csvColumn}</td>
+                <td style="padding: 12px;">
+                    <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; font-size: 13px;">
+                        ${mappingInfo.targetField || 'N/A'}
+                    </code>
+                </td>
+                <td style="padding: 12px; text-align: center;">
+                    <span style="color: ${confidenceColor}; font-weight: 700;">${confidence}%</span>
+                </td>
+                <td style="padding: 12px; font-size: 13px; color: #666;">${mappingInfo.reasoning || 'N/A'}</td>
+            </tr>
+        `;
+    }
+    
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    if (analysis.dataQualityWarnings && analysis.dataQualityWarnings.length > 0) {
+        html += `
+            <div style="background: #ffebee; padding: 15px; border-radius: 6px; margin-top: 20px;">
+                <strong>⚠️ Data Quality Warnings:</strong>
+                <ul style="margin: 10px 0 0 20px; line-height: 1.8;">
+                    ${analysis.dataQualityWarnings.map(w => `<li>${w}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    csvMappingContent.innerHTML = html;
+    csvMappingReview.classList.remove('hidden');
+    csvSubmitBtn.disabled = false;
+    csvSubmitBtn.textContent = '🧠 Analyze CSV with AI';
+}
+
+// Step 2: Import CSV to BigQuery
+csvImportBtn.addEventListener('click', async () => {
+    if (!csvAnalysisData) {
+        alert('No CSV analysis data found. Please analyze CSV first.');
+        return;
+    }
+    
+    csvImportBtn.disabled = true;
+    csvImportBtn.textContent = '⏳ Importing to BigQuery...';
+    
+    try {
+        const response = await fetch('/api/vendors/csv/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                columnMapping: csvAnalysisData.analysis.columnMapping,
+                sourceSystem: csvAnalysisData.analysis.sourceSystemGuess || 'csv_upload'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Import failed');
+        }
+        
+        displayCsvImportResults(data);
+        
+    } catch (error) {
+        alert('CSV import failed: ' + error.message);
+    } finally {
+        csvImportBtn.disabled = false;
+        csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
+    }
+});
+
+// Display import results
+function displayCsvImportResults(data) {
+    let html = `
+        <div style="text-align: center; padding: 20px;">
+            <h3 style="color: #4caf50; margin-bottom: 20px;">✅ Import Completed Successfully!</h3>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
+                <div style="background: #e8f5e9; padding: 20px; border-radius: 8px;">
+                    <div style="font-size: 14px; color: #666;">Vendors Processed</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #2e7d32;">${data.vendorsProcessed || 0}</div>
+                </div>
+                <div style="background: #e3f2fd; padding: 20px; border-radius: 8px;">
+                    <div style="font-size: 14px; color: #666;">New Vendors</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #1976d2;">${data.inserted || 0}</div>
+                </div>
+                <div style="background: #fff3e0; padding: 20px; border-radius: 8px;">
+                    <div style="font-size: 14px; color: #666;">Updated Vendors</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #f57c00;">${data.updated || 0}</div>
+                </div>
+            </div>
+            
+            <p style="color: #666; margin-top: 20px;">
+                ✓ Data successfully imported to BigQuery table: <code>global_vendors</code>
+            </p>
+        </div>
+    `;
+    
+    if (data.errors && data.errors.length > 0) {
+        html += `
+            <div style="background: #ffebee; padding: 15px; border-radius: 6px; margin-top: 20px;">
+                <strong>⚠️ Errors (${data.errors.length}):</strong>
+                <ul style="margin: 10px 0 0 20px;">
+                    ${data.errors.map(e => `<li>${e}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    csvImportResults.innerHTML = html;
+    csvImportResults.classList.remove('hidden');
+    
+    // Reset upload form
+    csvMappingReview.classList.add('hidden');
+    csvUploadArea.querySelector('p').textContent = 'Drag & drop your vendor CSV here or click to browse';
+    csvSubmitBtn.disabled = true;
+    selectedCsvFile = null;
+    csvAnalysisData = null;
+}
+
+// Cancel button
+csvCancelBtn.addEventListener('click', () => {
+    csvMappingReview.classList.add('hidden');
+    csvImportResults.classList.add('hidden');
+    csvUploadArea.querySelector('p').textContent = 'Drag & drop your vendor CSV here or click to browse';
+    csvSubmitBtn.disabled = true;
+    selectedCsvFile = null;
+    csvAnalysisData = null;
+});
