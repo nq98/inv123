@@ -748,6 +748,57 @@ def search_vendors():
         print(f"❌ Error searching vendors: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/vendors/list', methods=['GET'])
+def list_vendors():
+    """
+    Get paginated list of all vendors from BigQuery
+    
+    Query parameters:
+        - page: Page number (default: 1)
+        - limit: Items per page (default: 20)
+    
+    Returns:
+        {
+            "vendors": [...],
+            "total_count": int,
+            "page": int,
+            "limit": int,
+            "total_pages": int
+        }
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        
+        # Validate parameters
+        if page < 1:
+            page = 1
+        if limit < 1 or limit > 100:
+            limit = 20
+        
+        # Calculate offset
+        offset = (page - 1) * limit
+        
+        # Get vendors from BigQuery
+        bq_service = get_bigquery_service()
+        result = bq_service.get_all_vendors(limit=limit, offset=offset)
+        
+        # Calculate total pages
+        total_count = result['total_count']
+        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
+        
+        return jsonify({
+            'vendors': result['vendors'],
+            'total_count': total_count,
+            'page': page,
+            'limit': limit,
+            'total_pages': total_pages
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error listing vendors: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'

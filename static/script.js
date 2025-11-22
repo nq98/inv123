@@ -1121,3 +1121,274 @@ csvCancelBtn.addEventListener('click', () => {
     selectedCsvFile = null;
     csvAnalysisData = null;
 });
+
+// ===== VENDOR DATABASE BROWSER =====
+
+const vendorSearchInput = document.getElementById('vendorSearchInput');
+const vendorLoading = document.getElementById('vendorLoading');
+const vendorEmptyState = document.getElementById('vendorEmptyState');
+const vendorListContainer = document.getElementById('vendorListContainer');
+const vendorPagination = document.getElementById('vendorPagination');
+const vendorPrevBtn = document.getElementById('vendorPrevBtn');
+const vendorNextBtn = document.getElementById('vendorNextBtn');
+const vendorPageInfo = document.getElementById('vendorPageInfo');
+const vendorStats = document.getElementById('vendorStats');
+
+let currentVendorPage = 1;
+let currentVendorLimit = 20;
+let totalVendorPages = 0;
+let allVendors = [];
+let filteredVendors = [];
+let searchTimeout = null;
+
+async function loadVendorList(page = 1) {
+    currentVendorPage = page;
+    
+    vendorLoading.classList.remove('hidden');
+    vendorEmptyState.classList.add('hidden');
+    vendorListContainer.innerHTML = '';
+    vendorPagination.classList.add('hidden');
+    
+    try {
+        const response = await fetch(`/api/vendors/list?page=${page}&limit=${currentVendorLimit}`);
+        const data = await response.json();
+        
+        vendorLoading.classList.add('hidden');
+        
+        if (!data.vendors || data.vendors.length === 0) {
+            vendorEmptyState.classList.remove('hidden');
+            vendorStats.innerHTML = '';
+            return;
+        }
+        
+        allVendors = data.vendors;
+        filteredVendors = allVendors;
+        totalVendorPages = data.total_pages;
+        
+        renderVendorStats(data.total_count, page, data.limit);
+        renderVendorList(filteredVendors);
+        renderVendorPagination(page, totalVendorPages, data.total_count);
+        
+    } catch (error) {
+        vendorLoading.classList.add('hidden');
+        vendorListContainer.innerHTML = `
+            <div style="background: #ffebee; padding: 20px; border-radius: 8px; color: #c62828;">
+                <strong>Error loading vendors:</strong> ${error.message}
+            </div>
+        `;
+    }
+}
+
+function renderVendorStats(totalCount, currentPage, limit) {
+    const startItem = (currentPage - 1) * limit + 1;
+    const endItem = Math.min(currentPage * limit, totalCount);
+    
+    vendorStats.innerHTML = `
+        <div style="background: #e8f5e9; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #4caf50;">
+            <div style="font-size: 24px; font-weight: bold; color: #2e7d32;">${totalCount}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Total Vendors</div>
+        </div>
+        <div style="background: #e3f2fd; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #2196f3;">
+            <div style="font-size: 24px; font-weight: bold; color: #1976d2;">${startItem}-${endItem}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Showing</div>
+        </div>
+        <div style="background: #f3e5f5; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #9c27b0;">
+            <div style="font-size: 24px; font-weight: bold; color: #7b1fa2;">${totalVendorPages}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Total Pages</div>
+        </div>
+    `;
+}
+
+function renderVendorList(vendors) {
+    if (vendors.length === 0) {
+        vendorListContainer.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #999;">
+                <p>No vendors match your search criteria</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const html = vendors.map((vendor, idx) => {
+        const vendorId = `vendor-${currentVendorPage}-${idx}`;
+        const lastUpdated = vendor.last_updated ? new Date(vendor.last_updated).toLocaleString() : 'N/A';
+        const createdAt = vendor.created_at ? new Date(vendor.created_at).toLocaleString() : 'N/A';
+        
+        return `
+            <div class="vendor-card" id="${vendorId}">
+                <div class="vendor-card-header" onclick="toggleVendorDetails('${vendorId}')">
+                    <div style="flex: 1;">
+                        <h3 class="vendor-name">${vendor.global_name}</h3>
+                        <div class="vendor-meta">
+                            <span class="vendor-id">ID: ${vendor.vendor_id}</span>
+                            <span class="vendor-source">${vendor.source_system || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    <div class="vendor-expand-icon">▼</div>
+                </div>
+                
+                <div class="vendor-card-details hidden">
+                    <div class="vendor-detail-section">
+                        <strong>📧 Contact Information</strong>
+                        <div style="margin-top: 10px;">
+                            ${vendor.emails && vendor.emails.length > 0 ? `
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-size: 13px; color: #666;">Emails:</span><br>
+                                    <div class="badge-container">
+                                        ${vendor.emails.map(email => `<span class="badge badge-email">${email}</span>`).join('')}
+                                    </div>
+                                </div>
+                            ` : '<div style="color: #999; font-size: 13px;">No emails</div>'}
+                            
+                            ${vendor.domains && vendor.domains.length > 0 ? `
+                                <div style="margin-top: 8px;">
+                                    <span style="font-size: 13px; color: #666;">Domains:</span><br>
+                                    <div class="badge-container">
+                                        ${vendor.domains.map(domain => `<span class="badge badge-domain">${domain}</span>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    
+                    ${vendor.countries && vendor.countries.length > 0 ? `
+                        <div class="vendor-detail-section">
+                            <strong>🌍 Countries</strong>
+                            <div class="badge-container" style="margin-top: 10px;">
+                                ${vendor.countries.map(country => `<span class="badge badge-country">${getCountryFlag(country)} ${country}</span>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${vendor.custom_attributes && Object.keys(vendor.custom_attributes).length > 0 ? `
+                        <div class="vendor-detail-section">
+                            <strong>⚙️ Custom Attributes</strong>
+                            <div class="custom-attributes-viewer">
+                                ${renderCustomAttributes(vendor.custom_attributes)}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="vendor-detail-section">
+                        <strong>🕒 Timestamps</strong>
+                        <div style="margin-top: 10px; font-size: 13px; color: #666;">
+                            <div><strong>Last Updated:</strong> ${lastUpdated}</div>
+                            <div style="margin-top: 4px;"><strong>Created:</strong> ${createdAt}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    vendorListContainer.innerHTML = html;
+}
+
+function renderCustomAttributes(attrs) {
+    if (!attrs || Object.keys(attrs).length === 0) {
+        return '<div style="color: #999; font-size: 13px;">No custom attributes</div>';
+    }
+    
+    return `
+        <div class="custom-attr-grid">
+            ${Object.entries(attrs).map(([key, value]) => `
+                <div class="custom-attr-item">
+                    <strong>${key}:</strong>
+                    <span>${typeof value === 'object' ? JSON.stringify(value) : value}</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function getCountryFlag(countryCode) {
+    const flagMap = {
+        'US': '🇺🇸', 'USA': '🇺🇸', 'United States': '🇺🇸',
+        'GB': '🇬🇧', 'UK': '🇬🇧', 'United Kingdom': '🇬🇧',
+        'DE': '🇩🇪', 'Germany': '🇩🇪', 'Deutschland': '🇩🇪',
+        'FR': '🇫🇷', 'France': '🇫🇷',
+        'ES': '🇪🇸', 'Spain': '🇪🇸', 'España': '🇪🇸',
+        'IT': '🇮🇹', 'Italy': '🇮🇹',
+        'CA': '🇨🇦', 'Canada': '🇨🇦',
+        'AU': '🇦🇺', 'Australia': '🇦🇺',
+        'JP': '🇯🇵', 'Japan': '🇯🇵',
+        'CN': '🇨🇳', 'China': '🇨🇳',
+        'IN': '🇮🇳', 'India': '🇮🇳',
+        'BR': '🇧🇷', 'Brazil': '🇧🇷',
+        'MX': '🇲🇽', 'Mexico': '🇲🇽',
+        'NL': '🇳🇱', 'Netherlands': '🇳🇱',
+        'SE': '🇸🇪', 'Sweden': '🇸🇪',
+        'CH': '🇨🇭', 'Switzerland': '🇨🇭',
+        'AT': '🇦🇹', 'Austria': '🇦🇹',
+        'BE': '🇧🇪', 'Belgium': '🇧🇪',
+        'PL': '🇵🇱', 'Poland': '🇵🇱',
+        'IL': '🇮🇱', 'Israel': '🇮🇱'
+    };
+    
+    return flagMap[countryCode] || '🌍';
+}
+
+function renderVendorPagination(currentPage, totalPages, totalCount) {
+    vendorPagination.classList.remove('hidden');
+    
+    vendorPrevBtn.disabled = currentPage <= 1;
+    vendorNextBtn.disabled = currentPage >= totalPages;
+    
+    const startItem = (currentPage - 1) * currentVendorLimit + 1;
+    const endItem = Math.min(currentPage * currentVendorLimit, totalCount);
+    
+    vendorPageInfo.textContent = `Page ${currentPage} of ${totalPages} (${startItem}-${endItem} of ${totalCount})`;
+}
+
+window.toggleVendorDetails = function(vendorId) {
+    const card = document.getElementById(vendorId);
+    const details = card.querySelector('.vendor-card-details');
+    const icon = card.querySelector('.vendor-expand-icon');
+    
+    if (details.classList.contains('hidden')) {
+        details.classList.remove('hidden');
+        icon.textContent = '▲';
+        card.classList.add('expanded');
+    } else {
+        details.classList.add('hidden');
+        icon.textContent = '▼';
+        card.classList.remove('expanded');
+    }
+};
+
+vendorPrevBtn.addEventListener('click', () => {
+    if (currentVendorPage > 1) {
+        loadVendorList(currentVendorPage - 1);
+    }
+});
+
+vendorNextBtn.addEventListener('click', () => {
+    if (currentVendorPage < totalVendorPages) {
+        loadVendorList(currentVendorPage + 1);
+    }
+});
+
+vendorSearchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    
+    searchTimeout = setTimeout(() => {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        
+        if (searchTerm === '') {
+            filteredVendors = allVendors;
+        } else {
+            filteredVendors = allVendors.filter(vendor => 
+                vendor.global_name.toLowerCase().includes(searchTerm) ||
+                (vendor.normalized_name && vendor.normalized_name.toLowerCase().includes(searchTerm)) ||
+                vendor.vendor_id.toLowerCase().includes(searchTerm)
+            );
+        }
+        
+        renderVendorList(filteredVendors);
+    }, 300);
+});
+
+// Load vendors on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadVendorList(1);
+});

@@ -217,6 +217,18 @@ class BigQueryService:
             vendors = []
             
             for row in results:
+                # Handle custom_attributes - it may already be a dict from BigQuery JSON type
+                custom_attrs = row.custom_attributes
+                if custom_attrs:
+                    if isinstance(custom_attrs, str):
+                        custom_attrs = json.loads(custom_attrs)
+                    elif isinstance(custom_attrs, dict):
+                        custom_attrs = custom_attrs
+                    else:
+                        custom_attrs = {}
+                else:
+                    custom_attrs = {}
+                
                 vendors.append({
                     "vendor_id": row.vendor_id,
                     "global_name": row.global_name,
@@ -224,7 +236,7 @@ class BigQueryService:
                     "emails": list(row.emails) if row.emails else [],
                     "domains": list(row.domains) if row.domains else [],
                     "countries": list(row.countries) if row.countries else [],
-                    "custom_attributes": json.loads(row.custom_attributes) if row.custom_attributes else {},
+                    "custom_attributes": custom_attrs,
                     "source_system": row.source_system,
                     "last_updated": row.last_updated.isoformat() if row.last_updated else None
                 })
@@ -234,3 +246,94 @@ class BigQueryService:
         except Exception as e:
             print(f"❌ Error searching vendors: {e}")
             return []
+    
+    def get_all_vendors(self, limit=20, offset=0):
+        """
+        Get all vendors with pagination
+        
+        Args:
+            limit: Number of vendors per page (default 20)
+            offset: Starting offset for pagination (default 0)
+        
+        Returns:
+            dict with 'vendors' list and 'total_count' integer
+        """
+        
+        # Get total count
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM `{self.full_table_id}`
+        """
+        
+        # Get paginated vendors
+        vendors_query = f"""
+        SELECT 
+            vendor_id,
+            global_name,
+            normalized_name,
+            emails,
+            domains,
+            countries,
+            custom_attributes,
+            source_system,
+            last_updated,
+            created_at
+        FROM `{self.full_table_id}`
+        ORDER BY last_updated DESC
+        LIMIT @limit
+        OFFSET @offset
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                bigquery.ScalarQueryParameter("offset", "INT64", offset),
+            ]
+        )
+        
+        try:
+            # Get total count
+            count_result = self.client.query(count_query).result()
+            total_count = list(count_result)[0].total
+            
+            # Get vendors
+            results = self.client.query(vendors_query, job_config=job_config).result()
+            vendors = []
+            
+            for row in results:
+                # Handle custom_attributes - it may already be a dict from BigQuery JSON type
+                custom_attrs = row.custom_attributes
+                if custom_attrs:
+                    if isinstance(custom_attrs, str):
+                        custom_attrs = json.loads(custom_attrs)
+                    elif isinstance(custom_attrs, dict):
+                        custom_attrs = custom_attrs
+                    else:
+                        custom_attrs = {}
+                else:
+                    custom_attrs = {}
+                
+                vendors.append({
+                    "vendor_id": row.vendor_id,
+                    "global_name": row.global_name,
+                    "normalized_name": row.normalized_name,
+                    "emails": list(row.emails) if row.emails else [],
+                    "domains": list(row.domains) if row.domains else [],
+                    "countries": list(row.countries) if row.countries else [],
+                    "custom_attributes": custom_attrs,
+                    "source_system": row.source_system,
+                    "last_updated": row.last_updated.isoformat() if row.last_updated else None,
+                    "created_at": row.created_at.isoformat() if row.created_at else None
+                })
+            
+            return {
+                "vendors": vendors,
+                "total_count": total_count
+            }
+            
+        except Exception as e:
+            print(f"❌ Error fetching vendors: {e}")
+            return {
+                "vendors": [],
+                "total_count": 0
+            }

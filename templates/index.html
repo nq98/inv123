@@ -119,6 +119,55 @@
         </div>
         
         <div class="card">
+            <h2>📋 Vendor Database</h2>
+            <p>Browse all vendors from BigQuery with complete semantic data</p>
+            
+            <!-- Search Bar -->
+            <div style="margin-bottom: 20px;">
+                <input 
+                    type="text" 
+                    id="vendorSearchInput" 
+                    placeholder="🔍 Search vendors by name..." 
+                    style="width: 100%; padding: 15px; border: 2px solid #667eea; border-radius: 8px; font-size: 16px; outline: none;">
+            </div>
+            
+            <!-- Stats Bar -->
+            <div id="vendorStats" style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;"></div>
+            
+            <!-- Loading State -->
+            <div id="vendorLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Loading vendors from BigQuery...</p>
+            </div>
+            
+            <!-- Empty State -->
+            <div id="vendorEmptyState" class="hidden" style="text-align: center; padding: 60px 20px; color: #999;">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin-bottom: 20px; opacity: 0.3;">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <h3 style="margin-bottom: 10px; color: #666;">No vendors found</h3>
+                <p>Upload a vendor CSV to get started</p>
+            </div>
+            
+            <!-- Vendor List Container -->
+            <div id="vendorListContainer"></div>
+            
+            <!-- Pagination Controls -->
+            <div id="vendorPagination" class="hidden" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #eee;">
+                <button id="vendorPrevBtn" class="pagination-btn" style="width: auto; padding: 12px 24px;">
+                    ← Previous
+                </button>
+                <div id="vendorPageInfo" style="color: #666; font-weight: 600;"></div>
+                <button id="vendorNextBtn" class="pagination-btn" style="width: auto; padding: 12px 24px;">
+                    Next →
+                </button>
+            </div>
+        </div>
+        
+        <div class="card">
             <h2>📤 Upload Invoice</h2>
             <p>Upload an invoice PDF or image to extract structured data with semantic accuracy</p>
             
