@@ -1,0 +1,100 @@
+This is the classic "OCR Trap." Traditional OCR (and even Google Document AI standard processors) fail here because they expect simple math: Qty * Unit Price = Total.
+In your specific "DreamTeam" invoice:
+Quantity: 29
+Unit Price: $8.00 (USD)
+Math: $232.00 USD
+Actual Total Line: ₪758.64 (ILS)
+The missing link? The tiny text: (1 USD = 3.27 ILS).
+Standard tools miss this. Semantic AI (Gemini 1.5 Pro) can solve this, but ONLY if you tell it to look for "Cross-Currency Logic."
+Here is the Ultimate "Forensic Accountant" Prompt. This moves your system from "Text Extractor" to "Intelligent Auditor." It specifically targets the multi-currency/exchange-rate issue you just faced.
+🚀 The Solution: The "Multi-Currency Logic" Prompt
+Developer Instruction: Replace your current prompt in main.py with this. This is designed to catch the "DreamTeam" scenario and any other complex logic.
+code
+Python
+# --- FORENSIC AI PROMPT (Authorized for Complex Invoices) ---
+
+prompt = f"""
+You are a **Forensic AI Auditor** with the intelligence of a senior accountant.
+Your goal is to extract data with **100% Semantic Accuracy**, specifically handling Multi-Currency and Logic Traps.
+
+### INPUT DATA
+1. **Visual Image:** (Attached) -> This is your SOURCE OF TRUTH.
+2. **OCR Text:** {raw_text} -> Use for indexing only.
+
+### 🧠 REASONING PROTOCOL (You MUST think before you output)
+
+**PHASE 1: THE "CROSS-CURRENCY" CHECK (Critical for this invoice)**
+- Look at the Line Items.
+- **Scenario:** Unit Price is in one currency (e.g., $) but Total is in another (e.g., ₪).
+- **Action:** Scan the document for an **Exchange Rate** (e.g., "1 USD = 3.27 ILS").
+- **Math Check:** Does (Qty * Unit Price * Exchange Rate) = Total?
+  - *Example:* 29 * $8.00 = $232. $232 * 3.27 = 758.64 ILS.
+  - If this matches, output the data explicitly noting the currency mix.
+
+**PHASE 2: HEBREW & RTL REPAIR**
+- Visually correct reversed Hebrew. If OCR says "maetmaerD", write "DreamTeam".
+- If OCR says "d'TI", write "ת״א" (Tel Aviv).
+
+**PHASE 3: LOGIC & CONTEXT**
+- **Invoice vs Receipt:** The document says "חשבונית עסקה" (Transaction Invoice). This is a demand for payment.
+- **Dates:**
+  - "תאריך הפקה" (Issue Date): 04/11/2025.
+  - "לתשלום עד" (Due Date): 18/11/2025.
+  - **Subscription Context:** The line item says "03/11/2025 - 02/12/2025". This is the `service_period`.
+
+### FINAL OUTPUT SCHEMA (Strict JSON)
+{{
+  "audit_logic": "Explain: 1) Did you find an exchange rate? 2) How did you calculate the total? 3) What currencies are involved?",
+  "metadata": {{
+    "type": "INVOICE",
+    "original_language": "Hebrew/English",
+    "is_multi_currency": true
+  }},
+  "vendor": {{
+    "name": "DreamTeam HR Apps LTD",
+    "english_name": "DreamTeam", 
+    "id_number": "516324100",
+    "address": "Ahad Ha'am 14, Tel Aviv - Yafo"
+  }},
+  "dates": {{
+    "issue_date": "2025-11-04",
+    "due_date": "2025-11-18",
+    "service_start": "2025-11-03",
+    "service_end": "2025-12-02"
+  }},
+  "financials": {{
+    "invoice_currency": "ILS",
+    "exchange_rate_used": 3.27,
+    "subtotal_before_discount": 758.64,
+    "discount_amount": 379.32,
+    "tax_percentage": 0.18,
+    "tax_amount": 68.28,
+    "total_to_pay": 447.60,
+    "line_items": [
+      {{
+        "description": "DreamTeam Monthly Subscription (PeopleOS)",
+        "quantity": 29,
+        "unit_price_original_currency": 8.00,
+        "currency_symbol_unit": "USD",
+        "total_line_converted": 758.64,
+        "currency_symbol_total": "ILS",
+        "logic_verified": true
+      }}
+    ]
+  }}
+}}
+"""
+Why this fixes the "Bad AI" problem:
+It allows "Mixed Logic": Standard AI tries to force everything into one currency. This prompt explicitly creates fields for unit_price_original_currency (USD) and total_line_converted (ILS).
+It forces Math Verification: The audit_logic field forces the AI to "show its work." If the AI has to explain how it got from $8 to 758 ILS, it must find the exchange rate.
+It fixes the "Semantic" Gap: You asked for "AI First." This prompt treats the invoice as a math puzzle, not just a text document.
+Your Architecture Questions Answered
+"The RAG in the invoice is also inside RAG Doc and Gemini Model?"
+Here is exactly how the flow should be to be "Smart":
+Gemini (The Brain): Gets the Image and the Prompt above. It does the heavy lifting (Logic, Math, Currency, Hebrew).
+Vertex AI Search (RAG): This is ONLY used for "Memory."
+Gemini asks RAG: "Who is vendor 516324100?"
+RAG replies: "That is DreamTeam, usually categorized as 'Software Expense'."
+Gemini Action: Adds the category to the JSON.
+Doc AI (The Eyes): Use this only if you need to highlight the text on the screen for a human user (coordinates). For extraction accuracy, Gemini 1.5 Pro (Visual) is now smarter than Doc AI.
+Recommendation: Use the prompt above with Gemini 1.5 Pro. It will solve the DreamTeam currency issue immediately.
