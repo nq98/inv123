@@ -19,8 +19,6 @@ class GmailService:
         'openid'
     ]
     
-    REDIRECT_URI = 'https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/api/ap-automation/gmail/callback'
-    
     def __init__(self):
         self.client_id = os.getenv('GMAIL_CLIENT_ID')
         self.client_secret = os.getenv('GMAIL_CLIENT_SECRET')
@@ -28,22 +26,37 @@ class GmailService:
         if not self.client_id or not self.client_secret:
             raise ValueError("GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET are required")
     
-    def get_authorization_url(self):
+    def _get_redirect_uri(self):
+        """Get dynamic redirect URI based on environment (dev vs production)"""
+        base_url = os.getenv('REDIRECT_BASE_URL')
+        if base_url:
+            return f"{base_url}/api/ap-automation/gmail/callback"
+        
+        dev_domain = os.getenv('REPLIT_DEV_DOMAIN')
+        if dev_domain:
+            return f"https://{dev_domain}/api/ap-automation/gmail/callback"
+        
+        return 'https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/api/ap-automation/gmail/callback'
+    
+    def get_authorization_url(self, redirect_uri=None):
         """Generate Gmail OAuth authorization URL"""
+        if redirect_uri is None:
+            redirect_uri = self._get_redirect_uri()
+        
         client_config = {
             "web": {
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [self.REDIRECT_URI]
+                "redirect_uris": [redirect_uri]
             }
         }
         
         flow = Flow.from_client_config(
             client_config,
             scopes=self.SCOPES,
-            redirect_uri=self.REDIRECT_URI
+            redirect_uri=redirect_uri
         )
         
         auth_url, state = flow.authorization_url(
@@ -54,22 +67,25 @@ class GmailService:
         
         return auth_url, state
     
-    def exchange_code_for_token(self, code):
+    def exchange_code_for_token(self, code, redirect_uri=None):
         """Exchange authorization code for access token"""
+        if redirect_uri is None:
+            redirect_uri = self._get_redirect_uri()
+        
         client_config = {
             "web": {
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [self.REDIRECT_URI]
+                "redirect_uris": [redirect_uri]
             }
         }
         
         flow = Flow.from_client_config(
             client_config,
             scopes=self.SCOPES,
-            redirect_uri=self.REDIRECT_URI
+            redirect_uri=redirect_uri
         )
         
         flow.fetch_token(code=code)

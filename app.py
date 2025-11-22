@@ -147,9 +147,11 @@ def gmail_auth():
     """Initiate Gmail OAuth flow"""
     try:
         gmail_service = get_gmail_service()
-        auth_url, state = gmail_service.get_authorization_url()
+        redirect_uri = request.host_url.rstrip('/') + '/api/ap-automation/gmail/callback'
+        auth_url, state = gmail_service.get_authorization_url(redirect_uri=redirect_uri)
         
         session['oauth_state'] = state
+        session['oauth_redirect_uri'] = redirect_uri
         
         return redirect(auth_url)
     except Exception as e:
@@ -170,7 +172,8 @@ def gmail_callback():
             return jsonify({'error': 'State mismatch - possible CSRF attack'}), 400
         
         gmail_service = get_gmail_service()
-        credentials = gmail_service.exchange_code_for_token(code)
+        redirect_uri = session.get('oauth_redirect_uri') or (request.host_url.rstrip('/') + '/api/ap-automation/gmail/callback')
+        credentials = gmail_service.exchange_code_for_token(code, redirect_uri=redirect_uri)
         
         # Store credentials securely server-side
         token_storage = get_token_storage()
