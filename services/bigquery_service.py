@@ -119,8 +119,19 @@ class BigQueryService:
             staging_table = bigquery.Table(staging_table_id, schema=staging_schema)
             staging_table = self.client.create_table(staging_table)
             
+            # Convert custom_attributes dict to JSON string for BigQuery
+            prepared_vendors = []
+            for vendor in mapped_vendors:
+                vendor_copy = vendor.copy()
+                # Convert custom_attributes dict to JSON string
+                if 'custom_attributes' in vendor_copy and vendor_copy['custom_attributes']:
+                    vendor_copy['custom_attributes'] = json.dumps(vendor_copy['custom_attributes'])
+                else:
+                    vendor_copy['custom_attributes'] = json.dumps({})
+                prepared_vendors.append(vendor_copy)
+            
             # Insert data into staging table
-            errors = self.client.insert_rows_json(staging_table, mapped_vendors)
+            errors = self.client.insert_rows_json(staging_table, prepared_vendors)
             
             if errors:
                 print(f"⚠️ Errors inserting into staging table: {errors}")

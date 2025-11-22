@@ -1082,8 +1082,20 @@ function displayCsvImportResults(data) {
         html += `
             <div style="background: #ffebee; padding: 15px; border-radius: 6px; margin-top: 20px;">
                 <strong>⚠️ Errors (${data.errors.length}):</strong>
-                <ul style="margin: 10px 0 0 20px;">
-                    ${data.errors.map(e => `<li>${e}</li>`).join('')}
+                <ul style="margin: 10px 0 0 20px; line-height: 1.8;">
+                    ${data.errors.map(e => {
+                        // Handle different error formats
+                        if (typeof e === 'string') {
+                            return `<li>${e}</li>`;
+                        } else if (e.errors && Array.isArray(e.errors)) {
+                            // BigQuery error format: {index: 0, errors: [{message: "..."}]}
+                            return e.errors.map(err => `<li>Row ${e.index + 1}: ${err.message || JSON.stringify(err)}</li>`).join('');
+                        } else if (e.message) {
+                            return `<li>${e.message}</li>`;
+                        } else {
+                            return `<li>${JSON.stringify(e)}</li>`;
+                        }
+                    }).join('')}
                 </ul>
             </div>
         `;
