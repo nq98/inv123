@@ -105,6 +105,8 @@ function displayResults(data) {
         html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
     }
     
+    html += buildLayerStatusView(data.layers || {});
+    
     const displayData = Object.keys(validated).length > 0 ? validated : {
         vendor_name: rawEntities.supplier_name,
         invoice_number: rawEntities.invoice_id,
@@ -212,4 +214,76 @@ function displayResults(data) {
     }
     
     resultContent.innerHTML = html;
+}
+
+function buildLayerStatusView(layers) {
+    let html = `
+        <div class="layer-pipeline">
+            <h3 style="color: #667eea; margin-bottom: 20px;">🔍 Processing Pipeline</h3>
+    `;
+    
+    const layer1 = layers.layer1_document_ai || {};
+    const layer2 = layers.layer2_vertex_search || {};
+    const layer3 = layers.layer3_gemini || {};
+    
+    html += buildLayerCard(
+        '1',
+        'Document AI - Structure Extraction',
+        layer1.status || 'unknown',
+        layer1.error,
+        `
+            ${layer1.text_length ? `<div class="layer-detail"><strong>Text Extracted:</strong> ${layer1.text_length.toLocaleString()} characters</div>` : ''}
+            ${layer1.entity_types ? `<div class="layer-detail"><strong>Entity Types Found:</strong> ${layer1.entity_types.length}</div>` : ''}
+            ${layer1.entity_types ? `<div class="layer-detail-small">${layer1.entity_types.join(', ')}</div>` : ''}
+        `
+    );
+    
+    html += buildLayerCard(
+        '2',
+        'Vertex Search (RAG) - Context Retrieval',
+        layer2.status || 'unknown',
+        layer2.error,
+        `
+            ${layer2.vendor_query ? `<div class="layer-detail"><strong>Vendor Query:</strong> "${layer2.vendor_query}"</div>` : '<div class="layer-detail"><em>No vendor name extracted</em></div>'}
+            ${layer2.matches_found !== undefined ? `<div class="layer-detail"><strong>Database Matches:</strong> ${layer2.matches_found}</div>` : ''}
+            ${layer2.error ? `<div class="layer-detail" style="color: #ff9800;"><strong>Issue:</strong> ${layer2.error}</div>` : ''}
+        `
+    );
+    
+    html += buildLayerCard(
+        '3',
+        'Gemini - Semantic Validation',
+        layer3.status || 'unknown',
+        layer3.error,
+        `
+            ${layer3.validation_flags && layer3.validation_flags.length > 0 ? `
+                <div class="layer-detail"><strong>Validation Flags:</strong></div>
+                <ul class="validation-flags">
+                    ${layer3.validation_flags.map(flag => `<li>${flag}</li>`).join('')}
+                </ul>
+            ` : layer3.status === 'success' ? '<div class="layer-detail">✓ All validations passed</div>' : ''}
+            ${layer3.error ? `<div class="layer-detail" style="color: #ff9800;"><strong>Error:</strong> ${layer3.error}</div>` : ''}
+        `
+    );
+    
+    html += `</div>`;
+    return html;
+}
+
+function buildLayerCard(number, title, status, error, content) {
+    const statusIcon = status === 'success' ? '✓' : status === 'error' ? '✗' : status === 'warning' || status === 'completed_with_warnings' ? '⚠' : '○';
+    const statusClass = status === 'success' ? 'layer-success' : status === 'error' ? 'layer-error' : status === 'warning' || status === 'completed_with_warnings' ? 'layer-warning' : 'layer-unknown';
+    
+    return `
+        <div class="layer-card ${statusClass}">
+            <div class="layer-header">
+                <span class="layer-number">${number}</span>
+                <h4>${title}</h4>
+                <span class="layer-status">${statusIcon}</span>
+            </div>
+            <div class="layer-content">
+                ${content}
+            </div>
+        </div>
+    `;
 }

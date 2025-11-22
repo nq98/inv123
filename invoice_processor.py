@@ -54,7 +54,8 @@ class InvoiceProcessor:
             result['layers']['layer1_document_ai'] = {
                 'status': 'success',
                 'text_length': len(raw_text),
-                'entity_types': list(extracted_entities.keys())
+                'entity_types': list(extracted_entities.keys()),
+                'entities': extracted_entities
             }
         except Exception as e:
             print(f"✗ Document AI error: {str(e)}")
