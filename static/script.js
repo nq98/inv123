@@ -107,79 +107,124 @@ function displayResults(data) {
     
     html += buildLayerStatusView(data.layers || {});
     
-    const displayData = Object.keys(validated).length > 0 ? validated : {
-        vendor_name: rawEntities.supplier_name,
-        invoice_number: rawEntities.invoice_id,
-        invoice_date: rawEntities.invoice_date,
-        total_amount: rawEntities.total_amount,
-        currency: rawEntities.currency,
-        line_items: rawEntities.line_item || []
-    };
+    const displayData = validated;
     
-    if (displayData.vendor_name || displayData.vendor_id || displayData.vendor?.name) {
-        const vendorName = displayData.vendor?.name || displayData.vendor_name;
-        const vendorId = displayData.vendor?.matched_db_id || displayData.vendor_id;
+    // Document Classification Section
+    if (displayData.documentType || displayData.language) {
         html += `
             <div class="result-section">
-                <h3>Vendor Information</h3>
+                <h3>📄 Document Classification</h3>
                 <div class="result-grid">
-                    ${vendorName ? `<div class="result-item"><strong>Vendor Name</strong><span>${vendorName}</span></div>` : ''}
-                    ${vendorId ? `<div class="result-item"><strong>Vendor ID</strong><span>${vendorId}</span></div>` : ''}
-                </div>
-            </div>
-        `;
-    }
-    
-    if (displayData.invoice_number || displayData.invoice_date || displayData.due_date) {
-        html += `
-            <div class="result-section">
-                <h3>Invoice Details</h3>
-                <div class="result-grid">
-                    ${displayData.invoice_number ? `<div class="result-item"><strong>Invoice Number</strong><span>${displayData.invoice_number}</span></div>` : ''}
-                    ${displayData.invoice_date ? `<div class="result-item"><strong>Invoice Date</strong><span>${displayData.invoice_date}</span></div>` : ''}
-                    ${displayData.due_date ? `<div class="result-item"><strong>Due Date</strong><span>${displayData.due_date}</span></div>` : ''}
+                    ${displayData.documentType ? `<div class="result-item"><strong>Document Type</strong><span>${displayData.documentType}</span></div>` : ''}
+                    ${displayData.language ? `<div class="result-item"><strong>Language</strong><span>${displayData.language.toUpperCase()}</span></div>` : ''}
                     ${displayData.currency ? `<div class="result-item"><strong>Currency</strong><span>${displayData.currency}</span></div>` : ''}
+                    ${displayData.classificationConfidence ? `<div class="result-item"><strong>Confidence</strong><span>${(displayData.classificationConfidence * 100).toFixed(1)}%</span></div>` : ''}
                 </div>
             </div>
         `;
     }
     
-    if (displayData.total_amount || displayData.tax_amount || displayData.subtotal) {
+    // Vendor Information Section
+    if (displayData.vendor) {
+        const vendor = displayData.vendor;
+        const vendorMatch = displayData.vendorMatch || {};
         html += `
             <div class="result-section">
-                <h3>Amounts</h3>
+                <h3>🏢 Vendor Information</h3>
                 <div class="result-grid">
-                    ${displayData.subtotal ? `<div class="result-item"><strong>Subtotal</strong><span>${displayData.subtotal}</span></div>` : ''}
-                    ${displayData.tax_amount ? `<div class="result-item"><strong>Tax</strong><span>${displayData.tax_amount}</span></div>` : ''}
-                    ${displayData.total_amount ? `<div class="result-item"><strong>Total Amount</strong><span>${displayData.total_amount}</span></div>` : ''}
+                    ${vendor.name ? `<div class="result-item"><strong>Vendor Name</strong><span>${vendor.name}</span></div>` : ''}
+                    ${vendorMatch.normalizedName && vendorMatch.normalizedName !== vendor.name ? `<div class="result-item"><strong>Canonical Name</strong><span>${vendorMatch.normalizedName}</span></div>` : ''}
+                    ${vendor.country ? `<div class="result-item"><strong>Country</strong><span>${vendor.country}</span></div>` : ''}
+                    ${vendor.taxId ? `<div class="result-item"><strong>Tax ID</strong><span>${vendor.taxId}</span></div>` : ''}
+                    ${vendor.email ? `<div class="result-item"><strong>Email</strong><span>${vendor.email}</span></div>` : ''}
+                    ${vendor.phone ? `<div class="result-item"><strong>Phone</strong><span>${vendor.phone}</span></div>` : ''}
+                    ${vendorMatch.confidence ? `<div class="result-item"><strong>Match Confidence</strong><span>${(vendorMatch.confidence * 100).toFixed(1)}%</span></div>` : ''}
+                </div>
+                ${vendor.address ? `<div class="result-item" style="margin-top: 10px;"><strong>Address</strong><span>${vendor.address}</span></div>` : ''}
+                ${vendorMatch.alternateNames && vendorMatch.alternateNames.length > 0 ? `<div class="result-detail-small" style="margin-top: 10px;"><strong>Alternate Names:</strong> ${vendorMatch.alternateNames.join(', ')}</div>` : ''}
+            </div>
+        `;
+    }
+    
+    // Invoice Details Section
+    if (displayData.invoiceNumber || displayData.issueDate) {
+        html += `
+            <div class="result-section">
+                <h3>📋 Invoice Details</h3>
+                <div class="result-grid">
+                    ${displayData.invoiceNumber ? `<div class="result-item"><strong>Invoice Number</strong><span>${displayData.invoiceNumber}</span></div>` : ''}
+                    ${displayData.issueDate ? `<div class="result-item"><strong>Issue Date</strong><span>${displayData.issueDate}</span></div>` : ''}
+                    ${displayData.dueDate ? `<div class="result-item"><strong>Due Date</strong><span>${displayData.dueDate}</span></div>` : ''}
+                    ${displayData.paymentTerms ? `<div class="result-item"><strong>Payment Terms</strong><span>${displayData.paymentTerms}</span></div>` : ''}
                 </div>
             </div>
         `;
     }
     
-    if (displayData.line_items && displayData.line_items.length > 0) {
+    // Buyer Information (if present)
+    if (displayData.buyer && displayData.buyer.name) {
+        const buyer = displayData.buyer;
         html += `
             <div class="result-section">
-                <h3>Line Items</h3>
+                <h3>🛒 Buyer Information</h3>
+                <div class="result-grid">
+                    ${buyer.name ? `<div class="result-item"><strong>Name</strong><span>${buyer.name}</span></div>` : ''}
+                    ${buyer.country ? `<div class="result-item"><strong>Country</strong><span>${buyer.country}</span></div>` : ''}
+                    ${buyer.taxId ? `<div class="result-item"><strong>Tax ID</strong><span>${buyer.taxId}</span></div>` : ''}
+                </div>
+                ${buyer.address ? `<div class="result-item" style="margin-top: 10px;"><strong>Address</strong><span>${buyer.address}</span></div>` : ''}
+            </div>
+        `;
+    }
+    
+    // Totals Section
+    if (displayData.totals) {
+        const totals = displayData.totals;
+        html += `
+            <div class="result-section">
+                <h3>💰 Financial Summary</h3>
+                <div class="result-grid">
+                    ${totals.subtotal ? `<div class="result-item"><strong>Subtotal</strong><span>${displayData.currency} ${totals.subtotal.toLocaleString()}</span></div>` : ''}
+                    ${totals.tax ? `<div class="result-item"><strong>Tax ${totals.taxPercent ? '(' + totals.taxPercent + '%)' : ''}</strong><span>${displayData.currency} ${totals.tax.toLocaleString()}</span></div>` : ''}
+                    ${totals.discounts ? `<div class="result-item"><strong>Discounts</strong><span>-${displayData.currency} ${totals.discounts.toLocaleString()}</span></div>` : ''}
+                    ${totals.fees ? `<div class="result-item"><strong>Fees</strong><span>${displayData.currency} ${totals.fees.toLocaleString()}</span></div>` : ''}
+                    ${totals.shipping ? `<div class="result-item"><strong>Shipping</strong><span>${displayData.currency} ${totals.shipping.toLocaleString()}</span></div>` : ''}
+                    ${totals.total ? `<div class="result-item" style="background: #e8f5e9; font-weight: bold;"><strong>Grand Total</strong><span>${displayData.currency} ${totals.total.toLocaleString()}</span></div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    // Line Items Section
+    if (displayData.lineItems && displayData.lineItems.length > 0) {
+        html += `
+            <div class="result-section">
+                <h3>📦 Line Items</h3>
                 <table class="line-items">
                     <thead>
                         <tr>
                             <th>Description</th>
-                            <th>Quantity</th>
+                            <th>Qty</th>
                             <th>Unit Price</th>
-                            <th>Amount</th>
+                            <th>Tax</th>
+                            <th>Subtotal</th>
+                            <th>✓</th>
                         </tr>
                     </thead>
                     <tbody>
         `;
         
-        displayData.line_items.forEach(item => {
+        displayData.lineItems.forEach(item => {
+            const mathIcon = item.mathVerified === false ? '⚠' : item.mathVerified === true ? '✓' : '-';
+            const mathColor = item.mathVerified === false ? 'color: #ff9800;' : item.mathVerified === true ? 'color: #4caf50;' : '';
             html += `
                 <tr>
-                    <td>${item.description || '-'}</td>
+                    <td>${item.description || '-'}${item.category ? `<br><small style="color: #888;">${item.category}</small>` : ''}</td>
                     <td>${item.quantity || '-'}</td>
-                    <td>${item.unit_price || item.unit_cost || '-'}</td>
-                    <td>${item.amount || '-'}</td>
+                    <td>${item.currency || displayData.currency} ${item.unitPrice ? item.unitPrice.toLocaleString() : '-'}</td>
+                    <td>${item.taxPercent ? item.taxPercent + '%' : '-'}</td>
+                    <td>${item.lineSubtotal ? item.lineSubtotal.toLocaleString() : '-'}</td>
+                    <td style="${mathColor} font-weight: bold;">${mathIcon}</td>
                 </tr>
             `;
         });
@@ -191,27 +236,54 @@ function displayResults(data) {
         `;
     }
     
-    if (displayData.math_verification) {
-        const mathStatus = displayData.math_verification.all_valid ? 'success' : 'warning';
+    // Payment Details Section
+    if (displayData.paymentDetails && (displayData.paymentDetails.iban || displayData.paymentDetails.bankName)) {
+        const payment = displayData.paymentDetails;
         html += `
             <div class="result-section">
-                <h3>Math Verification</h3>
-                <span class="${mathStatus}-badge">${displayData.math_verification.all_valid ? '✓ All Calculations Valid' : '⚠ Some Calculations Need Review'}</span>
+                <h3>💳 Payment Details</h3>
+                <div class="result-grid">
+                    ${payment.bankName ? `<div class="result-item"><strong>Bank</strong><span>${payment.bankName}</span></div>` : ''}
+                    ${payment.iban ? `<div class="result-item"><strong>IBAN</strong><span>${payment.iban}</span></div>` : ''}
+                    ${payment.swift ? `<div class="result-item"><strong>SWIFT/BIC</strong><span>${payment.swift}</span></div>` : ''}
+                    ${payment.accountNumber ? `<div class="result-item"><strong>Account Number</strong><span>${payment.accountNumber}</span></div>` : ''}
+                </div>
+                ${payment.paymentInstructions ? `<div class="result-item" style="margin-top: 10px;"><strong>Instructions</strong><span>${payment.paymentInstructions}</span></div>` : ''}
             </div>
         `;
     }
     
-    if (!html.includes('result-section')) {
+    // AI Reasoning Section
+    if (displayData.reasoning) {
         html += `
             <div class="result-section">
-                <p>No structured data could be extracted. Check the console for raw data.</p>
-                <details style="margin-top: 15px;">
-                    <summary style="cursor: pointer; font-weight: 600;">View Raw Response</summary>
-                    <pre style="background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto; margin-top: 10px;">${JSON.stringify(data, null, 2)}</pre>
-                </details>
+                <h3>🧠 AI Reasoning</h3>
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 6px; border-left: 4px solid #667eea;">
+                    <p style="margin: 0; color: #555; line-height: 1.6;">${displayData.reasoning}</p>
+                </div>
             </div>
         `;
     }
+    
+    // Warnings Section
+    if (displayData.warnings && displayData.warnings.length > 0) {
+        html += `
+            <div class="result-section">
+                <h3>⚠ Warnings & Flags</h3>
+                <ul class="validation-flags">
+                    ${displayData.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    // Raw Data Debug Section
+    html += `
+        <details style="margin-top: 30px; padding: 15px; background: #f9f9f9; border-radius: 6px;">
+            <summary style="cursor: pointer; font-weight: 600; color: #667eea;">🔍 View Complete JSON Response</summary>
+            <pre style="background: #fff; padding: 15px; border-radius: 6px; overflow-x: auto; margin-top: 10px; border: 1px solid #e0e0e0; max-height: 500px; overflow-y: auto;">${JSON.stringify(data, null, 2)}</pre>
+        </details>
+    `;
     
     resultContent.innerHTML = html;
 }
