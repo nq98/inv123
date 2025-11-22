@@ -11,7 +11,14 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-processor = InvoiceProcessor()
+_processor = None
+
+def get_processor():
+    """Lazy initialization of InvoiceProcessor to avoid blocking app startup"""
+    global _processor
+    if _processor is None:
+        _processor = InvoiceProcessor()
+    return _processor
 
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'gif'}
 MIME_TYPES = {
@@ -79,7 +86,7 @@ def process_invoice():
     gcs_uri = data['gcs_uri']
     mime_type = data.get('mime_type', 'application/pdf')
     
-    result = processor.process_invoice(gcs_uri, mime_type)
+    result = get_processor().process_invoice(gcs_uri, mime_type)
     
     return jsonify(result), 200
 
@@ -106,7 +113,7 @@ def upload_invoice():
     ext = filename.rsplit('.', 1)[1].lower()
     mime_type = MIME_TYPES.get(ext, 'application/pdf')
     
-    result = processor.process_local_file(filepath, mime_type)
+    result = get_processor().process_local_file(filepath, mime_type)
     
     os.remove(filepath)
     
@@ -114,4 +121,5 @@ def upload_invoice():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)
