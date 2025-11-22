@@ -1392,3 +1392,211 @@ vendorSearchInput.addEventListener('input', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     loadVendorList(1);
 });
+
+// ==================== VENDOR MATCHING ENGINE ====================
+
+const vendorMatchForm = document.getElementById('vendorMatchForm');
+const matchLoading = document.getElementById('matchLoading');
+const matchResults = document.getElementById('matchResults');
+
+vendorMatchForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const vendorName = document.getElementById('matchVendorName').value.trim();
+    const taxId = document.getElementById('matchTaxId').value.trim();
+    const emailDomain = document.getElementById('matchEmailDomain').value.trim();
+    const country = document.getElementById('matchCountry').value.trim();
+    const address = document.getElementById('matchAddress').value.trim();
+    const phone = document.getElementById('matchPhone').value.trim();
+    
+    if (!vendorName) {
+        alert('Please enter a vendor name');
+        return;
+    }
+    
+    // Show loading
+    matchLoading.classList.remove('hidden');
+    matchResults.classList.add('hidden');
+    
+    try {
+        const response = await fetch('/api/vendor/match', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                vendor_name: vendorName,
+                tax_id: taxId || null,
+                email_domain: emailDomain || null,
+                country: country || null,
+                address: address || null,
+                phone: phone || null
+            })
+        });
+        
+        const data = await response.json();
+        
+        // Hide loading
+        matchLoading.classList.add('hidden');
+        
+        if (data.success) {
+            displayMatchResults(data.result);
+        } else {
+            matchResults.innerHTML = `
+                <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
+                    <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Matching Failed</h3>
+                    <p style="margin: 0; color: #666;">${data.error || 'Unknown error occurred'}</p>
+                </div>
+            `;
+            matchResults.classList.remove('hidden');
+        }
+        
+    } catch (error) {
+        matchLoading.classList.add('hidden');
+        matchResults.innerHTML = `
+            <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
+                <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Network Error</h3>
+                <p style="margin: 0; color: #666;">${error.message}</p>
+            </div>
+        `;
+        matchResults.classList.remove('hidden');
+    }
+});
+
+function displayMatchResults(result) {
+    const { verdict, vendor_id, confidence, reasoning, risk_analysis, database_updates, parent_child_logic, method } = result;
+    
+    // Color coding based on verdict
+    let verdictColor, verdictIcon, verdictBg;
+    if (verdict === 'MATCH') {
+        verdictColor = '#2e7d32';
+        verdictIcon = '✅';
+        verdictBg = '#e8f5e9';
+    } else if (verdict === 'NEW_VENDOR') {
+        verdictColor = '#f57c00';
+        verdictIcon = '🆕';
+        verdictBg = '#fff3e0';
+    } else {
+        verdictColor = '#d32f2f';
+        verdictIcon = '⚠️';
+        verdictBg = '#ffebee';
+    }
+    
+    // Risk color coding
+    let riskColor, riskBg;
+    if (risk_analysis === 'NONE' || risk_analysis === 'LOW') {
+        riskColor = '#2e7d32';
+        riskBg = '#e8f5e9';
+    } else if (risk_analysis === 'MEDIUM') {
+        riskColor = '#f57c00';
+        riskBg = '#fff3e0';
+    } else {
+        riskColor = '#d32f2f';
+        riskBg = '#ffebee';
+    }
+    
+    // Method badge
+    let methodBadge = '';
+    if (method === 'TAX_ID_HARD_MATCH') {
+        methodBadge = '<span style="background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600;">⚡ TAX ID HARD MATCH</span>';
+    } else if (method === 'SEMANTIC_MATCH') {
+        methodBadge = '<span style="background: #764ba2; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600;">🧠 SEMANTIC MATCH</span>';
+    } else {
+        methodBadge = '<span style="background: #f57c00; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600;">🆕 NEW VENDOR</span>';
+    }
+    
+    // Database updates section
+    let dbUpdatesHtml = '';
+    if (database_updates && (database_updates.add_new_alias || database_updates.add_new_address || database_updates.add_new_domain)) {
+        const updates = [];
+        if (database_updates.add_new_alias) updates.push(`<li><strong>New Alias:</strong> ${database_updates.add_new_alias}</li>`);
+        if (database_updates.add_new_address) updates.push(`<li><strong>New Address:</strong> ${database_updates.add_new_address}</li>`);
+        if (database_updates.add_new_domain) updates.push(`<li><strong>New Domain:</strong> ${database_updates.add_new_domain}</li>`);
+        
+        dbUpdatesHtml = `
+            <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-left: 4px solid #1976d2; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #1565c0; display: flex; align-items: center; gap: 8px;">
+                    🔧 Self-Healing Database Updates
+                </h4>
+                <ul style="margin: 0; padding-left: 20px; color: #333;">
+                    ${updates.join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    // Parent/child logic section
+    let parentChildHtml = '';
+    if (parent_child_logic && parent_child_logic.is_subsidiary) {
+        parentChildHtml = `
+            <div style="margin-top: 20px; padding: 15px; background: #f3e5f5; border-left: 4px solid #9c27b0; border-radius: 6px;">
+                <h4 style="margin: 0 0 10px 0; color: #7b1fa2; display: flex; align-items: center; gap: 8px;">
+                    🏢 Parent/Child Relationship Detected
+                </h4>
+                <p style="margin: 0; color: #333;">
+                    <strong>Parent Company:</strong> ${parent_child_logic.parent_company_detected || 'Unknown'}
+                </p>
+            </div>
+        `;
+    }
+    
+    matchResults.innerHTML = `
+        <div style="margin-bottom: 20px; padding: 20px; background: ${verdictBg}; border-left: 6px solid ${verdictColor}; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: ${verdictColor}; font-size: 24px;">
+                    ${verdictIcon} ${verdict}
+                </h3>
+                ${methodBadge}
+            </div>
+            
+            ${vendor_id ? `
+                <div style="padding: 12px; background: rgba(255,255,255,0.7); border-radius: 6px; margin-bottom: 10px;">
+                    <strong style="color: #333;">Matched Vendor ID:</strong>
+                    <code style="background: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; margin-left: 8px;">${vendor_id}</code>
+                </div>
+            ` : ''}
+            
+            <div style="display: flex; gap: 20px; align-items: center; margin-top: 15px; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 13px; color: #666; font-weight: 600; margin-bottom: 5px;">CONFIDENCE SCORE</div>
+                    <div style="font-size: 28px; font-weight: 700; color: ${verdictColor};">
+                        ${(confidence * 100).toFixed(0)}%
+                    </div>
+                </div>
+                
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="font-size: 13px; color: #666; font-weight: 600; margin-bottom: 5px;">CONFIDENCE BAR</div>
+                    <div style="background: #ddd; height: 20px; border-radius: 10px; overflow: hidden;">
+                        <div style="background: ${verdictColor}; height: 100%; width: ${confidence * 100}%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div style="font-size: 13px; color: #666; font-weight: 600; margin-bottom: 5px;">RISK LEVEL</div>
+                    <div style="background: ${riskBg}; color: ${riskColor}; padding: 6px 16px; border-radius: 6px; font-weight: 700; display: inline-block;">
+                        ${risk_analysis}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="padding: 20px; background: white; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 15px 0; color: #333; display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                    <path d="M2 17l10 5 10-5"></path>
+                    <path d="M2 12l10 5 10-5"></path>
+                </svg>
+                Supreme Judge Reasoning
+            </h4>
+            <p style="margin: 0; color: #666; line-height: 1.6; font-size: 15px;">
+                ${reasoning}
+            </p>
+        </div>
+        
+        ${dbUpdatesHtml}
+        ${parentChildHtml}
+    `;
+    
+    matchResults.classList.remove('hidden');
+}

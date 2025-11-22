@@ -168,6 +168,75 @@
         </div>
         
         <div class="card">
+            <h2>⚖️ Vendor Matching Engine</h2>
+            <p>Test the Supreme Judge AI - Match invoice vendors to your database with semantic intelligence</p>
+            
+            <form id="vendorMatchForm" style="margin-top: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                            Vendor Name <span style="color: #e74c3c;">*</span>
+                        </label>
+                        <input type="text" id="matchVendorName" placeholder="e.g., Amazon AWS" required
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                            Tax ID / VAT
+                        </label>
+                        <input type="text" id="matchTaxId" placeholder="e.g., US123456789"
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                            Email Domain
+                        </label>
+                        <input type="text" id="matchEmailDomain" placeholder="e.g., @aws.com"
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                            Country
+                        </label>
+                        <input type="text" id="matchCountry" placeholder="e.g., US, IL, GB"
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                        Address
+                    </label>
+                    <input type="text" id="matchAddress" placeholder="e.g., 410 Terry Ave N, Seattle, WA"
+                        style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                        Phone
+                    </label>
+                    <input type="text" id="matchPhone" placeholder="e.g., +1-206-555-0100"
+                        style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 15px;">
+                </div>
+                
+                <button type="submit" class="gmail-btn" style="width: 100%; padding: 15px; font-size: 16px;">
+                    🔍 Match Vendor with Supreme Judge AI
+                </button>
+            </form>
+            
+            <div id="matchLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>The Supreme Judge is analyzing vendor match...</p>
+                <small>3-Step Pipeline: Tax ID → Semantic Search → Gemini Reasoning</small>
+            </div>
+            
+            <div id="matchResults" class="card hidden" style="margin-top: 20px; background: #f8f9fa;"></div>
+        </div>
+        
+        <div class="card">
             <h2>📤 Upload Invoice</h2>
             <p>Upload an invoice PDF or image to extract structured data with semantic accuracy</p>
             
