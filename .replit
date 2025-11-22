@@ -38,3 +38,7 @@ outputType = "webview"
 [nix]
 channel = "stable-25_05"
 packages = ["cargo", "freetype", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["sh", "start.sh"]
