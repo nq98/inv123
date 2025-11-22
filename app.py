@@ -8,6 +8,9 @@ from services.gmail_service import GmailService
 from services.token_storage import SecureTokenStorage
 from services.bigquery_service import BigQueryService
 from services.vendor_csv_mapper import VendorCSVMapper
+from services.vendor_matcher import VendorMatcher
+from services.vertex_search_service import VertexSearchService
+from services.gemini_service import GeminiService
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -169,6 +172,83 @@ def upload_invoice():
     os.remove(filepath)
     
     return jsonify(result), 200
+
+@app.route('/api/vendor/match', methods=['POST'])
+def match_vendor():
+    """
+    Match invoice vendor data to database vendor using semantic reasoning
+    
+    3-Step Matching Pipeline:
+    - Step 0: Hard Tax ID match (100% confidence)
+    - Step 1: Semantic search (Vertex AI Search RAG)
+    - Step 2: Supreme Judge decision (Gemini 1.5 Pro)
+    
+    Request body:
+    {
+        "vendor_name": "Amazon AWS",
+        "tax_id": "US123456789",
+        "address": "410 Terry Ave N, Seattle, WA",
+        "email_domain": "@aws.com",
+        "phone": "+1-206-555-0100",
+        "country": "US"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "result": {
+            "verdict": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS",
+            "vendor_id": "vendor_abc123",
+            "confidence": 0.95,
+            "reasoning": "Matched via corporate domain + fuzzy name",
+            "risk_analysis": "NONE" | "LOW" | "HIGH",
+            "database_updates": {...},
+            "parent_child_logic": {...},
+            "method": "TAX_ID_HARD_MATCH" | "SEMANTIC_MATCH" | "NEW_VENDOR"
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body is required'
+            }), 400
+        
+        # Validate required fields
+        if not data.get('vendor_name'):
+            return jsonify({
+                'success': False,
+                'error': 'vendor_name is required'
+            }), 400
+        
+        # Initialize services for VendorMatcher
+        processor = get_processor()
+        bigquery_service = get_bigquery_service()
+        
+        # Create VendorMatcher instance
+        matcher = VendorMatcher(
+            bigquery_service=bigquery_service,
+            vertex_search_service=processor.vertex_search_service,
+            gemini_service=processor.gemini_service
+        )
+        
+        # Run matching pipeline
+        result = matcher.match_vendor(data)
+        
+        return jsonify({
+            'success': True,
+            'result': result
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Vendor matching error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/api/ap-automation/gmail/auth', methods=['GET'])
 def gmail_auth():
