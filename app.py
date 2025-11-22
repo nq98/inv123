@@ -2,6 +2,7 @@ import os
 import json
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from invoice_processor import InvoiceProcessor
 from services.gmail_service import GmailService
 from services.token_storage import SecureTokenStorage
@@ -10,11 +11,16 @@ from config import config
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 app = Flask(__name__)
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'payouts_invoice_static_secret_key_2024_production')
 app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['PERMANENT_SESSION_LIFETIME'] = 300
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 

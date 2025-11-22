@@ -40,10 +40,14 @@ Hybrid architecture invoice processing system that extracts structured data from
 See `.env` for required configuration including API keys, processor IDs, and service account paths.
 
 ## Recent Changes
-- 2025-11-22: **CRITICAL OAuth Fix** - Applied Replit-specific OAuth configuration to prevent "State mismatch" errors:
+- 2025-11-22: **CRITICAL OAuth Fix** - Applied comprehensive Replit-specific OAuth configuration to prevent "State mismatch" errors:
   - Set static SECRET_KEY (removed os.urandom() fallback) to survive server restarts across Gunicorn workers
   - Added OAUTHLIB_INSECURE_TRANSPORT='1' for Replit's HTTP/HTTPS proxy compatibility
-  - Configured SESSION_COOKIE_SECURE=True and SESSION_COOKIE_SAMESITE='None' for iframe/proxy cookie handling
+  - Implemented ProxyFix middleware (x_proto=1, x_host=1) to handle HTTP/HTTPS confusion on Replit's internal routing
+  - Configured SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='None' for secure iframe/proxy cookie handling
+  - Set PERMANENT_SESSION_LIFETIME=300 (5 minutes) for OAuth session timeout
+  - Implemented dynamic redirect URI detection to automatically use correct URLs for dev vs production environments
+  - Google Cloud Console configured with both dev and production authorized JavaScript origins and redirect URIs
 - 2025-11-22: Enhanced invoice display to show ALL semantic data (vendor info, buyer info, payment terms, financial breakdown, line items with tax, AI reasoning, confidence scores)
 - 2025-11-22: Fixed field access bug (camelCase vs snake_case) in Gemini response parsing
 - 2025-11-21: Initial project setup with hybrid architecture implementation
