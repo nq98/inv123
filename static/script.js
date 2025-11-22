@@ -1072,6 +1072,7 @@ csvUploadForm.addEventListener('submit', async (e) => {
         }
         
         csvAnalysisData = data;
+        console.log('✓ CSV analysis complete. Upload ID:', data.uploadId);
         displayCsvMapping(data);
         
     } catch (error) {
@@ -1190,6 +1191,7 @@ csvImportBtn.addEventListener('click', async () => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
+                uploadId: csvAnalysisData.uploadId,
                 columnMapping: csvAnalysisData.analysis.columnMapping,
                 sourceSystem: csvAnalysisData.analysis.sourceSystemGuess || 'csv_upload'
             })

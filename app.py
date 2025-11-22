@@ -1,5 +1,7 @@
 import os
 import json
+import uuid
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -28,6 +30,18 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['PERMANENT_SESSION_LIFETIME'] = 300
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+csv_uploads = {}
+
+def cleanup_old_uploads():
+    """Remove CSV uploads older than 1 hour to prevent memory leaks"""
+    cutoff = datetime.now() - timedelta(hours=1)
+    to_delete = [uid for uid, data in csv_uploads.items() 
+                 if data['timestamp'] < cutoff]
+    for uid in to_delete:
+        del csv_uploads[uid]
+    if to_delete:
+        print(f"🧹 Cleaned up {len(to_delete)} old CSV uploads")
 
 _processor = None
 _gmail_service = None
@@ -895,14 +909,26 @@ def analyze_vendor_csv():
         if not analysis_result.get('success'):
             return jsonify({'error': analysis_result.get('error', 'Analysis failed')}), 400
         
-        # Store CSV content and analysis in session for step 2
-        session['pending_csv_content'] = csv_content.decode('utf-8-sig')
-        session['pending_csv_filename'] = file.filename
-        session['pending_csv_analysis'] = analysis_result['mapping']  # Store for feedback loop
-        session['pending_csv_headers'] = analysis_result['headers']  # Store headers
+        # Generate unique upload ID
+        upload_id = str(uuid.uuid4())
+        
+        # Store CSV content and analysis server-side (not in session)
+        csv_uploads[upload_id] = {
+            'csv_content': csv_content.decode('utf-8-sig'),
+            'filename': file.filename,
+            'analysis': analysis_result['mapping'],
+            'headers': analysis_result['headers'],
+            'timestamp': datetime.now()
+        }
+        
+        # Cleanup old uploads to prevent memory leaks
+        cleanup_old_uploads()
+        
+        print(f"✓ CSV analysis complete. Upload ID: {upload_id} ({len(csv_uploads)} uploads in memory)")
         
         return jsonify({
             'success': True,
+            'uploadId': upload_id,
             'filename': file.filename,
             'analysis': analysis_result['mapping'],
             'headers': analysis_result['headers'],
@@ -920,20 +946,29 @@ def import_vendor_csv():
     Step 2 of 2-step CSV import process
     """
     try:
-        # Get CSV content from session
-        csv_content = session.get('pending_csv_content')
-        filename = session.get('pending_csv_filename', 'upload.csv')
-        
-        if not csv_content:
-            return jsonify({'error': 'No pending CSV upload found. Please analyze CSV first.'}), 400
-        
-        # Get mapping from request (user can override AI mapping if needed)
+        # Get request data
         data = request.get_json()
+        upload_id = data.get('uploadId')
         column_mapping = data.get('columnMapping')
         source_system = data.get('sourceSystem', 'csv_upload')
         
+        if not upload_id:
+            return jsonify({'error': 'Upload ID required. Please analyze CSV first.'}), 400
+        
         if not column_mapping:
             return jsonify({'error': 'Column mapping required'}), 400
+        
+        # Retrieve CSV data from server-side storage
+        upload_data = csv_uploads.get(upload_id)
+        if not upload_data:
+            return jsonify({'error': 'No pending CSV upload found. Upload may have expired. Please analyze CSV again.'}), 400
+        
+        csv_content = upload_data['csv_content']
+        filename = upload_data['filename']
+        original_analysis = upload_data['analysis']
+        original_headers = upload_data['headers']
+        
+        print(f"✓ Retrieved CSV upload {upload_id} for import")
         
         # Transform CSV data using mapping
         csv_mapper = get_csv_mapper()
@@ -943,6 +978,8 @@ def import_vendor_csv():
         })
         
         if not transformed_vendors:
+            # Clean up upload data even on error
+            csv_uploads.pop(upload_id, None)
             return jsonify({'error': 'No valid vendor records found in CSV'}), 400
         
         # Initialize BigQuery and ensure table exists
@@ -957,10 +994,6 @@ def import_vendor_csv():
         
         if import_success:
             try:
-                # Get original analysis and headers from session
-                original_analysis = session.get('pending_csv_analysis', {})
-                original_headers = session.get('pending_csv_headers', [])
-                
                 if original_headers and original_analysis:
                     csv_mapper.store_mapping_to_knowledge_base(
                         headers=original_headers,
@@ -970,13 +1003,10 @@ def import_vendor_csv():
                     print("✓ Stored successful mapping to Vertex AI Search knowledge base")
             except Exception as e:
                 print(f"⚠️ Could not store mapping to knowledge base: {e}")
-                # Don't fail the import if RAG storage fails
         
-        # Clear session
-        session.pop('pending_csv_content', None)
-        session.pop('pending_csv_filename', None)
-        session.pop('pending_csv_analysis', None)
-        session.pop('pending_csv_headers', None)
+        # Clean up server-side storage after successful import
+        csv_uploads.pop(upload_id, None)
+        print(f"🧹 Cleaned up upload {upload_id} ({len(csv_uploads)} uploads remaining)")
         
         return jsonify({
             'success': True,
@@ -989,6 +1019,13 @@ def import_vendor_csv():
         
     except Exception as e:
         print(f"❌ Error importing CSV: {e}")
+        # Clean up upload data on error if upload_id is available
+        try:
+            upload_id = request.get_json().get('uploadId') if request.get_json() else None
+            if upload_id:
+                csv_uploads.pop(upload_id, None)
+        except:
+            pass
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vendors/search', methods=['GET'])
