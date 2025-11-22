@@ -1,0 +1,94 @@
+🚀 Product 4 Specification: The Semantic Vendor Matcher ("The Judge")
+Goal: Take extracted invoice data and link it to the correct Vendor ID in our database, even if the name is spelled differently, the address changed, or the domain is generic (e.g., @gmail.com).
+Logic Flow:
+Hard Match (Step 0): If Tax ID (VAT/EIN) matches exactly 
+→
+→
+ Auto-Match (100% Confidence).
+Retrieval (Step 1): If no ID match, use Vertex AI Vector Search to find the "Top 5 Semantic Candidates" from BigQuery based on Name + Address + Domain.
+The Verdict (Step 2 - Gemini): Send the Invoice Data AND the Top 5 Candidates to Gemini. Gemini acts as the "Judge" to decide the winner or declare a "New Vendor."
+1. The Algorithm (Python Pseudo-Code)
+Developer: Implement this specific flow to minimize API costs while maximizing accuracy.
+code
+Python
+def match_vendor(extracted_invoice_data):
+    
+    # 1. HARD MATCH CHECK (Fast SQL)
+    if extracted_invoice_data['tax_id']:
+        db_match = query_bigquery_by_tax_id(extracted_invoice_data['tax_id'])
+        if db_match:
+            return {"status": "MATCHED", "vendor_id": db_match.id, "confidence": 1.0, "method": "TAX_ID"}
+
+    # 2. RETRIEVE CANDIDATES (RAG)
+    # Search for similar names/domains in Vector Store
+    candidates = vertex_search.search(
+        query=extracted_invoice_data['vendor_name'],
+        filter=f"country={extracted_invoice_data['country']}",
+        top_k=5
+    )
+
+    # 3. THE SEMANTIC JUDGE (Gemini)
+    # See Prompt Below
+    match_result = call_gemini_judge(extracted_invoice_data, candidates)
+    
+    return match_result
+2. The "Judge" Prompt (Semantic Reasoning)
+Developer: This is the core logic. Copy this into the call_gemini_judge function.
+code
+Python
+# ==============================================================================
+#   THE "VENDOR JUDGE" PROMPT
+#   Target Model: Gemini 1.5 Pro
+#   Goal: Match "Invoice Vendor" to "Database Vendor" with reasoning
+# ==============================================================================
+
+judge_prompt = f"""
+You are the **Master Data Steward**. Your job is to determine if an Invoice Vendor exists in our Master Database.
+
+### INPUT 1: INVOICE VENDOR (Extracted Data)
+- **Name:** {invoice.vendor_name}
+- **Address:** {invoice.vendor_address}
+- **Email/Domain:** {invoice.vendor_email}
+- **Tax ID:** {invoice.vendor_tax_id}
+
+### INPUT 2: DATABASE CANDIDATES (Potential Matches found by Search)
+{json.dumps(candidates_list)}
+
+### 🧠 JUDGMENT LOGIC (Execute Semantic Reasoning)
+
+**1. Name Variations:**
+   - "Amazon Web Services" == "AWS Inc." (MATCH)
+   - "John Smith Consulting" != "J. Smith & Associates" (RISKY - Check Address)
+   - "Google Ireland" vs "Google LLC" (MATCH - Parent/Child relationship is okay for ID mapping)
+
+**2. Address Logic:**
+   - If Names are similar but Cities are different (e.g., "Acme NY" vs "Acme London"), are they the same global entity?
+   - If the Tax ID is missing, rely heavily on the **Domain Name** (e.g., `@payouts.com`).
+
+**3. The "New Vendor" Rule:**
+   - If the candidates look completely different (e.g., Invoice="Uber", Database="United Airlines"), output **NO_MATCH**.
+   - If confidence is below 80%, recommend **MANUAL_REVIEW**.
+
+### OUTPUT SCHEMA (JSON ONLY)
+{{
+    "decision": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS",
+    "selected_candidate_id": "string (ID from Candidates list) or null",
+    "match_confidence": 0.0-1.0,
+    "reasoning": "Explain why. E.g., 'Matches candidate 2 (Amazon) because domain matches and address is HQ, even though name varies slightly.'",
+    "data_update_suggestion": {{
+        "should_update_db_address": boolean,
+        "new_alias_to_add": "string (e.g., Add 'AWS' as alias for 'Amazon')"
+    }}
+}}
+"""
+3. Database Config (BigQuery)
+Developer: Ensure the BigQuery table global_vendors has a column for aliases (ARRAY<STRING>).
+Why? If Gemini matches "AWS" to "Amazon", we should add "AWS" to the aliases list automatically. This makes the system smarter next time (Self-Healing Database).
+Summary of Operations for Product 4
+Query Vertex Search with the extraction from Product 2.
+Feed the results to Gemini (The Judge).
+Action:
+If MATCH (Confidence > 0.9): Link Invoice ID.
+If MATCH (Update Suggestion): Link Invoice ID + Update BigQuery Alias.
+If NEW_VENDOR: Trigger "New Vendor Onboarding" workflow.
+If AMBIGUOUS: Send to Human Queue.

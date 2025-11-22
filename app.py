@@ -278,26 +278,29 @@ def gmail_import_stream():
             email = credentials.get('email', 'Gmail account')
             yield f"data: {json.dumps({'type': 'success', 'message': f'Connected to {email}'})}\n\n"
             
-            # Stage 1: Smart pre-filtering with Gmail queries
-            stage1_msg = '\n🔍 STAGE 1: Smart Pre-Filtering (Gmail semantic search)'
+            # Stage 1: Broad Net Gmail Query
+            stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
             yield f"data: {json.dumps({'type': 'status', 'message': stage1_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': 'Filtering by: invoice keywords, billing senders, PDF attachments...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': 'Casting wide net: English, Hebrew, French, German, Spanish keywords...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': 'Excluding: newsletters, webinars, invitations...'})}\n\n"
             
             messages = gmail_service.search_invoice_emails(service, 500, days)  # Get up to 500 for filtering
             
             total_found = len(messages)
-            yield f"data: {json.dumps({'type': 'success', 'message': f'📧 Found {total_found} emails matching invoice patterns'})}\n\n"
+            yield f"data: {json.dumps({'type': 'success', 'message': f'📧 Found {total_found} emails matching broad financial patterns'})}\n\n"
             
-            # Stage 2: AI Classification - which are REAL invoices
-            stage2_msg = '\n🧠 STAGE 2: AI Semantic Classification'
+            # Stage 2: Elite Gatekeeper AI Filter
+            stage2_msg = '\n🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)'
             yield f"data: {json.dumps({'type': 'status', 'message': stage2_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'Analyzing {total_found} emails to identify real invoices/receipts...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'AI analyzing {total_found} emails for semantic context...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': 'Filtering: Marketing spam, newsletters, logistics, false positives...'})}\n\n"
             
             processor = get_processor()
+            gemini_service = processor.gemini_service
             classified_invoices = []
             non_invoices = []
             
-            # First pass: Classify all emails
+            # First pass: Classify all emails using AI Gatekeeper
             for idx, msg_ref in enumerate(messages, 1):
                 try:
                     message = gmail_service.get_message_details(service, msg_ref['id'])
@@ -309,15 +312,15 @@ def gmail_import_stream():
                     metadata = gmail_service.get_email_metadata(message)
                     subject = metadata.get('subject', 'No subject')
                     
-                    is_invoice, confidence, reasoning = gmail_service.classify_invoice_email(metadata)
+                    is_invoice, confidence, reasoning = gmail_service.classify_invoice_email(metadata, gemini_service)
                     
                     if is_invoice and confidence >= 0.3:
                         classified_invoices.append((message, metadata, confidence))
-                        invoice_msg = f'  ✓ [{idx}/{total_found}] Invoice: "{subject[:60]}..."'
+                        invoice_msg = f'  ✓ [{idx}/{total_found}] KEEP: "{subject[:50]}..." ({reasoning[:80]})'
                         yield f"data: {json.dumps({'type': 'success', 'message': invoice_msg})}\n\n"
                     else:
                         non_invoices.append((subject, reasoning))
-                        skip_msg = f'  ⚠️ [{idx}/{total_found}] Skipped: "{subject[:60]}..." - {reasoning}'
+                        skip_msg = f'  ✗ [{idx}/{total_found}] KILL: "{subject[:50]}..." ({reasoning[:80]})'
                         yield f"data: {json.dumps({'type': 'warning', 'message': skip_msg})}\n\n"
                     
                 except Exception as e:

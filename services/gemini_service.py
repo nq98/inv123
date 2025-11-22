@@ -421,6 +421,94 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
                 
                 return self._create_error_response(str(e), [f"Gemini error: {str(e)}"])
     
+    def gatekeeper_email_filter(self, sender_email, email_subject, email_body_snippet, attachment_filename):
+        """
+        Elite Gatekeeper AI Filter using Gemini 1.5 Flash
+        Fast semantic analysis to determine if email contains financial document
+        
+        Args:
+            sender_email: Email address of sender
+            email_subject: Email subject line
+            email_body_snippet: Preview snippet of email body
+            attachment_filename: Name of attachment file
+        
+        Returns:
+            dict: {
+                "is_financial_document": bool,
+                "document_category": str,  # "INVOICE", "RECEIPT", "STATEMENT", "JUNK", "OTHER"
+                "confidence": float,
+                "reasoning": str
+            }
+        """
+        prompt = f"""
+You are the **Chief Financial Mailroom Guard**.
+Your ONLY job is to decide if an incoming email contains a **Financial Document** that needs processing.
+
+### INPUT EMAIL DATA
+- **Sender:** {sender_email}
+- **Subject:** {email_subject}
+- **Body Snippet:** {email_body_snippet}
+- **Attachment Name:** {attachment_filename}
+
+### 🧠 DECISION LOGIC (SEMANTIC ANALYSIS)
+
+**1. POSITIVE SIGNALS (Keep These)**
+- **Explicit Demands:** "Please find attached invoice", "Payment due", "Here is your bill"
+- **Proof of Payment:** "Your receipt from Uber", "Payment successful", "Thank you for your purchase"
+- **Passive Financials:** "Monthly Statement", "Subscription Renewal", "Credit Note", "Zikui", "Hashbonit"
+- **Ambiguous Files with Context:** If filename is "scan001.pdf" BUT body says "Attached the invoice", **KEEP IT**
+
+**2. NEGATIVE SIGNALS (Discard These)**
+- **Marketing:** "Special offer", "News from...", "Join our webinar"
+- **Logistics (Non-Financial):** "Your package has shipped" (unless includes receipt)
+- **Technical:** "Password reset", "Security alert", "Webhook notification", "System Event"
+- **Human Chatter:** "See you at lunch", "Meeting notes" (unless expensing receipt)
+
+**3. THE "SAFEGUARD" RULE (Never Miss Money)**
+- If unsure (e.g., Order Confirmation that *might* be invoice), output **TRUE**
+- Better to process a junk file than throw away a $10,000 invoice
+
+### OUTPUT FORMAT (Strict JSON)
+{{
+    "is_financial_document": boolean,
+    "document_category": "INVOICE | RECEIPT | STATEMENT | JUNK | OTHER",
+    "confidence": 0.0-1.0,
+    "reasoning": "Explain why. E.g. 'Subject says Payment Processed and attachment is PDF, definitely a receipt.'"
+}}
+"""
+        
+        try:
+            # Use Gemini Flash (fast and cheap for filtering)
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type='application/json'
+                )
+            )
+            
+            response_text = response.text or "{}"
+            result = json.loads(response_text)
+            
+            # Ensure all required fields present
+            return {
+                "is_financial_document": result.get("is_financial_document", False),
+                "document_category": result.get("document_category", "OTHER"),
+                "confidence": result.get("confidence", 0.5),
+                "reasoning": result.get("reasoning", "No reasoning provided")
+            }
+            
+        except Exception as e:
+            print(f"Gatekeeper AI error: {e}")
+            # Fail-safe: If AI errors, let it through (better false positive than false negative)
+            return {
+                "is_financial_document": True,
+                "document_category": "OTHER",
+                "confidence": 0.5,
+                "reasoning": f"AI filter error: {str(e)} - Defaulting to KEEP for safety"
+            }
+    
     def _create_error_response(self, error_message, warnings, raw_response=None):
         """Create a standardized error response matching the comprehensive schema"""
         response = {

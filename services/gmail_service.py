@@ -115,7 +115,8 @@ class GmailService:
     
     def search_invoice_emails(self, service, max_results=20, days=30):
         """
-        Search for emails containing invoices using semantic queries
+        Search for emails containing invoices using "Broad Net" AI-first query
+        Casts wide net with multi-language support, lets AI do semantic filtering
         
         Args:
             service: Gmail API service
@@ -124,43 +125,36 @@ class GmailService:
         
         Returns list of message IDs that likely contain invoices
         """
-        # Calculate date for Gmail query (format: YYYY/MM/DD)
         after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
-        time_filter = f'after:{after_date}'
         
-        invoice_queries = [
-            f'{time_filter} subject:(invoice OR receipt OR billing OR payment)',
-            f'{time_filter} from:(noreply OR billing OR invoices OR payments)',
-            f'{time_filter} filename:pdf (invoice OR receipt OR statement)',
-            f'{time_filter} subject:(order confirmation OR purchase receipt)'
-        ]
+        # BROAD NET: Multi-language financial document query
+        # Supports: English, Hebrew, French, German, Spanish
+        # NOTE: No 'has:attachment' filter - allows link-only invoices (Stripe, AWS, etc.)
+        # AI Gatekeeper will filter out junk emails in Stage 2
+        query = (
+            f'after:{after_date} '
+            '('
+            'subject:invoice OR subject:bill OR subject:receipt OR subject:statement OR '
+            'subject:payment OR subject:order OR subject:subscription OR '
+            'subject:חשבונית OR subject:קבלה OR subject:תשלום OR '
+            'subject:facture OR subject:rechnung OR subject:recibo'
+            ') '
+            '-subject:"invitation" -subject:"newsletter" -subject:"webinar" -subject:"verify"'
+        )
         
-        all_messages = []
-        seen_ids = set()
-        
-        for query in invoice_queries:
-            try:
-                results = service.users().messages().list(
-                    userId='me',
-                    q=query,
-                    maxResults=max_results
-                ).execute()
-                
-                messages = results.get('messages', [])
-                
-                for msg in messages:
-                    if msg['id'] not in seen_ids:
-                        all_messages.append(msg)
-                        seen_ids.add(msg['id'])
-                        
-                if len(all_messages) >= max_results:
-                    break
-                    
-            except Exception as e:
-                print(f"Error searching with query '{query}': {e}")
-                continue
-        
-        return all_messages[:max_results]
+        try:
+            results = service.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=max_results
+            ).execute()
+            
+            messages = results.get('messages', [])
+            return messages
+            
+        except Exception as e:
+            print(f"Error searching Gmail: {e}")
+            return []
     
     def get_message_details(self, service, message_id):
         """Get full details of a Gmail message"""
@@ -233,7 +227,7 @@ class GmailService:
         return attachments
     
     def get_email_metadata(self, message):
-        """Extract metadata from Gmail message"""
+        """Extract metadata from Gmail message including attachment filenames"""
         headers = message['payload'].get('headers', [])
         
         metadata = {
@@ -242,7 +236,8 @@ class GmailService:
             'snippet': message.get('snippet', ''),
             'date': None,
             'from': None,
-            'subject': None
+            'subject': None,
+            'attachments': []
         }
         
         for header in headers:
@@ -255,6 +250,23 @@ class GmailService:
                 metadata['from'] = value
             elif name == 'subject':
                 metadata['subject'] = value
+        
+        # Extract attachment filenames for AI gatekeeper
+        parts = message.get('payload', {}).get('parts', [])
+        
+        def extract_attachment_names(part):
+            if part.get('filename'):
+                metadata['attachments'].append(part['filename'])
+            if 'parts' in part:
+                for subpart in part['parts']:
+                    extract_attachment_names(subpart)
+        
+        for part in parts:
+            extract_attachment_names(part)
+        
+        # Check main payload for direct attachment
+        if not parts and message.get('payload', {}).get('filename'):
+            metadata['attachments'].append(message['payload']['filename'])
         
         return metadata
     
@@ -340,26 +352,51 @@ class GmailService:
     
     def classify_invoice_email(self, metadata, gemini_service=None):
         """
-        Use semantic analysis to determine if email truly contains an invoice
+        Use AI-powered Elite Gatekeeper to determine if email contains financial document
+        
+        Args:
+            metadata: Email metadata dict with subject, from, snippet, attachments
+            gemini_service: GeminiService instance for AI filtering
         
         Returns: (is_invoice: bool, confidence: float, reasoning: str)
         """
-        subject = metadata.get('subject', '').lower()
-        sender = metadata.get('from', '').lower()
-        snippet = metadata.get('snippet', '').lower()
+        subject = metadata.get('subject', '')
+        sender = metadata.get('from', '')
+        snippet = metadata.get('snippet', '')
+        attachments = metadata.get('attachments', [])
         
-        invoice_keywords = ['invoice', 'receipt', 'bill', 'payment', 'statement', 'order']
+        # Get first attachment filename (or "no_attachment" if none)
+        attachment_filename = attachments[0] if attachments else "no_attachment"
+        
+        # Use AI Gatekeeper if available
+        if gemini_service:
+            result = gemini_service.gatekeeper_email_filter(
+                sender_email=sender,
+                email_subject=subject,
+                email_body_snippet=snippet,
+                attachment_filename=attachment_filename
+            )
+            
+            is_invoice = result["is_financial_document"]
+            confidence = result["confidence"]
+            reasoning = f"[AI Gatekeeper] {result['document_category']} - {result['reasoning']}"
+            
+            return is_invoice, confidence, reasoning
+        
+        # Fallback to basic heuristics if Gemini unavailable (should rarely happen)
+        subject_lower = subject.lower()
+        snippet_lower = snippet.lower()
+        
+        invoice_keywords = ['invoice', 'receipt', 'bill', 'payment', 'statement', 'order', 
+                           'חשבונית', 'קבלה', 'תשלום']
         spam_keywords = ['unsubscribe', 'marketing', 'newsletter', 'promotion', 'offer']
         
-        invoice_score = sum(1 for kw in invoice_keywords if kw in subject or kw in snippet or kw in sender)
-        spam_score = sum(1 for kw in spam_keywords if kw in subject or kw in snippet)
+        invoice_score = sum(1 for kw in invoice_keywords if kw in subject_lower or kw in snippet_lower)
+        spam_score = sum(1 for kw in spam_keywords if kw in subject_lower or kw in snippet_lower)
         
-        confidence = min(1.0, invoice_score * 0.2)
+        confidence = min(1.0, invoice_score * 0.25)
         is_invoice = invoice_score > 0 and spam_score == 0
         
-        reasoning = f"Found {invoice_score} invoice keywords, {spam_score} spam keywords"
-        
-        if gemini_service and confidence < 0.8:
-            reasoning += " (Using basic heuristics, Gemini classification not implemented yet)"
+        reasoning = f"[Fallback Heuristics] Found {invoice_score} invoice keywords, {spam_score} spam keywords"
         
         return is_invoice, confidence, reasoning

@@ -1,0 +1,91 @@
+This is the Supreme Court Judge Prompt.
+
+It handles mergers, acquisitions, typos, nicknames, multilingual names, parent/child hierarchies, and address changes. It transforms your AI from a simple "text matcher" into a Data Steward.
+
+Developer Instruction: Use this prompt in your matching service. It requires Gemini 1.5 Pro (or Flash for speed, but Pro is better for this complexity).
+
+code
+Python
+download
+content_copy
+expand_less
+# ==============================================================================
+#   THE "SUPREME JUDGE" VENDOR MATCHING PROMPT (GOD MODE)
+#   Goal: 100% Accurate Vendor Entity Resolution
+# ==============================================================================
+
+judge_prompt = f"""
+You are the **Supreme Data Judge**. You preside over the Vendor Master Database.
+Your job is to decide, beyond a reasonable doubt, if the **INVOICE VENDOR** matches one of the **DATABASE CANDIDATES**.
+
+### THE EVIDENCE
+**1. THE INVOICE VENDOR (The Newcomer):**
+- **Raw Name:** "{invoice_vendor_name}"
+- **Extracted Tax ID:** "{invoice_tax_id}" (VAT/EIN/GST)
+- **Extracted Address:** "{invoice_address}"
+- **Sender Domain:** "{invoice_email_domain}" (e.g., @uber.com)
+- **Phone:** "{invoice_phone}"
+- **Bank Account Last 4:** "{invoice_bank_tail}"
+
+**2. THE DATABASE CANDIDATES (The Existing Records):**
+{json.dumps(db_candidates)} 
+*(List includes: ID, Global Name, Aliases, Tax IDs, Domains, Past Addresses)*
+
+### ⚖️ JUDICIAL LOGIC (THE LAWS OF MATCHING)
+
+**LAW 1: THE HIERARCHY OF IDENTIFIERS (Hard Evidence)**
+- **Tax ID Match:** If Tax IDs match exactly, VERDICT = **MATCH** (Confidence 1.0). Ignore name spelling differences.
+- **Bank Account Match:** If IBAN/Account Number matches known history, VERDICT = **MATCH**.
+- **Domain Match:** 
+    - If domain is Corporate (e.g., `@google.com`), and names are similar, VERDICT = **MATCH**.
+    - **WARNING:** If domain is Generic (`@gmail.com`, `@yahoo.co.uk`), IGNORE IT. You must rely on Name + Address.
+
+**LAW 2: SEMANTIC FLEXIBILITY (Soft Evidence)**
+- **Fuzzy Names:** "Amazon Web Srvcs" == "Amazon AWS" == "Amazon.com Inc."
+- **Acquisitions:** If Invoice says "Slack" but DB candidate is "Salesforce", and address matches Salesforce, VERDICT = **MATCH** (Parent/Child).
+- **Multilingual:** "חברת חשמל" (Hebrew) == "Israel Electric Corp" (English).
+- **Typo Tolerance:** "Microsft" == "Microsoft".
+
+**LAW 3: THE "FALSE FRIEND" TRAP (Do Not Hallucinate)**
+- **Same Name, Different Entity:** "Apple Landscaping" != "Apple Inc." (Check Industry/Address).
+- **Franchises:** "McDonalds (Tel Aviv Branch)" vs "McDonalds (HQ US)". 
+    - If we pay the HQ, match to HQ.
+    - If we pay the branch directly, match to HQ *unless* DB has specific branch IDs.
+
+**LAW 4: DATA EVOLUTION (Self-Healing)**
+- If the Vendor is a MATCH, but the Address on the invoice is different from the DB, flag it as a **"New Address Discovery"**.
+- If the Vendor uses a new Alias (e.g., DB has "Facebook", Invoice says "Meta"), flag it as a **"New Alias Discovery"**.
+
+### 📝 THE VERDICT SCHEMA (JSON ONLY)
+{{
+    "verdict": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS",
+    "match_details": {{
+        "selected_vendor_id": "string (ID from DB Candidate) or null",
+        "confidence_score": 0.0-1.0,
+        "match_reasoning": "Explain specifically: 'Matched via Tax ID', 'Matched via Corporate Domain + Fuzzy Name', etc.",
+        "risk_analysis": "NONE | LOW | HIGH (e.g. 'Name matches but domain is gmail.com')"
+    }},
+    "database_updates": {{
+        "add_new_alias": "string (If invoice name is a valid nickname not in DB)",
+        "add_new_address": "string (If matched, but address is new)",
+        "add_new_domain": "string (If matched, but domain is new)"
+    }},
+    "parent_child_logic": {{
+        "is_subsidiary": boolean,
+        "parent_company_detected": "string"
+    }}
+}}
+"""
+How to use this in your code
+
+Step 1 (Vector Search): Search your global_vendors table in BigQuery using Vertex AI Search to get the "Top 5 most similar vendors" (the Candidates).
+
+Step 2 (The Trial): Pass the Invoice Data and those 5 Candidates into this prompt.
+
+Step 3 (Execution):
+
+MATCH: Save the ID.
+
+NEW_VENDOR: Create a new row in global_vendors.
+
+DB_UPDATE: If the JSON says add_new_alias, run an UPDATE query to improve your database automatically. This makes the system smarter with every invoice processed.
