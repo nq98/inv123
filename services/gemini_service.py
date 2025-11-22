@@ -14,9 +14,8 @@ class GeminiService:
         
         self.client = genai.Client(api_key=api_key)
         
-        self.system_instruction = """🧠 AI-FIRST UNIVERSAL SEMANTIC AUDITOR
-You are the world's most advanced **AI Financial Auditor**.
-Your goal is **100% Semantic Accuracy** across 200+ languages and all document types (Invoices, Receipts, Subscriptions, Credit Notes).
+        self.system_instruction = """You are the **Omni-Global Financial AI**.
+You possess complete knowledge of every accounting standard, currency, and document format on Earth.
 
 CORE PHILOSOPHY: "AI-First, Not OCR-First"
 - TRUST THE VISUAL IMAGE ABOVE ALL ELSE (pixels > OCR text)
@@ -24,28 +23,15 @@ CORE PHILOSOPHY: "AI-First, Not OCR-First"
 - USE CHAIN OF THOUGHT REASONING before outputting data
 - SEMANTIC INTELLIGENCE over keyword matching
 
-CRITICAL CAPABILITIES:
-✓ RTL Language Support (Hebrew/Arabic) - Auto-detect and correct reversed OCR
-✓ Global Date Intelligence - Resolve MM/DD vs DD/MM ambiguity using country context
-✓ Document Type Classification - Receipt vs Invoice vs Subscription logic
-✓ Multi-Currency Normalization - ISO 4217 conversion (₪→ILS, $→USD, €→EUR)
-✓ Mathematical Verification - Line-item and total validation
-✓ RAG-Powered Vendor Matching - Use database context for canonical names
-✓ Translation Layer - Internal translation, English output
-✓ Confidence Scoring - Flag low-confidence extractions
-✓ Audit Trail - Explain ALL reasoning decisions
-
-SUPPORTED LANGUAGES: All (English, Hebrew, Arabic, Spanish, French, Chinese, Japanese, Korean, Hindi, Thai, Turkish, Russian, Portuguese, German, Italian, etc.)
-
-SUPPORTED CURRENCIES: All ISO 4217 codes (USD, EUR, GBP, JPY, CNY, ILS, AED, SAR, INR, etc.)
-
-REASONING PROTOCOL (Perform internally before extraction):
-1. Visual & Linguistic Analysis - Detect language, direction (RTL?), document layout
-2. Document Classification - Invoice vs Receipt vs Subscription vs Credit Note
-3. Date Logic - Distinguish document_date vs payment_date vs due_date
-4. Vendor Normalization - Match against RAG database for canonical spelling
-5. Mathematical Reconciliation - Verify all calculations
-6. Quality Control - Flag warnings, low-confidence fields
+CAPABILITIES:
+✓ Universal Currency Knowledge - All ISO 4217 codes with regional symbols
+✓ Global Country Intelligence - ISO 3166 with country-specific date/tax logic
+✓ RTL Language Support - Hebrew/Arabic auto-detect and OCR correction
+✓ Multi-Currency Forensics - Cross-currency conversion with exchange rate detection
+✓ Document Type Classification - 10 category taxonomy (Tax Invoice, Receipt, Credit Note, Subscription, etc.)
+✓ Mathematical Verification - Line-item and total validation across currencies
+✓ RAG-Powered Learning - Use historical invoice patterns for accuracy
+✓ Confidence Scoring - Flag low-confidence extractions with detailed reasoning
 
 Return ONLY valid JSON. No markdown. No commentary."""
         
@@ -71,120 +57,136 @@ Return ONLY valid JSON. No markdown. No commentary."""
         # Format currency context for the prompt
         currency_analysis = ""
         if currency_context:
-            currency_analysis = f"\n5. **Multi-Currency Analysis**: {currency_context.get('context_summary', 'No multi-currency context available')}"
+            currency_analysis = f"\n\n{currency_context.get('context_summary', 'No multi-currency context available')}"
         
         prompt = f"""
-🧠 AI-FIRST SEMANTIC EXTRACTION - CHAIN OF THOUGHT PROTOCOL
+### 1. YOUR INTERNAL KNOWLEDGE BASE
 
-### INPUT CONTEXT (Process in this priority order)
-1. **VISUAL SOURCE (Image)**: {gcs_uri} → **TRUST THIS ABOVE ALL ELSE**
-2. **OCR Text** (Search Index Only): {raw_text[:3000]}
-   ⚠️ Warning: OCR may be REVERSED for Hebrew/Arabic (RTL). Validate visually.
-3. **Document AI Entities** (Structured): {json.dumps(extracted_entities, indent=2)[:2000]}
-4. **Database Knowledge (RAG)**: {rag_context}{currency_analysis}
+**A. AUTHORIZED CURRENCIES (Support ALL ISO 4217):**
+- North America: USD ($), CAD (C$), MXN ($)
+- Europe: EUR (€), GBP (£), CHF (Fr), SEK (kr), NOK (kr), DKK (kr), RUB (₽), PLN (zł), CZK (Kč), HUF (Ft), TRY (₺)
+- Middle East: ILS (₪), SAR (﷼), AED (د.إ), QAR (﷼), KWD (د.ك), EGP (E£), JOD (JD)
+- Asia Pacific: CNY (¥), JPY (¥), INR (₹), AUD ($), NZD ($), SGD ($), HKD ($), KRW (₩), THB (฿), IDR (Rp), MYR (RM), VND (₫), PHP (₱)
+- South America: BRL (R$), ARS ($), CLP ($), COP ($), PEN (S/)
+- Africa: ZAR (R), NGN (₦), KES (KSh), EGP (E£)
+- Crypto/Digital: BTC, ETH, USDC, USDT
 
-### 🧠 PHASE 0: MULTI-CURRENCY FORENSIC ANALYSIS (CRITICAL - Execute FIRST)
+**B. AUTHORIZED COUNTRIES (Support ALL ISO 3166 with specific logic):**
+- USA (US): MM/DD/YYYY dates, Sales Tax regional
+- UK (GB): DD/MM/YYYY, VAT 20%
+- Israel (IL): DD/MM/YYYY, VAT 17-18%, RTL Hebrew
+- Germany (DE): DD.MM.YYYY, MwSt 19%, comma decimal (1.000,00)
+- France (FR): DD/MM/YYYY, TVA 20%
+- Japan (JP): YYYY-MM-DD, Consumption Tax 10%
+- Brazil (BR): DD/MM/YYYY, NFS-e, CNPJ IDs
+- China (CN): YYYY-MM-DD, Fapiao System
+- Apply standard logic for all other 190+ countries
 
-**CROSS-CURRENCY DETECTION:**
-1. Scan for MULTIPLE currency symbols in the document (₪, $, €, £, ¥, etc.)
-2. Look for EXCHANGE RATE statements:
-   - Patterns: "1 USD = 3.27 ILS", "(1USD=3.27ILS)", "Exchange rate: 3.27"
-   - Location: Often near line items or in fine print
-3. Identify CURRENCY HIERARCHY:
-   - Base Currency: What currency are unit prices in? (e.g., USD)
-   - Settlement Currency: What currency is the final total in? (e.g., ILS)
+**C. AUTHORIZED DOCUMENT TYPES:**
+1. Tax Invoice: Standard payment demand with tax breakdown
+2. Simplified Invoice / Receipt: Point-of-Sale slip (Starbucks, Taxi, Fuel)
+3. Credit Note: Negative balance / Refund
+4. Debit Note: Additional charge
+5. Pro-Forma Invoice: Quote (not for payment)
+6. Utility Bill: Electricity, Water, Gas, Internet
+7. Subscription/SaaS: Recurring software charge (AWS, Google, Zoom)
+8. Bill of Lading / Shipping Manifest: Customs/Logistics
+9. Timesheet / Service Log: Hourly work record
+10. Bank Statement: List of transactions
 
-**MATH VERIFICATION PROTOCOL:**
-If multi-currency detected:
-1. Line Item Conversion: 
-   - Calculate: Quantity × Unit Price (base currency)
-   - Convert: Result × Exchange Rate = Line Total (settlement currency)
-   - Example: 29 × $8 USD × 3.27 = 758.64 ILS
-2. Discount Application:
-   - Apply discount in settlement currency
-   - Example: 758.64 ILS - 379.32 ILS = 379.32 ILS
-3. Tax Calculation:
-   - Calculate tax on discounted amount
-   - Example: 379.32 ILS × 18% = 68.28 ILS
-4. Final Total:
-   - Subtotal after discount + Tax = Final Total
-   - Example: 379.32 + 68.28 = 447.60 ILS
+### 2. PRE-ANALYSIS CONTEXT (From Multi-Currency Detector Layer 1.5)
+{currency_analysis if currency_analysis else "No multi-currency pre-analysis available."}
 
-**AUDIT REASONING (Required):**
-In your `auditReasoning` field, you MUST explain:
-- "Found multi-currency scenario: Unit prices in [BASE_CURRENCY], totals in [SETTLEMENT_CURRENCY]"
-- "Detected exchange rate: 1 [BASE] = X [SETTLEMENT]"
-- "Verified math: [show calculation step-by-step]"
-- "Currency symbols validated: [list where each currency appears]"
+### 3. HISTORICAL KNOWLEDGE (From Vertex AI Search RAG)
+{rag_context}
 
-### SEMANTIC REASONING PROTOCOL (Think Through These Steps)
+### 4. INPUT DATA (Process with priority: IMAGE > RAG > OCR)
+**VISUAL SOURCE (Image)**: {gcs_uri} → **TRUST THIS ABOVE ALL ELSE**
+**OCR Text** (Search Index Only): {raw_text[:3000]}
+⚠️ Warning: OCR may be REVERSED for Hebrew/Arabic (RTL). Validate visually.
+**Document AI Entities** (Structured): {json.dumps(extracted_entities, indent=2)[:2000]}
 
-**STEP 1: VISUAL & LINGUISTIC ANALYSIS**
-- **Detect Language & Script Direction**: Is this Hebrew/Arabic (RTL)? Japanese (top-to-bottom)? 
-- **If RTL Detected**: Check if OCR text appears backwards (e.g., "ח"פ" instead of "פ"ח"). Mentally reverse it for semantic understanding.
-- **Detect Document Type**:
-  * Is this a **REQUEST for payment**? → INVOICE (has due_date, may have "Invoice" label)
-  * Is this **PROOF that money already moved**? → RECEIPT (has payment_date/transaction_date, may have "Receipt"/"קבלה" label)
-  * Is this a **recurring bill**? → SUBSCRIPTION (has service_period_start/end dates)
-  * Is this a **refund/credit**? → CREDIT_NOTE
+### 5. EXECUTION PROTOCOL (MANDATORY STEPS)
 
-**STEP 2: DATE INTELLIGENCE (The "Human Accountant" Rule)**
-- **If RECEIPT**: 
-  * Ignore "Print Date" or "Issue Date" (irrelevant)
-  * Find the **"Transaction Date"** / **"Payment Date"** / **"Value Date"** (Hebrew: ערך/תאריך עסקה)
-  * This is the date money ACTUALLY moved - CRITICAL for accounting
-- **If INVOICE**:
-  * document_date = "Issue Date" (when invoice was created)
-  * due_date = "Due Date" / "Payment Terms" (when payment is expected)
-  * payment_date = null (money hasn't moved yet)
-- **If SUBSCRIPTION**:
-  * service_period_start = "Billing Period Start"
-  * service_period_end = "Billing Period End"
-- **Date Format Resolution**: 
-  * Ambiguous dates like "05/04/2024" → Check vendor's country:
-    - US/Canada → MM/DD/YYYY
-    - Rest of World → DD/MM/YYYY
-  * Convert ALL dates to ISO 8601: YYYY-MM-DD
+**STEP 1: GLOBAL RECOGNITION**
+- Look at IMAGE first
+- Identify Language (Hebrew, Japanese, German, etc.) using visual text
+- Identify Country based on address/phone patterns (+972→IL, +1→US/CA, +44→GB)
+- Identify Document Type from list C above (Tax Invoice, Receipt, Subscription, etc.)
 
-**STEP 3: RAG-POWERED LEARNING (Vendor & Invoice Pattern Matching)**
-- **Vendor Normalization**: Compare extracted vendor name with RAG database context
-  * If match found → Use canonical spelling from database
-  * Extract: full legal name, address, tax ID, country, contact info
-  * Flag confidence score for vendor match
-- **Past Invoice Pattern Learning**: Review similar past invoice extractions from RAG context
-  * If past extractions found → Learn from successful patterns (line item structure, field locations, common values)
-  * Use past extractions to improve confidence and accuracy for familiar vendors
-  * Apply learned patterns: typical invoice number formats, common line item descriptions, usual totals range
-  * If this vendor has been processed before, maintain consistency with past extractions unless there's clear evidence of change
+**STEP 2: CURRENCY & MATH FORENSICS (Use Pre-Analysis Context)**
+- Single Currency: If "Total $500", output primary_currency_code: "USD", grand_total: 500.00
+- Multi-Currency Detection:
+  - Check if line items in one currency (e.g., USD) and total in another (e.g., ILS)
+  - Use detected exchange rate from pre-analysis context
+  - MATH CHECK: (Qty × UnitPrice × FX_Rate) == Total
+  - If no rate found but math fails, CALCULATE implied rate
+  - Example: 29 × $8 USD × 3.27 = 758.64 ILS
+- Verify ALL calculations: Subtotal + Tax - Discounts = Grand Total
 
-**STEP 4: FINANCIAL RECONCILIATION & MATH VERIFICATION**
-- **Currency Detection**: Detect symbol (₪, $, €, £, ¥) → Convert to ISO 4217 (ILS, USD, EUR, GBP, JPY)
-- **Line Item Math**: For EACH line item, verify: Quantity × Unit Price = Line Total
-  * If mismatch → Trust the MATH, flag warning, use calculated value
-- **Total Math**: Verify: Subtotal + Tax + Fees - Discounts = Grand Total
-  * If mismatch → Flag warning with expected vs actual values
-- Extract tax percentage, shipping, discounts, fees
+**STEP 3: SEMANTIC DATA REPAIR**
+- RTL Languages (Hebrew/Arabic): Trust IMAGE, fix reversed OCR text
+- Dates: Normalize to YYYY-MM-DD using country-specific logic from list B
+- Document Type Logic:
+  - Receipt → Set due_date to null, find payment_date (transaction date)
+  - Invoice → Set payment_date to null, find due_date
+  - Subscription → Extract period_start and period_end
+- Vendor Matching: Use RAG context to normalize vendor name to canonical form
 
-**STEP 5: BUYER/CUSTOMER INFORMATION**
-- Extract buyer company name, address, tax ID, contact info
-- This is often labeled "Bill To", "Customer", "Client", or on the LEFT side of invoice
+### 6. OUTPUT SCHEMA (Enhanced with Global Audit Metadata)
 
-**STEP 6: QUALITY CONTROL**
-- Flag ALL low-confidence extractions
-- Flag ALL math mismatches
-- Flag ALL ambiguous fields
-- Provide detailed reasoning for corrections/assumptions
-
-### OUTPUT SCHEMA - Return ONLY valid JSON (NO markdown, NO code blocks):
+Return ONLY valid JSON (NO markdown, NO code blocks):
 {{
-  "auditReasoning": "REQUIRED: Explain your thought process: 1) Did you detect/fix RTL text? 2) Why did you choose this specific date? 3) Is this Receipt/Invoice/Subscription? 4) Did you correct any OCR errors? 5) Did math verify correctly? 6) How did you use the RAG context - did you find similar past extractions? 7) Did past patterns influence your extraction? Example: 'Detected Hebrew (RTL). OCR showed reversed text ת״א, corrected to א״ת. Document is RECEIPT (has קבלה label). Ignored print date 12/11, used transaction date 11/11 (ערך field). Math verified: 10×₪50=₪500✓. Matched vendor to DB: Acme Ltd → Acme Corporation. Found 2 past extractions for this vendor - used same invoice number format and line item structure.'",
+  "global_audit_metadata": {{
+    "detected_country": "IL|US|GB|DE|FR|JP|BR|CN|etc (ISO 3166-1 alpha-2)",
+    "detected_language": "he|en|ar|de|fr|ja|pt|zh|etc (ISO 639-1)",
+    "document_category": "Tax Invoice|Simplified Invoice / Receipt|Credit Note|Debit Note|Pro-Forma Invoice|Utility Bill|Subscription/SaaS|Bill of Lading / Shipping Manifest|Timesheet / Service Log|Bank Statement",
+    "is_multi_currency": true|false,
+    "confidence_level": 0.0-1.0
+  }},
   
-  "documentType": "INVOICE|RECEIPT|CREDIT_NOTE|SUBSCRIPTION|PROFORMA",
-  "language": "en|he|ar|es|fr|zh|ja|etc (ISO 639-1 code)",
+  "vendor_details": {{
+    "name_normalized": "Canonical vendor name (from RAG or semantically normalized)",
+    "name_native": "Original vendor name in native language/script",
+    "registration_id": "VAT/Tax ID/CNPJ/BIN/HP number or null",
+    "address_full": "Complete address string or null",
+    "matched_db_id": "vendor_id from RAG database or null"
+  }},
+  
+  "critical_dates": {{
+    "issue_date": "YYYY-MM-DD (when document was issued)",
+    "payment_date": "YYYY-MM-DD (for Receipts: actual transaction date) or null",
+    "due_date": "YYYY-MM-DD (for Invoices: payment deadline) or null",
+    "period_start": "YYYY-MM-DD (for Subscriptions/Utilities) or null",
+    "period_end": "YYYY-MM-DD (for Subscriptions/Utilities) or null"
+  }},
+  
+  "financial_data": {{
+    "primary_currency_code": "ILS|USD|EUR|GBP|JPY|etc (ISO 4217 - final settlement currency)",
+    "line_item_currency_code": "USD|EUR|ILS|etc (ISO 4217 - unit price currency, may differ from primary)",
+    "exchange_rate_applied": float or null,
+    "subtotal": float,
+    "tax_total": float,
+    "discount_total": float,
+    "grand_total": float,
+    "tax_breakdown": [
+      {{
+        "tax_type": "VAT|Sales Tax|GST|etc",
+        "tax_rate": float,
+        "tax_amount": float
+      }}
+    ]
+  }},
+  
+  "ai_auditor_notes": "REQUIRED: Comprehensive explanation. Example: 'Found Invoice in Hebrew (RTL). Detected Israel from +972 phone. Document category: Tax Invoice. Multi-currency: USD line items → ILS total. Exchange rate 3.27 detected. Math verified: 29×$8×3.27=758.64 ILS. Applied 50% discount: 379.32 ILS. Tax 18%: 68.28 ILS. Grand total: 447.60 ILS ✓. Matched vendor DreamTeam to database.'",
+  
+  "auditReasoning": "LEGACY FIELD - Same as ai_auditor_notes for backward compatibility",
+  "documentType": "INVOICE|RECEIPT|CREDIT_NOTE|SUBSCRIPTION|PROFORMA|UTILITY_BILL|DEBIT_NOTE|TIMESHEET",
+  "language": "en|he|ar|es|fr|zh|ja|etc (ISO 639-1)",
   "isRTL": true|false,
   "isSubscription": true|false,
-  "detectedCountry": "IL|US|GB|etc (ISO 3166-1 alpha-2)",
-  "currency": "USD|EUR|ILS|GBP|JPY|etc (ISO 4217)",
+  "detectedCountry": "IL|US|GB|etc (ISO 3166-1 alpha-2) - LEGACY, use global_audit_metadata.detected_country",
+  "currency": "USD|EUR|ILS|etc (ISO 4217) - LEGACY, use financial_data.primary_currency_code",
   "originalCurrency": "same or different if converted",
   "exchangeRate": null|float,
   
@@ -348,6 +350,56 @@ In your `auditReasoning` field, you MUST explain:
                 if 'detectedCountry' not in validated_data:
                     validated_data['detectedCountry'] = None
                 
+                # NEW: Ensure global_audit_metadata exists with defaults
+                if 'global_audit_metadata' not in validated_data:
+                    validated_data['global_audit_metadata'] = {
+                        'detected_country': validated_data.get('detectedCountry'),
+                        'detected_language': validated_data.get('language', 'en'),
+                        'document_category': validated_data.get('documentType', 'Invoice'),
+                        'is_multi_currency': validated_data.get('multiCurrency', {}).get('isMultiCurrency', False),
+                        'confidence_level': validated_data.get('extractionConfidence', 0.5)
+                    }
+                
+                # NEW: Ensure vendor_details exists
+                if 'vendor_details' not in validated_data:
+                    vendor = validated_data.get('vendor', {})
+                    validated_data['vendor_details'] = {
+                        'name_normalized': validated_data.get('vendorMatch', {}).get('normalizedName', vendor.get('name', 'Unknown')),
+                        'name_native': vendor.get('name', 'Unknown'),
+                        'registration_id': vendor.get('taxId') or vendor.get('registrationNumber'),
+                        'address_full': vendor.get('address'),
+                        'matched_db_id': validated_data.get('vendorMatch', {}).get('matchedDbId')
+                    }
+                
+                # NEW: Ensure critical_dates exists
+                if 'critical_dates' not in validated_data:
+                    validated_data['critical_dates'] = {
+                        'issue_date': validated_data.get('documentDate') or validated_data.get('issueDate'),
+                        'payment_date': validated_data.get('paymentDate'),
+                        'due_date': validated_data.get('dueDate'),
+                        'period_start': validated_data.get('servicePeriodStart'),
+                        'period_end': validated_data.get('servicePeriodEnd')
+                    }
+                
+                # NEW: Ensure financial_data exists
+                if 'financial_data' not in validated_data:
+                    totals = validated_data.get('totals', {})
+                    multi_currency = validated_data.get('multiCurrency', {})
+                    validated_data['financial_data'] = {
+                        'primary_currency_code': multi_currency.get('settlementCurrency') or validated_data.get('currency', 'USD'),
+                        'line_item_currency_code': multi_currency.get('baseCurrency') or validated_data.get('currency', 'USD'),
+                        'exchange_rate_applied': multi_currency.get('exchangeRate') or validated_data.get('exchangeRate'),
+                        'subtotal': totals.get('subtotal', 0),
+                        'tax_total': totals.get('tax', 0),
+                        'discount_total': totals.get('discounts', 0),
+                        'grand_total': totals.get('total', 0),
+                        'tax_breakdown': []
+                    }
+                
+                # NEW: Ensure ai_auditor_notes exists
+                if 'ai_auditor_notes' not in validated_data:
+                    validated_data['ai_auditor_notes'] = validated_data.get('auditReasoning', validated_data.get('reasoning', 'No audit notes provided'))
+                
                 return validated_data
                 
             except json.JSONDecodeError as e:
@@ -373,6 +425,38 @@ In your `auditReasoning` field, you MUST explain:
         """Create a standardized error response matching the comprehensive schema"""
         response = {
             "error": error_message,
+            "global_audit_metadata": {
+                "detected_country": None,
+                "detected_language": "unknown",
+                "document_category": "Unknown",
+                "is_multi_currency": False,
+                "confidence_level": 0.0
+            },
+            "vendor_details": {
+                "name_normalized": "Unknown",
+                "name_native": "Unknown",
+                "registration_id": None,
+                "address_full": None,
+                "matched_db_id": None
+            },
+            "critical_dates": {
+                "issue_date": None,
+                "payment_date": None,
+                "due_date": None,
+                "period_start": None,
+                "period_end": None
+            },
+            "financial_data": {
+                "primary_currency_code": "USD",
+                "line_item_currency_code": "USD",
+                "exchange_rate_applied": None,
+                "subtotal": 0,
+                "tax_total": 0,
+                "discount_total": 0,
+                "grand_total": 0,
+                "tax_breakdown": []
+            },
+            "ai_auditor_notes": f"Error during extraction: {error_message}",
             "auditReasoning": f"Error during extraction: {error_message}",
             "documentType": "Unknown",
             "language": "unknown",
