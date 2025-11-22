@@ -7,10 +7,14 @@ from services.gmail_service import GmailService
 from services.token_storage import SecureTokenStorage
 from config import config
 
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', os.urandom(24).hex())
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'payouts_invoice_static_secret_key_2024_production')
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
