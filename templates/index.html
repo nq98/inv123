@@ -41,6 +41,13 @@
             </svg>
             <span class="tab-label">Matching</span>
         </button>
+        <button class="tab-btn" data-tab="api-docs">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M16 18l2-2-2-2M8 6l-2 2 2 2M12 2v20"></path>
+                <path d="M3 12h18"></path>
+            </svg>
+            <span class="tab-label">API</span>
+        </button>
     </nav>
 
     <!-- Tab Content Container -->
@@ -319,6 +326,394 @@
                 </div>
                 
                 <div id="matchResults" class="card hidden"></div>
+            </section>
+            
+        </div>
+        
+        <!-- ==================== API DOCS TAB ==================== -->
+        <div class="tab-content" id="tab-api-docs">
+            
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔌 LangSmith Agent API</h2>
+                    <p class="card-desc">Programmatic access for AI agents</p>
+                </div>
+                
+                <div class="api-docs-content">
+                    
+                    <!-- API Key Generation -->
+                    <div class="api-section">
+                        <h3 class="api-section-title">🔑 Authentication</h3>
+                        <p class="api-desc">Generate an API key to authenticate your LangSmith agents. Include it in the <code>X-API-Key</code> header for all requests.</p>
+                        
+                        <div class="api-key-generator">
+                            <div class="form-group">
+                                <label for="apiClientId" class="form-label">Client ID <span class="required">*</span></label>
+                                <input type="text" id="apiClientId" class="form-input" placeholder="e.g., acme_corp_001" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="apiKeyDescription" class="form-label">Description (optional)</label>
+                                <input type="text" id="apiKeyDescription" class="form-input" placeholder="e.g., Production LangSmith Agent">
+                            </div>
+                            <button id="generateApiKeyBtn" class="btn btn-primary">
+                                ⚡ Generate API Key
+                            </button>
+                        </div>
+                        
+                        <div id="apiKeyResult" class="hidden api-key-result">
+                            <div class="alert alert-success">
+                                <strong>✅ API Key Generated Successfully!</strong>
+                                <p class="api-key-warning">⚠️ Save this key now - it won't be shown again!</p>
+                            </div>
+                            <div class="api-key-display">
+                                <code id="generatedApiKey" class="api-key-value"></code>
+                                <button id="copyApiKeyBtn" class="btn btn-secondary btn-sm">📋 Copy</button>
+                            </div>
+                            <div class="api-key-details">
+                                <p><strong>Client ID:</strong> <span id="apiKeyClientId"></span></p>
+                                <p><strong>Created:</strong> <span id="apiKeyCreated"></span></p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Authentication Example -->
+                    <div class="api-section">
+                        <h3 class="api-section-title">📡 Using Your API Key</h3>
+                        <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/test" \
+  -H "X-API-Key: sk_your_api_key_here"
+
+# Or use Authorization header
+curl -X GET "https://your-app.repl.co/api/agent/test" \
+  -H "Authorization: Bearer sk_your_api_key_here"</code></pre>
+                    </div>
+                    
+                    <!-- Endpoints Documentation -->
+                    <div class="api-section">
+                        <h3 class="api-section-title">📚 API Endpoints (12 Total)</h3>
+                        
+                        <!-- Search -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/search</span>
+                            </div>
+                            <p class="endpoint-desc">Search across all vendors, invoices, and documents</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/search" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Amazon",
+    "page": 1,
+    "max_results": 50
+  }'
+
+# Response:
+{
+  "success": true,
+  "results": [
+    {
+      "type": "vendor",
+      "vendor_id": "V123",
+      "vendor_name": "Amazon Web Services",
+      "score": 0.95,
+      "source": "vertex_search",
+      "metadata": {...}
+    }
+  ],
+  "total_count": 42,
+  "page": 1,
+  "has_more": false
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Get Vendor Details -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method get">GET</span>
+                                <span class="endpoint-path">/api/agent/vendor/{vendor_id}</span>
+                            </div>
+                            <p class="endpoint-desc">Get detailed vendor information with invoice statistics</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/vendor/V123" \
+  -H "X-API-Key: sk_..."
+
+# Response:
+{
+  "vendor_id": "V123",
+  "global_name": "Amazon Web Services",
+  "emails": ["aws@amazon.com"],
+  "countries": ["US"],
+  "invoice_count": 156,
+  "total_spend": 45678.90,
+  "last_invoice_date": "2025-11-15"
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Get Invoice Details -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method get">GET</span>
+                                <span class="endpoint-path">/api/agent/invoice/{invoice_id}</span>
+                            </div>
+                            <p class="endpoint-desc">Get complete invoice extraction data</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/invoice/INV-2025-001" \
+  -H "X-API-Key: sk_..."</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Client Summary -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method get">GET</span>
+                                <span class="endpoint-path">/api/agent/client/{client_id}/summary</span>
+                            </div>
+                            <p class="endpoint-desc">Get client dashboard with statistics</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/client/acme_corp/summary" \
+  -H "X-API-Key: sk_..."
+
+# Response:
+{
+  "client_id": "acme_corp",
+  "total_vendors": 234,
+  "total_invoices": 1567,
+  "pending_invoices": 12,
+  "compliance_issues": 3,
+  "last_sync": "2025-11-22T20:00:00Z"
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Get Issues -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method get">GET</span>
+                                <span class="endpoint-path">/api/agent/issues</span>
+                            </div>
+                            <p class="endpoint-desc">List all compliance issues (missing W-9s, duplicates)</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/issues?severity=high,medium" \
+  -H "X-API-Key: sk_..."
+
+# Response:
+{
+  "issues": [
+    {
+      "issue_id": "ISS-ABC123",
+      "type": "missing_w9",
+      "severity": "high",
+      "vendor_name": "ACME Corp",
+      "vendor_email": "billing@acme.com",
+      "description": "Vendor has 23 invoices totaling $45,678 but no W-9 on file"
+    }
+  ]
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Resolve Issue -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/issues/{issue_id}/resolve</span>
+                            </div>
+                            <p class="endpoint-desc">Mark an issue as resolved</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/issues/ISS-ABC123/resolve" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"resolution": "W-9 received via email"}'</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Send Vendor Email -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/vendor/send-email</span>
+                            </div>
+                            <p class="endpoint-desc">Send automated email to a vendor</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/vendor/send-email" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vendor_id": "V123",
+    "to": "billing@vendor.com",
+    "subject": "W-9 Form Required",
+    "body": "Dear vendor, we need your W-9...",
+    "track_as_issue": "ISS-ABC123"
+  }'</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Send Client Notification -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/client/notify</span>
+                            </div>
+                            <p class="endpoint-desc">Send notification to client</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/client/notify" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "finance@client.com",
+    "subject": "3 Compliance Issues Detected",
+    "body": "Summary of issues..."
+  }'</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Create Action -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/actions/create</span>
+                            </div>
+                            <p class="endpoint-desc">Create a pending action for human approval</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/actions/create" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action_type": "send_vendor_email",
+    "vendor_id": "V123",
+    "vendor_email": "vendor@example.com",
+    "issue_id": "ISS-ABC123",
+    "priority": "high",
+    "suggested_email": {
+      "subject": "W-9 Required",
+      "body": "We need your W-9 form..."
+    }
+  }'
+
+# Response:
+{
+  "success": true,
+  "action_id": "ACT-XYZ789",
+  "status": "pending_approval"
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Get Pending Actions -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method get">GET</span>
+                                <span class="endpoint-path">/api/agent/actions/pending</span>
+                            </div>
+                            <p class="endpoint-desc">Get all pending actions for approval</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X GET "https://your-app.repl.co/api/agent/actions/pending" \
+  -H "X-API-Key: sk_..."
+
+# Response:
+{
+  "pending_actions": [
+    {
+      "action_id": "ACT-XYZ789",
+      "action_type": "send_vendor_email",
+      "priority": "high",
+      "vendor_email": "vendor@example.com",
+      "email_subject": "W-9 Required",
+      "created_at": "2025-11-22T19:30:00Z"
+    }
+  ]
+}</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Approve Action -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/actions/{action_id}/approve</span>
+                            </div>
+                            <p class="endpoint-desc">Approve or reject a pending action</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code># Approve and send
+curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approved": true,
+    "modified_email": {
+      "subject": "Updated subject",
+      "body": "Modified email body..."
+    }
+  }'
+
+# Reject
+curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"approved": false}'</code></pre>
+                            </details>
+                        </div>
+                        
+                        <!-- Update Settings -->
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="http-method post">POST</span>
+                                <span class="endpoint-path">/api/agent/client/{client_id}/settings</span>
+                            </div>
+                            <p class="endpoint-desc">Update client automation settings</p>
+                            <details class="endpoint-details">
+                                <summary>View Example →</summary>
+                                <pre class="code-block"><code>curl -X POST "https://your-app.repl.co/api/agent/client/acme_corp/settings" \
+  -H "X-API-Key: sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "auto_send_vendor_emails": true,
+    "auto_send_threshold": "high_priority_only"
+  }'</code></pre>
+                            </details>
+                        </div>
+                        
+                    </div>
+                    
+                    <!-- Security Notes -->
+                    <div class="api-section">
+                        <h3 class="api-section-title">🔒 Security</h3>
+                        <ul class="api-security-list">
+                            <li><strong>Tenant Isolation:</strong> API keys are scoped to a single client_id. You can only access your own data.</li>
+                            <li><strong>API Key Storage:</strong> Keys are hashed with bcrypt. The raw key is only shown once during generation.</li>
+                            <li><strong>Rate Limiting:</strong> Coming soon - implement rate limiting in your application if needed.</li>
+                            <li><strong>HTTPS Only:</strong> Always use HTTPS in production to protect API keys in transit.</li>
+                        </ul>
+                    </div>
+                    
+                    <!-- Quick Start -->
+                    <div class="api-section">
+                        <h3 class="api-section-title">🚀 Quick Start for LangSmith</h3>
+                        <ol class="api-quickstart">
+                            <li>Generate an API key above using your client_id</li>
+                            <li>Copy the key and store it securely (e.g., environment variable)</li>
+                            <li>Configure your LangSmith agent to include the API key in requests</li>
+                            <li>Start with <code>/api/agent/search</code> to explore your data</li>
+                            <li>Use <code>/api/agent/issues</code> to detect compliance problems</li>
+                            <li>Create actions with <code>/api/agent/actions/create</code> for human approval</li>
+                        </ol>
+                    </div>
+                    
+                </div>
             </section>
             
         </div>

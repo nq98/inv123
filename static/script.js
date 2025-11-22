@@ -1981,3 +1981,75 @@ function displayMatchResults(result) {
     
     matchResults.classList.remove('hidden');
 }
+
+// ==================== API DOCS TAB ====================
+// API Key Generation
+const generateApiKeyBtn = document.getElementById('generateApiKeyBtn');
+const copyApiKeyBtn = document.getElementById('copyApiKeyBtn');
+const apiKeyResult = document.getElementById('apiKeyResult');
+
+if (generateApiKeyBtn) {
+    generateApiKeyBtn.addEventListener('click', async function() {
+        const clientId = document.getElementById('apiClientId').value.trim();
+        const description = document.getElementById('apiKeyDescription').value.trim();
+        
+        if (!clientId) {
+            showAlert('Please enter a Client ID', 'error');
+            return;
+        }
+        
+        generateApiKeyBtn.disabled = true;
+        generateApiKeyBtn.textContent = '⏳ Generating...';
+        
+        try {
+            const response = await fetch('/api/agent/generate-key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    client_id: clientId,
+                    description: description || 'Generated from UI'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Show the API key
+                document.getElementById('generatedApiKey').textContent = data.api_key;
+                document.getElementById('apiKeyClientId').textContent = data.client_id;
+                document.getElementById('apiKeyCreated').textContent = new Date().toLocaleString();
+                apiKeyResult.classList.remove('hidden');
+                
+                showAlert('API key generated successfully! Save it now - it won\'t be shown again.', 'success');
+            } else {
+                showAlert(data.error || 'Failed to generate API key', 'error');
+            }
+        } catch (error) {
+            console.error('Error generating API key:', error);
+            showAlert('Error generating API key: ' + error.message, 'error');
+        } finally {
+            generateApiKeyBtn.disabled = false;
+            generateApiKeyBtn.textContent = '⚡ Generate API Key';
+        }
+    });
+}
+
+if (copyApiKeyBtn) {
+    copyApiKeyBtn.addEventListener('click', function() {
+        const apiKey = document.getElementById('generatedApiKey').textContent;
+        
+        navigator.clipboard.writeText(apiKey).then(() => {
+            const originalText = copyApiKeyBtn.textContent;
+            copyApiKeyBtn.textContent = '✅ Copied!';
+            
+            setTimeout(() => {
+                copyApiKeyBtn.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy API key:', err);
+            showAlert('Failed to copy to clipboard', 'error');
+        });
+    });
+}

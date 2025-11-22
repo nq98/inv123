@@ -67,7 +67,7 @@ class AgentAuthService:
             else:
                 del self._key_cache[api_key]
         
-        query = "SELECT api_key_hash, client_id FROM `vendors_ai.api_keys` WHERE active = true LIMIT 100"
+        query = "SELECT api_key_hash, client_id FROM `vendors_ai.api_keys` WHERE active = true"
         
         try:
             results = self.bq.client.query(query).result()

@@ -1146,6 +1146,41 @@ def list_vendors():
 
 # AGENT API ENDPOINTS (Phase 2 & 3)
 
+# API KEY GENERATION ENDPOINT (No auth required - this creates auth)
+@app.route('/api/agent/generate-key', methods=['POST'])
+def generate_api_key():
+    """Generate a new API key for a client (UI-only endpoint)"""
+    from services.agent_auth_service import AgentAuthService
+    
+    try:
+        data = request.json
+        client_id = data.get('client_id', '').strip()
+        description = data.get('description', 'Generated from UI')
+        
+        if not client_id:
+            return jsonify({'success': False, 'error': 'client_id is required'}), 400
+        
+        # Initialize auth service
+        bq = get_bigquery_service()
+        auth_service = AgentAuthService(bq)
+        
+        # Generate API key
+        api_key = auth_service.generate_api_key(client_id, description)
+        
+        return jsonify({
+            'success': True,
+            'api_key': api_key,
+            'client_id': client_id,
+            'description': description,
+            'created_at': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        print(f"❌ Error generating API key: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ENDPOINT 1: Search
 @app.route('/api/agent/search', methods=['POST'])
 @require_agent_auth
