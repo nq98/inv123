@@ -4,9 +4,10 @@
 This project is an AI-first enterprise invoice extraction and vendor management system. It leverages semantic intelligence to process invoices, manage vendor data, and continuously learn from new information. The system aims to automate and improve the accuracy of financial data extraction and vendor information management.
 
 Key capabilities include:
-- **Invoice Processing**: A 3-layer hybrid architecture (Google Document AI, Vertex AI Search RAG, Gemini 1.5 Pro) with a self-learning feedback loop for high-accuracy invoice data extraction.
+- **Invoice Processing**: A 4-layer hybrid architecture (Google Document AI, Multi-Currency Detector, Vertex AI Search RAG, Gemini 1.5 Pro) with a self-learning feedback loop for high-accuracy invoice data extraction.
 - **Vendor Database Management**: AI-powered CSV import with a self-improving universal mapper and RAG for intelligent column mapping, multi-language support, and smart deduplication into a BigQuery vendor master database.
-- **Gmail Integration**: Secure OAuth-based integration for scanning and processing invoices from emails.
+- **Gmail Integration**: Secure OAuth-based integration with "Elite Gatekeeper" 3-stage filtering for scanning and processing invoices from emails.
+- **Vendor Matching Engine**: Semantic invoice-to-vendor matching with "Supreme Judge" AI reasoning for handling name variations, typos, multilingual names, and mergers/acquisitions.
 - **Interactive Web UI**: A user-friendly interface for invoice uploads, CSV imports, and browsing vendor data.
 
 ## User Preferences
@@ -38,10 +39,40 @@ The system is built on a Flask API server (`app.py`) and utilizes several Google
 4.  **Data Transformation**: Normalizes data such as emails, countries, and domains.
 5.  **BigQuery Integration**: Smart deduplication via `MERGE` operations on `vendor_id` and storage of dynamic custom CSV columns in a JSON field (`global_vendors` table).
 
+#### Vendor Matching Engine (Product 4) - NEW (Nov 22, 2025)
+A 3-step semantic matching system that links invoices to the correct vendor ID in the database:
+
+1.  **Step 0: Hard Tax ID Match (BigQuery SQL)**
+    - Fast exact match on tax registration IDs (VAT, EIN, GST, CNPJ, etc.)
+    - Returns 100% confidence match instantly
+    - Searches in `custom_attributes.tax_id` JSON field
+    - Normalizes IDs by removing spaces, dashes, and standardizing case
+
+2.  **Step 1: Semantic Candidate Retrieval (Vertex AI Search RAG)**
+    - Finds top 5 semantically similar vendors by name, domain, address
+    - Uses Vertex AI Search for fuzzy matching across vendor database
+    - Returns candidates with similarity scores for judgment
+
+3.  **Step 2: The Supreme Judge (Gemini 1.5 Pro)**
+    - Comprehensive semantic reasoning to decide: MATCH, NEW_VENDOR, or AMBIGUOUS
+    - **Hierarchy of Identifiers**: Tax ID > Bank Account > Corporate Domain > Name+Address
+    - **Semantic Flexibility**: Handles fuzzy names, typos, multilingual names (e.g., "חברת חשמל" = "Israel Electric Corp"), acquisitions (e.g., "Slack" → "Salesforce")
+    - **False Friend Detection**: Distinguishes between entities with same name (e.g., "Apple Landscaping" ≠ "Apple Inc.")
+    - **Parent/Child Logic**: Detects subsidiaries and merger relationships
+    - **Risk Analysis**: Flags generic domains (@gmail.com) as higher risk
+    - **Self-Healing Database**: Automatically suggests aliases, addresses, domains to add
+    - Returns structured verdict with confidence score (0.0-1.0)
+
+**API Endpoint**: `/api/vendor/match` (POST)
+- **Input**: vendor_name, tax_id, address, email_domain, phone, country
+- **Output**: verdict, vendor_id, confidence, reasoning, risk_analysis, database_updates, method
+- **Method Values**: TAX_ID_HARD_MATCH, SEMANTIC_MATCH, or NEW_VENDOR (strictly enforced)
+
 ### Feature Specifications
 -   **Multi-Language Support**: Handles over 40 languages for both invoice extraction and CSV mapping, including German, Spanish, and Hebrew.
 -   **Secure OAuth**: Implemented for Gmail integration with specific configurations for Replit's environment to prevent "State mismatch" errors and ensure secure cookie handling.
--   **API Endpoints**: Key endpoints include `/api/vendors/list` (with pagination), `/api/vendors/csv/analyze`, and `/api/vendors/csv/import`.
+-   **API Endpoints**: Key endpoints include `/api/vendors/list` (with pagination), `/api/vendors/csv/analyze`, `/api/vendors/csv/import`, and `/api/vendor/match` (semantic vendor matching).
+-   **Gmail Elite Gatekeeper**: 3-stage filtering system with multi-language queries, Gemini Flash AI semantic filter with fail-safe KEEP logic, and full 4-layer invoice processing pipeline.
 
 ### System Design Choices
 -   **Modularity**: The project is structured into logical components (e.g., `invoice_processor.py`, `services/`, `utils/`) for maintainability.
