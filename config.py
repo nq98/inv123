@@ -5,14 +5,14 @@ load_dotenv()
 
 class Config:
     GOOGLE_CLOUD_PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT_ID', 'invoicereader-477008')
-    GCS_INPUT_BUCKET = os.getenv('GCS_INPUT_BUCKET', 'payouts-invoices')
+    GCS_INPUT_BUCKET = os.getenv('GCS_INPUT_BUCKET') or os.getenv('GCS_BUCKET_NAME', 'payouts-invoices')
     REGION = os.getenv('REGION', 'us-central1')
     
-    DOCAI_PROCESSOR_ID = os.getenv('DOCAI_PROCESSOR_ID', '919c19aabdb1802d')
+    DOCAI_PROCESSOR_ID = os.getenv('DOCAI_PROCESSOR_ID') or os.getenv('Processor_ID', '919c19aabdb1802d')
     DOCAI_LOCATION = os.getenv('DOCAI_LOCATION', 'us')
     
-    VERTEX_SEARCH_DATA_STORE_ID = os.getenv('VERTEX_SEARCH_DATA_STORE_ID', 'invoices-ds')
-    VERTEX_SEARCH_COLLECTION = os.getenv('VERTEX_SEARCH_COLLECTION', 'default_collection')
+    VERTEX_SEARCH_DATA_STORE_ID = os.getenv('VERTEX_SEARCH_DATA_STORE_ID') or os.getenv('VERTEX_AI_SEARCH_DATA_STORE_ID', 'invoices-ds')
+    VERTEX_SEARCH_COLLECTION = os.getenv('VERTEX_SEARCH_COLLECTION') or os.getenv('VERTEX_AI_SEARCH_COLLECTION_ID', 'default_collection')
     
     GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY')
     
