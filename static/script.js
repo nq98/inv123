@@ -52,35 +52,131 @@ gmailDisconnectBtn.addEventListener('click', async () => {
     }
 });
 
+const gmailProgressTerminal = document.getElementById('gmailProgressTerminal');
+const terminalOutput = document.getElementById('terminalOutput');
+const minimizeTerminal = document.getElementById('minimizeTerminal');
+
+minimizeTerminal.addEventListener('click', () => {
+    gmailProgressTerminal.classList.add('hidden');
+});
+
+function addTerminalLine(message, type = 'info') {
+    const line = document.createElement('div');
+    line.className = `terminal-line ${type}`;
+    line.textContent = message;
+    terminalOutput.appendChild(line);
+    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+function clearTerminal() {
+    terminalOutput.innerHTML = '';
+}
+
 gmailImportBtn.addEventListener('click', async () => {
     const maxResults = parseInt(gmailMaxResults.value) || 20;
     
     gmailImportBtn.disabled = true;
-    gmailImportBtn.textContent = '🔍 Scanning Gmail...';
-    gmailImportResults.innerHTML = '<div style="padding: 15px; text-align: center;"><div class="spinner"></div><p>Scanning your Gmail for invoices...</p></div>';
+    gmailImportBtn.textContent = '⏳ Importing...';
+    
+    // Show terminal
+    gmailProgressTerminal.classList.remove('hidden');
+    clearTerminal();
+    
+    gmailImportResults.innerHTML = '';
     
     try {
-        const response = await fetch('/api/ap-automation/gmail/import', {
+        // Use Server-Sent Events for real-time progress
+        const eventSource = new EventSource('/api/ap-automation/gmail/import/stream');
+        
+        let importResults = {
+            imported: 0,
+            skipped: 0,
+            total: 0
+        };
+        
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'complete') {
+                    importResults = {
+                        imported: data.imported,
+                        skipped: data.skipped,
+                        total: data.total
+                    };
+                    eventSource.close();
+                    
+                    addTerminalLine('\\n' + '─'.repeat(60), 'info');
+                    addTerminalLine('✅ Import session completed successfully!', 'success');
+                    
+                    gmailImportBtn.disabled = false;
+                    gmailImportBtn.textContent = '🔍 Start Import';
+                    
+                    // Show summary
+                    displayImportSummary(importResults);
+                    
+                } else if (data.type === 'error') {
+                    addTerminalLine(data.message, 'error');
+                    eventSource.close();
+                    gmailImportBtn.disabled = false;
+                    gmailImportBtn.textContent = '🔍 Start Import';
+                    
+                } else {
+                    addTerminalLine(data.message, data.type);
+                }
+                
+            } catch (e) {
+                console.error('Error parsing SSE data:', e);
+            }
+        };
+        
+        eventSource.onerror = (error) => {
+            console.error('SSE Error:', error);
+            addTerminalLine('❌ Connection error occurred', 'error');
+            eventSource.close();
+            gmailImportBtn.disabled = false;
+            gmailImportBtn.textContent = '🔍 Start Import';
+        };
+        
+        // Send request to trigger the stream
+        await fetch('/api/ap-automation/gmail/import/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ max_results: maxResults })
         });
         
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Import failed');
-        }
-        
-        displayGmailImportResults(data);
-        
     } catch (error) {
-        gmailImportResults.innerHTML = `<div style="padding: 15px; background: #ffebee; border-radius: 6px; color: #c62828;">❌ Error: ${error.message}</div>`;
-    } finally {
+        addTerminalLine(`❌ Error: ${error.message}`, 'error');
         gmailImportBtn.disabled = false;
-        gmailImportBtn.textContent = '🔍 Scan & Import Invoices';
+        gmailImportBtn.textContent = '🔍 Start Import';
     }
 });
+
+function displayImportSummary(results) {
+    const html = `
+        <div style="background: #e8f5e9; padding: 20px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #4caf50;">
+            <h3 style="margin: 0 0 15px 0; color: #2e7d32;">📊 Import Summary</h3>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                    <div style="font-size: 32px; font-weight: bold; color: #1976d2;">${results.total}</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">Emails Scanned</div>
+                </div>
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                    <div style="font-size: 32px; font-weight: bold; color: #388e3c;">${results.imported}</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">Invoices Imported</div>
+                </div>
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 6px;">
+                    <div style="font-size: 32px; font-weight: bold; color: #f57c00;">${results.skipped}</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">Emails Skipped</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; text-align: center; color: #555;">
+                Success Rate: <strong>${results.total > 0 ? Math.round((results.imported / results.total) * 100) : 0}%</strong>
+            </div>
+        </div>
+    `;
+    gmailImportResults.innerHTML = html;
+}
 
 function displayGmailImportResults(data) {
     let html = `

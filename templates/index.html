@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enterprise Invoice Extraction System</title>
-    <link rel="stylesheet" href="/static/style.css?v=5">
+    <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
     <div class="container">
@@ -30,16 +30,37 @@
             </div>
             
             <div id="gmailImportSection" class="hidden">
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <input type="number" id="gmailMaxResults" value="20" min="1" max="100" style="width: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Count">
-                    <button id="gmailImportBtn" class="gmail-btn">
-                        🔍 Scan & Import Invoices
-                    </button>
-                    <button id="gmailDisconnectBtn" class="gmail-disconnect-btn">
-                        Disconnect
-                    </button>
+                <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px; flex-wrap: wrap;">
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label for="gmailMaxResults" style="font-size: 12px; font-weight: 600; color: #666;">Max emails to scan</label>
+                        <input type="number" id="gmailMaxResults" value="20" min="1" max="100" style="width: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; font-weight: bold;" placeholder="20">
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <button id="gmailImportBtn" class="gmail-btn">
+                            🔍 Start Import
+                        </button>
+                        <button id="gmailDisconnectBtn" class="gmail-disconnect-btn">
+                            Disconnect
+                        </button>
+                    </div>
                 </div>
+                
+                <!-- Real-time Progress Terminal -->
+                <div id="gmailProgressTerminal" class="hidden terminal-window">
+                    <div class="terminal-header">
+                        <div class="terminal-title">📧 Gmail Invoice Scanner - Live Progress</div>
+                        <button id="minimizeTerminal" class="terminal-minimize">Minimize</button>
+                    </div>
+                    <div class="terminal-body" id="terminalOutput"></div>
+                </div>
+                
                 <div id="gmailImportResults"></div>
+                
+                <!-- Import History -->
+                <div id="gmailImportHistory" class="hidden">
+                    <h3 style="margin-top: 30px; margin-bottom: 15px;">📜 Import History</h3>
+                    <div id="historyList"></div>
+                </div>
             </div>
         </div>
         
@@ -89,6 +110,6 @@
         </div>
     </div>
 
-    <script src="/static/script.js?v=5"></script>
+    <script src="/static/script.js?v=6"></script>
 </body>
 </html>

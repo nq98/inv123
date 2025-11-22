@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from invoice_processor import InvoiceProcessor
 from services.gmail_service import GmailService
@@ -208,6 +208,126 @@ def gmail_disconnect():
         session.pop('gmail_session_token')
     
     return jsonify({'status': 'disconnected'})
+
+@app.route('/api/ap-automation/gmail/import/stream', methods=['POST'])
+def gmail_import_stream():
+    """
+    Stream real-time progress of Gmail invoice import using Server-Sent Events
+    """
+    def generate():
+        try:
+            session_token = session.get('gmail_session_token')
+            
+            if not session_token:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail not connected'})}\n\n"
+                return
+            
+            token_storage = get_token_storage()
+            credentials = token_storage.get_credentials(session_token)
+            
+            if not credentials:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail session expired'})}\n\n"
+                return
+            
+            data = json.loads(request.data.decode('utf-8')) if request.data else {}
+            max_results = data.get('max_results', 20)
+            
+            yield f"data: {json.dumps({'type': 'status', 'message': '✓ Gmail Scanner Initialized'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Lookback period: Last 30 days'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Authenticating with Gmail...'})}\n\n"
+            
+            gmail_service = get_gmail_service()
+            service = gmail_service.build_service(credentials)
+            
+            email = credentials.get('email', 'Gmail account')
+            yield f"data: {json.dumps({'type': 'success', 'message': f'Connected to {email}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': f'Counting total emails from the last 30 days...'})}\n\n"
+            
+            messages = gmail_service.search_invoice_emails(service, max_results)
+            
+            total_found = len(messages)
+            yield f"data: {json.dumps({'type': 'success', 'message': f'Found {total_found} total emails in the last 30 days'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Filtering for potential invoices...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Found {total_found} potential invoice emails out of {total_found} total'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'message': f'Analyzing {total_found} potential invoice emails (filtered from {total_found} total)...'})}\n\n"
+            
+            processor = get_processor()
+            processed_count = 0
+            imported_count = 0
+            skipped_count = 0
+            
+            for idx, msg_ref in enumerate(messages, 1):
+                try:
+                    yield f"data: {json.dumps({'type': 'analyzing', 'message': f'Analyzing email {idx} of {total_found}'})}\n\n"
+                    
+                    message = gmail_service.get_message_details(service, msg_ref['id'])
+                    
+                    if not message:
+                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Failed to fetch message'})}\n\n"
+                        skipped_count += 1
+                        continue
+                    
+                    metadata = gmail_service.get_email_metadata(message)
+                    subject = metadata.get('subject', 'No subject')
+                    subject_msg = f'  Subject: "{subject}"'
+                    
+                    yield f"data: {json.dumps({'type': 'info', 'message': subject_msg})}\n\n"
+                    
+                    is_invoice, confidence, reasoning = gmail_service.classify_invoice_email(metadata)
+                    
+                    if not is_invoice or confidence < 0.3:
+                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Not an invoice - {reasoning}'})}\n\n"
+                        skipped_count += 1
+                        continue
+                    
+                    sender = metadata.get('from', 'Unknown sender')
+                    yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Invoice detected: {sender}'})}\n\n"
+                    
+                    attachments = gmail_service.extract_attachments(service, message)
+                    
+                    if not attachments:
+                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ No PDF attachments found'})}\n\n"
+                        skipped_count += 1
+                        continue
+                    
+                    for filename, file_data in attachments:
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'  Downloading: {filename}'})}\n\n"
+                        
+                        secure_name = secure_filename(filename)
+                        filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
+                        
+                        with open(filepath, 'wb') as f:
+                            f.write(file_data)
+                        
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'  Processing through AI pipeline...'})}\n\n"
+                        
+                        invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                        
+                        os.remove(filepath)
+                        
+                        vendor = invoice_result.get('validated', {}).get('vendor', {}).get('name', 'Unknown')
+                        total = invoice_result.get('validated', {}).get('totals', {}).get('total', 0)
+                        currency = invoice_result.get('validated', {}).get('currency', '')
+                        
+                        yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Extracted: {vendor} | {currency} {total}'})}\n\n"
+                        imported_count += 1
+                    
+                    processed_count += 1
+                    
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Error: {str(e)}'})}\n\n"
+            
+            complete_msg = '\n✅ Import Complete!'
+            yield f"data: {json.dumps({'type': 'success', 'message': complete_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Total processed: {processed_count}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Invoices imported: {imported_count}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'info', 'message': f'Emails skipped: {skipped_count}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'imported': imported_count, 'skipped': skipped_count, 'total': total_found})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Import failed: {str(e)}'})}\n\n"
+    
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 @app.route('/api/ap-automation/gmail/import', methods=['POST'])
 def gmail_import():

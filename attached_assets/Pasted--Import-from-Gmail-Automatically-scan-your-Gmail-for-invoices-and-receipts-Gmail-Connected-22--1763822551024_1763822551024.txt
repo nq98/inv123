@@ -1,0 +1,104 @@
+📧 Import from Gmail
+Automatically scan your Gmail for invoices and receipts
+
+✅ Gmail Connected
+22
+🔍 Scan & Import Invoices
+Disconnect
+Import Summary
+22
+Emails Found
+24
+Imported
+8
+Skipped
+✅ Successfully Imported
+[GitHub] Payment Receipt for barakpayouts
+From: GitHub | Date: Thu, 20 Nov 2025 12:33:30 -0800
+Vendor: Unknown | Total: N/A
+Your receipt from Gamma #2799-2155
+From: Gamma | Date: Wed, 19 Nov 2025 09:37:53 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Gamma #2799-2155
+From: Gamma | Date: Wed, 19 Nov 2025 09:37:53 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Anthropic, PBC #2050-4313-3906
+From: "Anthropic, PBC" | Date: Wed, 19 Nov 2025 08:37:42 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Anthropic, PBC #2050-4313-3906
+From: "Anthropic, PBC" | Date: Wed, 19 Nov 2025 08:37:42 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Gitpod GmbH #2596-3145
+From: Gitpod GmbH | Date: Mon, 17 Nov 2025 11:08:28 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Gitpod GmbH #2596-3145
+From: Gitpod GmbH | Date: Mon, 17 Nov 2025 11:08:28 +0000
+Vendor: Unknown | Total: N/A
+Your Airwallex billing statement is ready
+From: Airwallex | Date: Mon, 17 Nov 2025 10:30:25 +0000 (UTC)
+Vendor: Unknown | Total: N/A
+Your receipt from Lovable Labs Incorporated #2997-0768
+From: Lovable Labs Incorporated | Date: Mon, 17 Nov 2025 09:05:28 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Lovable Labs Incorporated #2997-0768
+From: Lovable Labs Incorporated | Date: Mon, 17 Nov 2025 09:05:28 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Lovable Labs Incorporated #2895-9827
+From: Lovable Labs Incorporated | Date: Sun, 16 Nov 2025 14:39:00 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Lovable Labs Incorporated #2895-9827
+From: Lovable Labs Incorporated | Date: Sun, 16 Nov 2025 14:39:00 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Pika #2876-5183
+From: Pika | Date: Tue, 11 Nov 2025 22:08:03 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Pika #2876-5183
+From: Pika | Date: Tue, 11 Nov 2025 22:08:03 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from LangChain, Inc. #2533-4158
+From: "LangChain, Inc." | Date: Tue, 11 Nov 2025 10:15:48 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from LangChain, Inc. #2533-4158
+From: "LangChain, Inc." | Date: Tue, 11 Nov 2025 10:15:48 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from PixVerse #2576-8359
+From: PixVerse | Date: Mon, 10 Nov 2025 15:12:14 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from PixVerse #2576-8359
+From: PixVerse | Date: Mon, 10 Nov 2025 15:12:14 +0000
+Vendor: Unknown | Total: N/A
+Re: Invoice 02534 for the month of October
+From: Noor Qasim | Date: Mon, 10 Nov 2025 10:57:28 +0200
+Vendor: Unknown | Total: N/A
+Your receipt from MainFunc PTE. LTD. #2275-5136
+From: "MainFunc PTE. LTD." | Date: Thu, 6 Nov 2025 15:58:40 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from MainFunc PTE. LTD. #2275-5136
+From: "MainFunc PTE. LTD." | Date: Thu, 6 Nov 2025 15:58:40 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Eleven Labs Inc. #2037-5888-5642
+From: "Eleven Labs Inc." | Date: Thu, 6 Nov 2025 12:25:25 +0000
+Vendor: Unknown | Total: N/A
+Your receipt from Eleven Labs Inc. #2037-5888-5642
+From: "Eleven Labs Inc." | Date: Thu, 6 Nov 2025 12:25:25 +0000
+Vendor: Unknown | Total: N/A
+Your Airwallex billing statement is ready
+From: Airwallex | Date: Thu, 06 Nov 2025 07:41:55 +0000 (UTC)
+Vendor: Unknown | Total: N/A
+⚠️ Skipped Emails (8)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
+Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid Card Purchase
+Reason: Not an invoice (confidence: 0.20)
