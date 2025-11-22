@@ -136,10 +136,15 @@ gmailImportBtn.addEventListener('click', async () => {
         
         eventSource.onerror = (error) => {
             console.error('SSE Error:', error);
-            addTerminalLine('❌ Connection error occurred', 'error');
-            eventSource.close();
-            gmailImportBtn.disabled = false;
-            gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            
+            if (eventSource.readyState === EventSource.CLOSED) {
+                addTerminalLine('❌ Connection closed by server', 'error');
+                eventSource.close();
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            } else {
+                addTerminalLine('⚠️ Connection interrupted, attempting to reconnect...', 'warning');
+            }
         };
         
     } catch (error) {

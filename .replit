@@ -4,14 +4,6 @@ modules = ["python-3.11"]
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-localPort = 34389
-externalPort = 3001
-
-[[ports]]
-localPort = 35277
-externalPort = 3000
-
 [agent]
 expertMode = true
 
@@ -31,17 +23,17 @@ args = "Flask API Server"
 name = "Flask API Server"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python app.py"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "gunicorn --bind 0.0.0.0:5000 --workers 2 --worker-class gevent --worker-connections 1000 --timeout 300 --graceful-timeout 300 --keep-alive 75 --access-logfile - --error-logfile - --reload app:app"
+waitForPort = 5000
+
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "freetype", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]
+packages = ["cargo", "freetype", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]
 
 [deployment]
 deploymentTarget = "autoscale"

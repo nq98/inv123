@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "cryptography>=46.0.3",
     "flask>=3.1.2",
+    "gevent>=25.9.1",
     "google-api-python-client>=2.187.0",
     "google-auth>=2.43.0",
     "google-auth-oauthlib>=1.2.2",

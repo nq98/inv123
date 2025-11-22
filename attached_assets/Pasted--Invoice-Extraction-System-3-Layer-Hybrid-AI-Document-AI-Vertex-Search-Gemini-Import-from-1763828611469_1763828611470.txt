@@ -1,0 +1,234 @@
+🧾 Invoice Extraction System
+3-Layer Hybrid AI: Document AI + Vertex Search + Gemini
+
+📧 Import from Gmail
+Automatically scan your Gmail for invoices and receipts
+
+✅ Gmail Connected
+⏰ Scan emails from:
+
+Last 7 days
+🔍 Start Smart Scan
+Disconnect
+📧 Gmail Invoice Scanner - Live Progress
+Minimize
+🚀 Gmail Invoice Scanner Initialized
+⏰ Time range: Last 7 days
+Authenticating with Gmail API...
+Connected to Gmail account
+
+🔍 STAGE 1: Smart Pre-Filtering (Gmail semantic search)
+Filtering by: invoice keywords, billing senders, PDF attachments...
+📧 Found 80 emails matching invoice patterns
+
+🧠 STAGE 2: AI Semantic Classification
+Analyzing 80 emails to identify real invoices/receipts...
+  ⚠️ [1/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [2/80] Invoice: "Your receipt from Airparser (Restful OÜ) #2990-1476..."
+  ⚠️ [3/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [4/80] Skipped: "Your Airparser invoice..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [5/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [6/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [7/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [8/80] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [9/80] Skipped: "Failed to deploy to the following URLs: https://secret-invoi..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [10/80] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [11/80] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [12/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [13/80] Invoice: "[GitHub] Payment Receipt for barakpayouts..."
+  ⚠️ [14/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [15/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [16/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [17/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [18/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [19/80] Invoice: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..."
+  ⚠️ [20/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [21/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [22/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [23/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [24/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [25/80] Invoice: "Thank you for your payment..."
+  ⚠️ [26/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [27/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [28/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [29/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [30/80] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [31/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [32/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [33/80] Skipped: "Document shared with you: "Feature Request: Invoice Lifecycl..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [34/80] Invoice: "Your receipt from Gamma #2799-2155..."
+  ⚠️ [35/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [36/80] Invoice: "Your receipt from Anthropic, PBC #2050-4313-3906..."
+  ⚠️ [37/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [38/80] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [39/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [40/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [41/80] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [42/80] Invoice: "Your receipt from Gitpod GmbH #2596-3145..."
+  ✓ [43/80] Invoice: "Your Airwallex billing statement is ready..."
+  ✓ [44/80] Invoice: "Your receipt from Lovable Labs Incorporated #2997-0768..."
+  ⚠️ [45/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [46/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [47/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [48/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [49/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [50/80] Invoice: "Your receipt from Lovable Labs Incorporated #2895-9827..."
+  ⚠️ [51/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [52/80] Skipped: "We have successfully received your payment..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [53/80] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [54/80] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [55/80] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [56/80] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [57/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [58/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [59/80] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [60/80] Skipped: "Document shared with you: "Alex Payouts"..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [61/80] Skipped: "Action Required! Low Balance Alert for WATI..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [62/80] Skipped: "Barak, introducing our 33 new Mediterranean voyages​..." - Found 0 invoice keywords, 1 spam keywords
+  ⚠️ [63/80] Skipped: "[Action required] Confirm EU political ads..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [64/80] Skipped: "Spreadsheet shared with you: "MRKTER_ACC"..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [65/80] Skipped: "[GitHub] A third-party OAuth application has been added to y..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [66/80] Skipped: "Document shared with you: "White Paper: Next-Generation Loya..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [67/80] Skipped: "Document shared with you: "White Paper: Next-Generation Loya..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [68/80] Skipped: "Document shared with you: "Proposal: Match Masters x [Your C..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [69/80] Skipped: "Gemini 3 is here!..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [70/80] Skipped: "Get started with Google Antigravity..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [71/80] Skipped: "GPT-5.1 is now live in the OpenAI API..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [72/80] Skipped: "Bright Data Unlocker network is operational (automated notif..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [73/80] Skipped: "Vertex AI was unable to deploy model "google_timesfm-1_0-176..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [74/80] Skipped: "Vertex AI was unable to deploy model "google_timesfm-1_0-176..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [75/80] Skipped: "Vertex AI finished deploying model "impira_layoutlm-document..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [76/80] Skipped: "Bright Data Unlocker network service disruption (automated n..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [77/80] Skipped: "Bright Data Unlocker network service disruption (automated n..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [78/80] Skipped: "Spreadsheet shared with you: "3 Month plan"..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [79/80] Skipped: "New reasons prevent pages from being indexed on site barakhi..." - Found 0 invoice keywords, 0 spam keywords
+  ⚠️ [80/80] Skipped: "Fwd: We’re Live — Pay Your Invoices Easily with Paystand..." - Found 1 invoice keywords, 0 spam keywords
+
+📊 FILTERING RESULTS:
+  • Total emails scanned: 80
+  • Relevant (potential invoices): 80
+  • Clean invoices/receipts: 10 ✓
+  • Filtered out (not invoices): 70
+
+🤖 STAGE 3: Deep AI Extraction (10 invoices)
+3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic
+
+[1/10] Processing: "Your receipt from Airparser (Restful OÜ) #2990-147..."
+  From: "Airparser (Restful OÜ)" <invoice+statements+acct_1NGkNHKN6qT9HzDH@stripe.com>
+  📎 Attachment: Invoice-A6E8497E-0014.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Airparser (Restful OÜ) | Invoice #A6E8497E-0014 | USD 39.0
+  📎 Attachment: Receipt-2990-1476.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Airparser (Restful OÜ) | Invoice #A6E8497E-0014 | USD 39.0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[2/10] Processing: "[GitHub] Payment Receipt for barakpayouts..."
+  From: GitHub <noreply@github.com>
+  📎 Attachment: github-barakpayouts-receipt-2025-11-20.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: GitHub, Inc. | Invoice #None | USD 10.0
+
+[3/10] Processing: "Re: Proforma Invoice for Boostora Ltd – 30k USD fo..."
+  From: Flora Antoniades <flora.a@sweepnext.com>
+  ⚠️ No PDFs or download links found
+
+[4/10] Processing: "Thank you for your payment..."
+  From: Loom <billing@loom.com>
+  ⚠️ No PDFs or download links found
+
+[5/10] Processing: "Your receipt from Gamma #2799-2155..."
+  From: Gamma <invoice+statements+acct_1MS6sAE3HBB5yrHt@stripe.com>
+  📎 Attachment: Invoice-DCC8D734-0011.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Gamma | Invoice #DCC8D734-0011 | USD 20.0
+  📎 Attachment: Receipt-2799-2155.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Gamma | Invoice #DCC8D734-0011 | USD 20.0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[6/10] Processing: "Your receipt from Anthropic, PBC #2050-4313-3906..."
+  From: "Anthropic, PBC" <invoice+statements@mail.anthropic.com>
+  📎 Attachment: Invoice-E3BD8A72-0011.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Anthropic, PBC | Invoice #E3BD8A72-0011 | USD 200.0
+  📎 Attachment: Receipt-2050-4313-3906.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Anthropic, PBC | Invoice #E3BD8A72-0011 | USD 200.0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[7/10] Processing: "Your receipt from Gitpod GmbH #2596-3145..."
+  From: Gitpod GmbH <invoice+statements+acct_1RoLwOBKnXoa5Zc3@stripe.com>
+  📎 Attachment: Invoice-ONACOM-1713.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Gitpod GmbH | Invoice #ONACOM-1713 | USD 100.0
+  📎 Attachment: Receipt-2596-3145.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Gitpod GmbH | Invoice #ONACOM-1713 | USD 100.0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[8/10] Processing: "Your Airwallex billing statement is ready..."
+  From: Airwallex <support@info.airwallex.com>
+  📎 Attachment: AWXHK2510050586.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Airwallex (Hong Kong) Limited | Invoice #AWXHK2510050586 | USD 10080.78
+
+[9/10] Processing: "Your receipt from Lovable Labs Incorporated #2997-..."
+  From: Lovable Labs Incorporated <invoice+statements+acct_1Nu5mUKvR4zlUMOU@stripe.com>
+  📎 Attachment: Invoice-ZOUYKBII-0005.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Lovable | Invoice #ZOUYKBII-0005 | USD 15.0
+  📎 Attachment: Receipt-2997-0768.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+  ✅ SUCCESS: Lovable Labs Incorporated | Invoice #ZOUYKBII-0005 | USD 15.0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[10/10] Processing: "Your receipt from Lovable Labs Incorporated #2895-..."
+  From: Lovable Labs Incorporated <invoice+statements+acct_1Nu5mUKvR4zlUMOU@stripe.com>
+  📎 Attachment: Invoice-86E9E64B-0015.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+❌ Connection error occurred
