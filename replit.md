@@ -24,11 +24,12 @@ The system features a web interface (`templates/index.html`) designed for ease o
 ### Technical Implementations
 The system is built on a Flask API server (`app.py`) and utilizes several Google Cloud services:
 
-#### Invoice Processing Pipeline (Self-Improving with RAG)
+#### Invoice Processing Pipeline (Self-Improving with RAG + Multi-Currency Intelligence)
 1.  **Document AI Invoice Processor**: Extracts structured data, including bounding boxes and confidence scores.
-2.  **Vertex AI Search (RAG)**: Performs dual lookups: (a) Vendor history and canonical IDs, and (b) Similar past invoice extractions, storing successful extractions (confidence > 0.7) for future learning.
-3.  **Gemini 1.5 Pro**: Provides semantic reasoning and validation, incorporating historical context from past successful extractions and implementing Chain of Thought reasoning.
-4.  **AI-First Semantic Intelligence**: Features include visual supremacy protocol (image pixels > OCR text), enhanced RTL language support, superior date logic (documentDate vs paymentDate vs dueDate), receipt vs invoice classification, subscription detection, global date format resolution, and mathematical verification.
+2.  **Multi-Currency Detector (Layer 1.5)**: Forensic analysis of currency symbols (₪, $, €, £), exchange rate detection (e.g., "1 USD = 3.27 ILS"), currency hierarchy identification (base currency vs settlement currency), and cross-currency math verification.
+3.  **Vertex AI Search (RAG)**: Performs dual lookups: (a) Vendor history and canonical IDs, and (b) Similar past invoice extractions including multi-currency patterns, storing successful extractions (confidence > 0.7) for future learning.
+4.  **Gemini 1.5 Pro**: Provides semantic reasoning with forensic accountant protocol for multi-currency scenarios, incorporating historical context from past successful extractions, implementing Chain of Thought reasoning, and step-by-step currency conversion verification.
+5.  **AI-First Semantic Intelligence**: Features include multi-currency forensic analysis, visual supremacy protocol (image pixels > OCR text), enhanced RTL language support, superior date logic (documentDate vs paymentDate vs dueDate), receipt vs invoice classification, subscription detection, global date format resolution, and mathematical verification across currencies.
 
 #### Vendor Management Pipeline (with RAG Learning Loop)
 1.  **AI-Powered CSV Mapping**: Utilizes Gemini AI with Vertex AI Search RAG to analyze and automatically map columns from various vendor CSV formats (SAP, Oracle, QuickBooks, Excel) to a standardized schema.
