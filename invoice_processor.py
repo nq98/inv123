@@ -116,9 +116,11 @@ class InvoiceProcessor:
                 }
             else:
                 print("✓ Semantic validation complete")
-                print(f"✓ Invoice Number: {validated_data.get('invoice_number', 'N/A')}")
+                print(f"✓ Invoice Number: {validated_data.get('invoiceNumber', 'N/A')}")
                 print(f"✓ Vendor: {validated_data.get('vendor', {}).get('name', 'N/A')}")
-                print(f"✓ Grand Total: {validated_data.get('grand_total', 'N/A')} {validated_data.get('currency', '')}")
+                totals = validated_data.get('totals', {})
+                total_amount = totals.get('total', 'N/A') if totals else 'N/A'
+                print(f"✓ Grand Total: {total_amount} {validated_data.get('currency', 'USD')}")
                 
                 flags = validated_data.get('validation_flags', [])
                 if flags:

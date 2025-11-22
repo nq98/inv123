@@ -1,0 +1,569 @@
+📧 Import from Gmail
+Automatically scan your Gmail for invoices and receipts
+
+✅ Gmail Connected
+⏰ Scan emails from:
+
+Last 30 days
+⏳ Importing...
+Disconnect
+📧 Gmail Invoice Scanner - Live Progress
+Minimize
+🚀 Gmail Invoice Scanner Initialized
+⏰ Time range: Last 30 days
+Authenticating with Gmail API...
+Connected to Gmail account
+
+🔍 STAGE 1: Smart Pre-Filtering (Gmail semantic search)
+Filtering by: invoice keywords, billing senders, PDF attachments...
+📧 Found 500 emails matching invoice patterns
+
+🧠 STAGE 2: AI Semantic Classification
+Analyzing 500 emails to identify real invoices/receipts...
+  ⚠️ [1/500] Skipped: "Successfully deployed to the following URLs: https://secret-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [2/500] Skipped: "Failed to deploy to the following URLs: https://secret-invoi..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [3/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [4/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [5/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [6/500] Invoice: "[GitHub] Payment Receipt for barakpayouts..."
+  ⚠️ [7/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [8/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [9/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [10/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [11/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [12/500] Invoice: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..."
+  ⚠️ [13/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [14/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [15/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [16/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [17/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [18/500] Invoice: "Thank you for your payment..."
+  ⚠️ [19/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [20/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [21/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [22/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [23/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [24/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [25/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [26/500] Skipped: "Document shared with you: "Feature Request: Invoice Lifecycl..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [27/500] Invoice: "Your receipt from Gamma #2799-2155..."
+  ⚠️ [28/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [29/500] Invoice: "Your receipt from Anthropic, PBC #2050-4313-3906..."
+  ⚠️ [30/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [31/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [32/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [33/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [34/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [35/500] Invoice: "Your receipt from Gitpod GmbH #2596-3145..."
+  ✓ [36/500] Invoice: "Your Airwallex billing statement is ready..."
+  ✓ [37/500] Invoice: "Your receipt from Lovable Labs Incorporated #2997-0768..."
+  ⚠️ [38/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [39/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [40/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [41/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [42/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [43/500] Invoice: "Your receipt from Lovable Labs Incorporated #2895-9827..."
+  ⚠️ [44/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [45/500] Skipped: "We have successfully received your payment..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [46/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [47/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [48/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [49/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [50/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [51/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [52/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [53/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [54/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [55/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [56/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [57/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [58/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [59/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [60/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [61/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [62/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [63/500] Skipped: "Your Replit receipt [#1885-2011]..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [64/500] Skipped: "Re: [mrkter/mrkter-api] Claude/ocr invoice endpoint 011 c uq..." - Found 1 invoice keywords, 1 spam keywords
+  ⚠️ [65/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [66/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [67/500] Skipped: "Visa’s payment processing throne is a masterclass in network..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [68/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [69/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [70/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [71/500] Skipped: "Mastercard Plans a Passwordless Number-Free Payment Future b..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [72/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [73/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [74/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [75/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [76/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [77/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [78/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [79/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [80/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [81/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [82/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [83/500] Skipped: "Your payment receipt from Linas's Newsletter #C1F8C3E7-19339..." - Found 2 invoice keywords, 1 spam keywords
+  ⚠️ [84/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [85/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [86/500] Invoice: "Your receipt from Pika #2876-5183..."
+  ⚠️ [87/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [88/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [89/500] Invoice: "Your receipt from LangChain, Inc. #2533-4158..."
+  ⚠️ [90/500] Skipped: "Re: Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [91/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [92/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [93/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [94/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [95/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [96/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [97/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [98/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [99/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [100/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [101/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [102/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [103/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [104/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [105/500] Invoice: "Your receipt from PixVerse #2576-8359..."
+  ⚠️ [106/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [107/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [108/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [109/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [110/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [111/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [112/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [113/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [114/500] Invoice: "Re: Invoice 02534 for the month of October..."
+  ⚠️ [115/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [116/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [117/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [118/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [119/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [120/500] Invoice: "Re: Invoice 02534 for the month of October..."
+  ⚠️ [121/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [122/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [123/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [124/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [125/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [126/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [127/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [128/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [129/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [130/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [131/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [132/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [133/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [134/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [135/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [136/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [137/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [138/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [139/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [140/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [141/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [142/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [143/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [144/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [145/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [146/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [147/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [148/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [149/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [150/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [151/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [152/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [153/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [154/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [155/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [156/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [157/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [158/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [159/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [160/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [161/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [162/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [163/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [164/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [165/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [166/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [167/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [168/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [169/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [170/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [171/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [172/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [173/500] Skipped: "💸 You've received a $52 payment from Acme Technologies..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [174/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [175/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [176/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [177/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [178/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [179/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [180/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [181/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [182/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [183/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [184/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [185/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [186/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [187/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [188/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [189/500] Invoice: "Re: Invoice 02534 for the month of October..."
+  ⚠️ [190/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [191/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [192/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [193/500] Skipped: "Your Replit receipt [#1464-9843]..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [194/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [195/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [196/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [197/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [198/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [199/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [200/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [201/500] Invoice: "Your receipt from MainFunc PTE. LTD. #2275-5136..."
+  ⚠️ [202/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [203/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [204/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [205/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [206/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [207/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [208/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [209/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [210/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [211/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [212/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [213/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [214/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [215/500] Invoice: "Your receipt from Eleven Labs Inc. #2037-5888-5642..."
+  ⚠️ [216/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [217/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [218/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [219/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [220/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [221/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [222/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [223/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [224/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [225/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [226/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [227/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [228/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [229/500] Skipped: "💸 You've received a $60 payment from mrkter..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [230/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [231/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [232/500] Invoice: "Your Airwallex billing statement is ready..."
+  ⚠️ [233/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [234/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [235/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [236/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [237/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [238/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [239/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [240/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [241/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [242/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [243/500] Skipped: "Re: [mrkter/mrkter-api] Claude/ocr invoice endpoint 011 c uq..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [244/500] Skipped: "Re: [mrkter/mrkter-api] Claude/ocr invoice endpoint 011 c uq..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [245/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [246/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [247/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [248/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [249/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [250/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [251/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [252/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [253/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [254/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [255/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [256/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [257/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [258/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [259/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [260/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [261/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [262/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [263/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [264/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [265/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [266/500] Skipped: "Re: [mrkter/mrkter-api] Claude/test invoice api endpoints 01..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [267/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [268/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [269/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [270/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [271/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [272/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [273/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [274/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [275/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [276/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [277/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [278/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [279/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [280/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [281/500] Skipped: "💸 You've received a $34 payment from mrkter..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [282/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [283/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [284/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [285/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [286/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [287/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [288/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [289/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [290/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [291/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [292/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [293/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [294/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [295/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [296/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [297/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [298/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [299/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [300/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [301/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [302/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [303/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [304/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [305/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [306/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [307/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [308/500] Skipped: "💸 You've received a $23 payment from mrkter..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [309/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [310/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [311/500] Skipped: "[mrkter/mrkter-api] Run failed: Unit Tests - claude/invoice-..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [312/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [313/500] Skipped: "Re: [mrkter/mrkter-api] Claude/invoice processing platform 0..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [314/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [315/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [316/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [317/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [318/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [319/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [320/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [321/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [322/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [323/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [324/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [325/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [326/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [327/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [328/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [329/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [330/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [331/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [332/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [333/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [334/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [335/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [336/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [337/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [338/500] Skipped: "💸 You've received a $60 payment from noor22..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [339/500] Skipped: "💸 You've received a $500 payment from mrkter tech..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [340/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [341/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [342/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [343/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [344/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [345/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [346/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [347/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [348/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [349/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [350/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [351/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [352/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [353/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [354/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [355/500] Invoice: "Your receipt from CopyCoder #2914-1664..."
+  ⚠️ [356/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [357/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [358/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [359/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [360/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [361/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [362/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [363/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [364/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [365/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [366/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [367/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [368/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [369/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [370/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [371/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [372/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [373/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [374/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [375/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [376/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [377/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [378/500] Invoice: "Your receipt from LangChain, Inc. #2312-4007..."
+  ⚠️ [379/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [380/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [381/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [382/500] Invoice: "Invoice from 3rd November 2025..."
+  ⚠️ [383/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [384/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [385/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [386/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [387/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [388/500] Invoice: "Your receipt from PINGGY TECHNOLOGY PRIVATE LIMITED #2950-83..."
+  ⚠️ [389/500] Skipped: "💸 You've received a $143 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [390/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [391/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [392/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [393/500] Invoice: "Your receipt from HeyGen Technology Inc. #2572-6155..."
+  ✓ [394/500] Invoice: "Your receipt from LangChain, Inc. #2231-0134..."
+  ⚠️ [395/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [396/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [397/500] Skipped: "Event name: payment.cancelled..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [398/500] Invoice: "Google Workspace: Your invoice is available for payouts.com..."
+  ✓ [399/500] Invoice: "Google Workspace: Your invoice is available for payouts.com..."
+  ✓ [400/500] Invoice: "Google: Your invoice is available for 0148C5-D39BEA-0B3D7B..."
+  ✓ [401/500] Invoice: "Google: Your invoice is available for 0148C5-D39BEA-0B3D7B..."
+  ⚠️ [402/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [403/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [404/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [405/500] Skipped: "Google Cloud Platform & APIs: Payment received..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [406/500] Skipped: "Runa Invoice C-DAZ3BKLA-PP-USD-251001-251031-U+0 Attached..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [407/500] Skipped: "Runa Invoice C-DAZ3BKLA-PP-CAD-251001-251031-U+0 Attached..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [408/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [409/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [410/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [411/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [412/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [413/500] Skipped: "Checkbook FAILED payment after success status..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [414/500] Skipped: "Card payment failed due to exceeded spending limits..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [415/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [416/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [417/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [418/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [419/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [420/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [421/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [422/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [423/500] Invoice: "Your receipt from Synthesia Limited #2665-8425..."
+  ⚠️ [424/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [425/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [426/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [427/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [428/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [429/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [430/500] Skipped: "Prototyping Mode is live. Team annual billing launches..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [431/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [432/500] Invoice: "Your receipt from Replit #2374-0636..."
+  ⚠️ [433/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [434/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [435/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [436/500] Invoice: "Payment received for Netlify, Inc. invoice (#FTALSJ-00007)..."
+  ⚠️ [437/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [438/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [439/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [440/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [441/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [442/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [443/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [444/500] Skipped: "💸 You've received a $123 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [445/500] Skipped: "💸 You've received a $1255 payment from MRKTER TECHNOLOGIES L..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [446/500] Skipped: "💸 You've received a $434 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [447/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [448/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [449/500] Invoice: "Your receipt from StackBlitz, Inc. #2406-6287..."
+  ⚠️ [450/500] Skipped: "💸 You've received a $455 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [451/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [452/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [453/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [454/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [455/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [456/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [457/500] Skipped: "💸 You've received a $454 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [458/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [459/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [460/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [461/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [462/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [463/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [464/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [465/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [466/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [467/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [468/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [469/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [470/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [471/500] Skipped: "💸 You've received a $132 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [472/500] Skipped: "💸 You've received a $34 payment from MRKTER TECHNOLOGIES L.B..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [473/500] Skipped: "Re: Proforma Invoice for Boostora Ltd – 30k USD for Prepaid ..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [474/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [475/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [476/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [477/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [478/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [479/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [480/500] Skipped: "Fwd: Couldn't process payment..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [481/500] Skipped: "Card payment failed due to exceeded spending limits..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [482/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [483/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [484/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [485/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [486/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [487/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [488/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [489/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [490/500] Skipped: "💸 You've received a $34 payment from MRKTER TECHNOLOGIES L.B..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [491/500] Skipped: "💸 You've received a $546 payment from MRKTER TECHNOLOGIES L...." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [492/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ✓ [493/500] Invoice: "Your n8n receipt..."
+  ⚠️ [494/500] Skipped: "Event name: payment.in_review..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [495/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [496/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [497/500] Skipped: "Event name: payment.failed..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [498/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [499/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+  ⚠️ [500/500] Skipped: "Event name: payment.dispatched..." - Found 1 invoice keywords, 0 spam keywords
+
+📊 FILTERING RESULTS:
+  • Total emails scanned: 500
+  • Relevant (potential invoices): 500
+  • Clean invoices/receipts: 33 ✓
+  • Filtered out (not invoices): 467
+
+🤖 STAGE 3: Deep AI Extraction (33 invoices)
+3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic
+
+[1/33] Processing: "[GitHub] Payment Receipt for barakpayouts..."
+  From: GitHub <noreply@github.com>
+  📎 Attachment: github-barakpayouts-receipt-2025-11-20.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+  ⚠️ Extraction incomplete: Vendor=Unknown, Total=0
+
+[2/33] Processing: "Re: Proforma Invoice for Boostora Ltd – 30k USD fo..."
+  From: Flora Antoniades <flora.a@sweepnext.com>
+  ⚠️ No PDFs or download links found
+
+[3/33] Processing: "Thank you for your payment..."
+  From: Loom <billing@loom.com>
+  ⚠️ No PDFs or download links found
+
+[4/33] Processing: "Your receipt from Gamma #2799-2155..."
+  From: Gamma <invoice+statements+acct_1MS6sAE3HBB5yrHt@stripe.com>
+  📎 Attachment: Invoice-DCC8D734-0011.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+  ⚠️ Extraction incomplete: Vendor=Unknown, Total=0
+  📎 Attachment: Receipt-2799-2155.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+  ⚠️ Extraction incomplete: Vendor=Unknown, Total=0
+  🔗 Downloading from link...
+  🔗 Downloading from link...
+
+[5/33] Processing: "Your receipt from Anthropic, PBC #2050-4313-3906..."
+  From: "Anthropic, PBC" <invoice+statements@mail.anthropic.com>
+  📎 Attachment: Invoice-E3BD8A72-0011.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...

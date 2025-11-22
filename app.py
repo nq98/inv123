@@ -344,14 +344,14 @@ def gmail_import_stream():
                         
                         os.remove(filepath)
                         
-                        validated = invoice_result.get('validated', {})
+                        validated = invoice_result.get('validated_data', {})
                         vendor_data = validated.get('vendor', {})
                         totals = validated.get('totals', {})
                         
                         vendor = vendor_data.get('name', 'Unknown')
                         total = totals.get('total', 0)
-                        currency = validated.get('currency', '')
-                        invoice_num = validated.get('invoice_number', 'N/A')
+                        currency = validated.get('currency', 'USD')
+                        invoice_num = validated.get('invoiceNumber', 'N/A')
                         
                         if vendor and vendor != 'Unknown' and total and total > 0:
                             yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})}\n\n"
@@ -364,7 +364,7 @@ def gmail_import_stream():
                                 'invoice_number': invoice_num,
                                 'total': total,
                                 'currency': currency,
-                                'line_items': validated.get('line_items', []),
+                                'line_items': validated.get('lineItems', []),
                                 'full_data': validated
                             })
                         else:
@@ -393,20 +393,24 @@ def gmail_import_stream():
                             
                             os.remove(filepath)
                             
-                            validated = invoice_result.get('validated', {})
+                            validated = invoice_result.get('validated_data', {})
                             vendor = validated.get('vendor', {}).get('name', 'Unknown')
-                            total = validated.get('totals', {}).get('total', 0)
-                            currency = validated.get('currency', '')
+                            invoice_num = validated.get('invoiceNumber', 'N/A')
+                            totals = validated.get('totals', {})
+                            total = totals.get('total', 0)
+                            currency = validated.get('currency', 'USD')
                             
-                            if vendor and vendor != 'Unknown':
-                                yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | {currency} {total}'})}\n\n"
+                            if vendor and vendor != 'Unknown' and total and total > 0:
+                                yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | Invoice #{invoice_num} | {currency} {total}'})}\n\n"
                                 imported_invoices.append({
                                     'subject': subject,
                                     'sender': sender,
                                     'date': metadata.get('date'),
                                     'vendor': vendor,
+                                    'invoice_number': invoice_num,
                                     'total': total,
                                     'currency': currency,
+                                    'line_items': validated.get('lineItems', []),
                                     'full_data': validated
                                 })
                     
