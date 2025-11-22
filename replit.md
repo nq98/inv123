@@ -3,10 +3,11 @@
 ## Overview
 Enterprise invoice extraction and vendor management system with AI-First semantic intelligence:
 
-### Invoice Processing (3-Layer Hybrid Architecture)
+### Invoice Processing (3-Layer Hybrid Architecture with Self-Learning RAG)
 - **Layer 1**: Google Document AI for layout/structure extraction
-- **Layer 2**: Vertex AI Search (RAG) for vendor context retrieval
-- **Layer 3**: Gemini 1.5 Pro for semantic validation and math checking
+- **Layer 2**: Vertex AI Search (RAG) for vendor context AND past invoice extraction retrieval (self-learning)
+- **Layer 3**: Gemini 1.5 Pro for semantic validation with historical context
+- **Feedback Loop**: Successful extractions (confidence > 0.7) automatically stored to RAG knowledge base
 
 ### Vendor Database Management (AI-Powered CSV Import with RAG)
 - **Self-Improving Universal CSV Mapper**: Gemini AI + Vertex AI Search RAG analyzes ANY vendor CSV (SAP, Oracle, QuickBooks, Excel) and automatically maps columns to standardized schema
@@ -17,10 +18,11 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 
 ## Architecture
 
-### Invoice Extraction Pipeline
+### Invoice Extraction Pipeline (Self-Improving with RAG)
 1. **Document AI Invoice Processor** - Extracts structured data with bounding boxes and confidence scores
-2. **Vertex AI Search (RAG)** - Retrieves vendor history and canonical IDs from datastore
-3. **Gemini 1.5 Pro** - Semantic reasoning, OCR correction, date normalization, and automated math verification
+2. **Vertex AI Search (RAG)** - Dual lookup: (a) Vendor history and canonical IDs, (b) Similar past invoice extractions
+3. **Gemini 1.5 Pro** - Semantic reasoning with historical context from past successful extractions
+4. **Feedback Loop** - Store successful extraction to RAG knowledge base for future learning
 
 ### Vendor Management Pipeline (with RAG Learning Loop)
 1. **Vertex AI Search RAG Query** - Search for similar CSV mappings from past uploads
@@ -68,6 +70,16 @@ Enterprise invoice extraction and vendor management system with AI-First semanti
 See `.env` for required configuration including API keys, processor IDs, and service account paths.
 
 ## Recent Changes
+- 2025-11-22: **BREAKTHROUGH: Self-Improving Invoice Extraction with Vertex AI Search RAG** - Enhanced 3-layer pipeline with learning system:
+  - Enhanced Vertex AI Search to store successful invoice extractions to knowledge base
+  - Added dual RAG lookup in Layer 2: vendor info + similar past invoice extractions
+  - Modified Gemini prompt to include historical context from past successful extractions
+  - Implemented feedback loop: extractions with confidence > 0.7 automatically stored to RAG
+  - System learns from each invoice: improves accuracy for familiar vendors and document patterns
+  - Stores metadata: vendor name, document type, currency, confidence score, line items, totals
+  - RAG context shows past extraction examples to maintain consistency and improve accuracy
+  - **Benefits for Gmail scanning**: Dramatically reduced false positives (junk) and false negatives (missed invoices)
+  - Non-blocking design: extraction continues even if RAG storage fails
 - 2025-11-22: **BREAKTHROUGH: Self-Improving Vendor CSV Mapping with Vertex AI Search RAG** - Implemented learning system for vendor CSV import:
   - Created Vertex AI Search datastore `vendor_csv_mappings` as knowledge base for past successful mappings
   - Enhanced VendorCSVMapper to query RAG before analysis (retrieves top 3 similar past mappings)
@@ -117,8 +129,11 @@ See `.env` for required configuration including API keys, processor IDs, and ser
 
 ## Key Features
 
-### Invoice Extraction
+### Invoice Extraction (Self-Improving with RAG)
 - **Web Interface**: Drag & drop UI for uploading invoices (port 5000)
+- **Self-Learning System**: Automatically learns from successful extractions to improve accuracy over time
+- **Vertex AI Search RAG**: Queries knowledge base for similar past invoice extractions before processing
+- **Historical Context**: AI uses proven extraction patterns from past invoices for familiar vendors
 - Multi-region invoice support (200+ countries, 40+ languages)
 - Automated OCR error correction using RAG context
 - **AI-First Intelligence**: Chain of Thought reasoning for Hebrew/Arabic RTL, date ambiguity, receipt vs invoice classification
@@ -126,6 +141,7 @@ See `.env` for required configuration including API keys, processor IDs, and ser
 - Global date format normalization (MM/DD vs DD/MM)
 - Currency standardization to ISO 4217
 - Real-time processing feedback with visual status indicators
+- **Learning Feedback Loop**: Successful extractions (confidence > 0.7) stored to Vertex AI Search for future use
 
 ### Gmail Integration
 - OAuth 2.0 secure authentication
