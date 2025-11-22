@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import base64
 from datetime import datetime
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.oauth2 import service_account
@@ -41,17 +42,63 @@ class VertexSearchService:
     def search_vendor(self, vendor_query, max_results=5):
         """
         Search for vendor information in the RAG datastore
+        CRITICAL FIX 4: Now includes RAG learning loop - checks for previously rejected entities
         
         Args:
             vendor_query: Vendor name to search for
             max_results: Maximum number of results to return
             
         Returns:
-            List of search results with vendor context
+            List of search results with vendor context (includes rejection warnings if entity was previously rejected)
         """
         if not vendor_query:
             return []
         
+        # CRITICAL FIX 4: First check if this entity was previously rejected
+        rejected_query = f"rejected entity {vendor_query}"
+        rejected_request = discoveryengine.SearchRequest(
+            serving_config=config.VERTEX_SEARCH_SERVING_CONFIG,
+            query=rejected_query,
+            page_size=1
+        )
+        
+        try:
+            rejected_response = self.client.search(rejected_request)
+            
+            for result in rejected_response.results:
+                document_data = {}
+                
+                if hasattr(result, 'document'):
+                    doc = result.document
+                    
+                    if hasattr(doc, 'derived_struct_data'):
+                        document_data = dict(doc.derived_struct_data)
+                    elif hasattr(doc, 'struct_data'):
+                        document_data = dict(doc.struct_data)
+                
+                # Check if this is a rejected entity
+                if document_data.get('extraction_type') == 'rejected_entity':
+                    entity_type = document_data.get('entity_type', 'UNKNOWN')
+                    rejection_reason = document_data.get('rejection_reason', 'Previously rejected')
+                    
+                    print(f"⚠️ RAG MEMORY: '{vendor_query}' was previously rejected as {entity_type}")
+                    print(f"   Reason: {rejection_reason}")
+                    print(f"   This entity should NOT be added to vendor database!")
+                    
+                    # Return rejection metadata as first result
+                    return [{
+                        'id': 'rejected_entity_warning',
+                        'data': {
+                            'is_rejected_entity': True,
+                            'entity_type': entity_type,
+                            'rejection_reason': rejection_reason,
+                            'vendor_name': vendor_query
+                        }
+                    }]
+        except Exception as e:
+            print(f"⚠️ Error checking rejected entities: {e}")
+        
+        # Continue with normal vendor search
         request = discoveryengine.SearchRequest(
             serving_config=config.VERTEX_SEARCH_SERVING_CONFIG,
             query=vendor_query,
@@ -339,4 +386,71 @@ class VertexSearchService:
         except Exception as e:
             print(f"⚠ Error storing invoice extraction: {e}")
             # Don't fail the extraction if storage fails
+            return False
+    
+    def store_rejected_entity(self, entity_name, entity_type, reasoning):
+        """
+        Store rejected entities (banks, payment processors, government entities) for RAG learning
+        
+        Args:
+            entity_name: Name of the rejected entity
+            entity_type: Type of entity (BANK, PAYMENT_PROCESSOR, GOVERNMENT_ENTITY)
+            reasoning: Reason for rejection
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Generate unique document ID from entity name
+            doc_id = f"rejected_entity_{hashlib.md5(entity_name.encode()).hexdigest()}"
+            
+            timestamp = datetime.utcnow().isoformat()
+            
+            # Create searchable metadata
+            metadata = {
+                'extraction_type': 'rejected_entity',
+                'entity_name': entity_name,
+                'entity_type': entity_type,
+                'rejection_reason': reasoning,
+                'rejected_at': timestamp
+            }
+            
+            # Create searchable text content
+            text_content = f"""
+            Rejected Entity Knowledge Base Entry
+            
+            Entity Name: {entity_name}
+            Entity Type: {entity_type}
+            Rejection Reason: {reasoning}
+            Rejected At: {timestamp}
+            
+            This entity was classified as {entity_type} and is NOT a valid vendor.
+            Future invoices from this entity should be flagged automatically.
+            """
+            
+            # Create document for Vertex AI Search
+            document = discoveryengine.Document(
+                name=f"{self.parent}/documents/{doc_id}",
+                id=doc_id,
+                derived_struct_data=metadata,
+                content=discoveryengine.Document.Content(
+                    mime_type="text/plain",
+                    raw_bytes=text_content.encode('utf-8')
+                )
+            )
+            
+            # Store in Vertex AI Search
+            request = discoveryengine.CreateDocumentRequest(
+                parent=self.parent,
+                document=document,
+                document_id=doc_id
+            )
+            
+            self.document_client.create_document(request=request)
+            print(f"✓ Stored rejected entity to knowledge base: {entity_name} ({entity_type})")
+            return True
+            
+        except Exception as e:
+            print(f"⚠ Error storing rejected entity: {e}")
+            # Don't fail the rejection if storage fails
             return False

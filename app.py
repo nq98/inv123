@@ -13,6 +13,7 @@ from services.vendor_csv_mapper import VendorCSVMapper
 from services.vendor_matcher import VendorMatcher
 from services.vertex_search_service import VertexSearchService
 from services.gemini_service import GeminiService
+from services.semantic_entity_classifier import SemanticEntityClassifier
 from services.agent_auth_service import require_agent_auth
 from services.agent_search_service import AgentSearchService
 from services.issue_detector import IssueDetector
@@ -245,116 +246,173 @@ def upload_invoice():
                 # FIX ISSUE 3: Add logging for troubleshooting
                 print(f"⚡ Starting automatic vendor matching for vendor: {vendor_name}")
                 
-                # FIX ISSUE 1: Reuse cached processor instance (no re-entrancy)
-                bigquery_service = get_bigquery_service()
+                # AI-FIRST ENTITY CLASSIFICATION (before vendor matching)
+                print(f"\n🤖 Step 0: Semantic Entity Classification")
+                print(f"-" * 60)
+                classifier = SemanticEntityClassifier(processor.gemini_service)
                 
-                # Create VendorMatcher instance
-                matcher = VendorMatcher(
-                    bigquery_service=bigquery_service,
-                    vertex_search_service=processor.vertex_search_service,
-                    gemini_service=processor.gemini_service
+                classification = classifier.classify_entity(
+                    entity_name=vendor_name,
+                    entity_context=f"Email: {email}, Phone: {phone}, Country: {country}"
                 )
                 
-                # Prepare vendor data for matching
-                matching_input = {
-                    'vendor_name': vendor_name,
-                    'tax_id': tax_id or 'Unknown',
-                    'address': address or '',
-                    'email_domain': email_domain or '',
-                    'phone': phone or '',
-                    'country': country or ''
-                }
+                # Log classification
+                print(f"🤖 Entity Classification: {classification['entity_type']} ({classification['confidence']})")
+                print(f"   Reasoning: {classification['reasoning']}")
                 
-                # Run vendor matching
-                match_result = matcher.match_vendor(matching_input)
-                
-                # Build vendor match response with invoice and database vendor data
-                verdict = match_result.get('verdict')
-                vendor_id = match_result.get('vendor_id')
-                
-                vendor_match_result = {
-                    'verdict': verdict,
-                    'vendor_id': vendor_id,
-                    'confidence': match_result.get('confidence'),
-                    'reasoning': match_result.get('reasoning'),
-                    'method': match_result.get('method'),
-                    'risk_analysis': match_result.get('risk_analysis'),
-                    'database_updates': match_result.get('database_updates', {}),
-                    'parent_child_logic': match_result.get('parent_child_logic', {
-                        'is_subsidiary': False,
-                        'parent_company_detected': None
-                    }),
-                    'invoice_vendor': {
-                        'name': vendor_name,
-                        'tax_id': tax_id or 'Unknown',
-                        'address': address or 'Unknown',
-                        'country': country or 'Unknown',
-                        'email': email or 'Unknown',
-                        'phone': phone or 'Unknown'
-                    },
-                    'database_vendor': None  # FIX ISSUE 1: Always initialize, will be populated if MATCH
-                }
-                
-                # If match found, fetch database vendor details
-                if verdict == 'MATCH' and vendor_id:
+                # Reject non-vendors (banks, payment processors, government entities)
+                if not classification.get('is_valid_vendor', True):
+                    print(f"❌ Rejected: {vendor_name} is classified as {classification['entity_type']}")
+                    
+                    # Store rejected entity for RAG learning
+                    vertex_service = get_vertex_search_service()
                     try:
-                        vendor_id = match_result['vendor_id']
-                        print(f"✓ Fetching database vendor details for {vendor_id}...")
-                        
-                        # Query BigQuery for vendor details
-                        query = f"""
-                        SELECT 
-                            vendor_id,
-                            global_name,
-                            normalized_name,
-                            emails,
-                            domains,
-                            countries,
-                            custom_attributes
-                        FROM `{bigquery_service.full_table_id}`
-                        WHERE vendor_id = @vendor_id
-                        LIMIT 1
-                        """
-                        
-                        from google.cloud import bigquery as bq
-                        job_config = bq.QueryJobConfig(
-                            query_parameters=[
-                                bq.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
-                            ]
+                        vertex_service.store_rejected_entity(
+                            entity_name=vendor_name,
+                            entity_type=classification['entity_type'],
+                            reasoning=classification['reasoning']
                         )
-                        
-                        results = list(bigquery_service.client.query(query, job_config=job_config).result())
-                        
-                        if results:
-                            row = results[0]
+                        print(f"✓ Rejected entity stored in Vertex Search for learning")
+                    except Exception as store_error:
+                        print(f"⚠️ Failed to store rejected entity: {store_error}")
+                    
+                    vendor_match_result = {
+                        'verdict': 'INVALID_VENDOR',
+                        'entity_type': classification['entity_type'],
+                        'reasoning': classification['reasoning'],
+                        'confidence': classification['confidence'],
+                        'vendor_id': None,
+                        'method': 'SEMANTIC_ENTITY_CLASSIFICATION',
+                        'risk_analysis': 'HIGH',
+                        'database_updates': {},
+                        'parent_child_logic': {
+                            'is_subsidiary': False,
+                            'parent_company_detected': None
+                        },
+                        'invoice_vendor': {
+                            'name': vendor_name,
+                            'tax_id': tax_id or 'Unknown',
+                            'address': address or 'Unknown',
+                            'country': country or 'Unknown',
+                            'email': email or 'Unknown',
+                            'phone': phone or 'Unknown'
+                        },
+                        'database_vendor': None
+                    }
+                else:
+                    # Entity is valid, proceed with vendor matching
+                    print(f"✓ Entity is valid vendor, proceeding with matching...")
+                    
+                    # FIX ISSUE 1: Reuse cached processor instance (no re-entrancy)
+                    bigquery_service = get_bigquery_service()
+                    
+                    # Create VendorMatcher instance
+                    matcher = VendorMatcher(
+                        bigquery_service=bigquery_service,
+                        vertex_search_service=processor.vertex_search_service,
+                        gemini_service=processor.gemini_service
+                    )
+                    
+                    # Prepare vendor data for matching
+                    matching_input = {
+                        'vendor_name': vendor_name,
+                        'tax_id': tax_id or 'Unknown',
+                        'address': address or '',
+                        'email_domain': email_domain or '',
+                        'phone': phone or '',
+                        'country': country or ''
+                    }
+                    
+                    # Run vendor matching
+                    match_result = matcher.match_vendor(matching_input)
+                    
+                    # Build vendor match response with invoice and database vendor data
+                    verdict = match_result.get('verdict')
+                    vendor_id = match_result.get('vendor_id')
+                    
+                    vendor_match_result = {
+                        'verdict': verdict,
+                        'vendor_id': vendor_id,
+                        'confidence': match_result.get('confidence'),
+                        'reasoning': match_result.get('reasoning'),
+                        'method': match_result.get('method'),
+                        'risk_analysis': match_result.get('risk_analysis'),
+                        'database_updates': match_result.get('database_updates', {}),
+                        'parent_child_logic': match_result.get('parent_child_logic', {
+                            'is_subsidiary': False,
+                            'parent_company_detected': None
+                        }),
+                        'invoice_vendor': {
+                            'name': vendor_name,
+                            'tax_id': tax_id or 'Unknown',
+                            'address': address or 'Unknown',
+                            'country': country or 'Unknown',
+                            'email': email or 'Unknown',
+                            'phone': phone or 'Unknown'
+                        },
+                        'database_vendor': None  # FIX ISSUE 1: Always initialize, will be populated if MATCH
+                    }
+                    
+                    # If match found, fetch database vendor details
+                    if verdict == 'MATCH' and vendor_id:
+                        try:
+                            vendor_id = match_result['vendor_id']
+                            print(f"✓ Fetching database vendor details for {vendor_id}...")
                             
-                            # Parse custom attributes if it's a JSON string
-                            custom_attrs = row.custom_attributes
-                            if isinstance(custom_attrs, str):
-                                try:
-                                    custom_attrs = json.loads(custom_attrs)
-                                except:
-                                    custom_attrs = {}
+                            # Query BigQuery for vendor details
+                            query = f"""
+                            SELECT 
+                                vendor_id,
+                                global_name,
+                                normalized_name,
+                                emails,
+                                domains,
+                                countries,
+                                custom_attributes
+                            FROM `{bigquery_service.full_table_id}`
+                            WHERE vendor_id = @vendor_id
+                            LIMIT 1
+                            """
                             
-                            # Extract addresses from custom attributes
-                            addresses = []
-                            if custom_attrs and custom_attrs.get('address'):
-                                addresses.append(custom_attrs['address'])
+                            from google.cloud import bigquery as bq
+                            job_config = bq.QueryJobConfig(
+                                query_parameters=[
+                                    bq.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
+                                ]
+                            )
                             
-                            vendor_match_result['database_vendor'] = {
-                                'vendor_id': row.vendor_id,
-                                'name': row.global_name,
-                                'normalized_name': row.normalized_name or '',
-                                'tax_id': custom_attrs.get('tax_id', 'Unknown') if custom_attrs else 'Unknown',
-                                'addresses': addresses,
-                                'countries': row.countries if isinstance(row.countries, list) else [],
-                                'emails': row.emails if isinstance(row.emails, list) else [],
-                                'domains': row.domains if isinstance(row.domains, list) else []
-                            }
-                        
-                    except Exception as e:
-                        print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
-                        vendor_match_result['database_vendor_error'] = str(e)
+                            results = list(bigquery_service.client.query(query, job_config=job_config).result())
+                            
+                            if results:
+                                row = results[0]
+                                
+                                # Parse custom attributes if it's a JSON string
+                                custom_attrs = row.custom_attributes
+                                if isinstance(custom_attrs, str):
+                                    try:
+                                        custom_attrs = json.loads(custom_attrs)
+                                    except:
+                                        custom_attrs = {}
+                                
+                                # Extract addresses from custom attributes
+                                addresses = []
+                                if custom_attrs and custom_attrs.get('address'):
+                                    addresses.append(custom_attrs['address'])
+                                
+                                vendor_match_result['database_vendor'] = {
+                                    'vendor_id': row.vendor_id,
+                                    'name': row.global_name,
+                                    'normalized_name': row.normalized_name or '',
+                                    'tax_id': custom_attrs.get('tax_id', 'Unknown') if custom_attrs else 'Unknown',
+                                    'addresses': addresses,
+                                    'countries': row.countries if isinstance(row.countries, list) else [],
+                                    'emails': row.emails if isinstance(row.emails, list) else [],
+                                    'domains': row.domains if isinstance(row.domains, list) else []
+                                }
+                            
+                        except Exception as e:
+                            print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
+                            vendor_match_result['database_vendor_error'] = str(e)
                 
                 print(f"✓ Vendor matching complete: {match_result.get('verdict')}")
                 
@@ -1126,12 +1184,75 @@ def import_vendor_csv():
             csv_uploads.pop(upload_id, None)
             return jsonify({'error': 'No valid vendor records found in CSV'}), 400
         
+        # CRITICAL FIX 1: AI-FIRST SEMANTIC ENTITY CLASSIFICATION
+        # Classify each vendor BEFORE adding to database to prevent banks/payment processors
+        print(f"\n{'='*60}")
+        print(f"🤖 AI-FIRST ENTITY CLASSIFICATION: Validating {len(transformed_vendors)} vendors")
+        print(f"{'='*60}\n")
+        
+        processor = get_processor()
+        classifier = SemanticEntityClassifier(processor.gemini_service)
+        vertex_service = get_vertex_search_service()
+        
+        valid_vendors = []
+        rejected_vendors = []
+        
+        for vendor in transformed_vendors:
+            vendor_name = vendor.get('global_name', '')
+            emails = vendor.get('emails', [])
+            domains = vendor.get('domains', [])
+            
+            # Build context for classifier
+            email_str = ', '.join(emails) if emails else 'None'
+            domain_str = ', '.join(domains) if domains else 'None'
+            entity_context = f"Emails: {email_str}, Domains: {domain_str}"
+            
+            # Classify entity
+            classification = classifier.classify_entity(
+                entity_name=vendor_name,
+                entity_context=entity_context
+            )
+            
+            print(f"🤖 {vendor_name}: {classification['entity_type']} ({classification['confidence']})")
+            print(f"   Reasoning: {classification['reasoning']}")
+            
+            # Separate valid vendors from rejected entities
+            if classification.get('is_valid_vendor', True):
+                valid_vendors.append(vendor)
+                print(f"   ✅ VALID VENDOR - Will be imported")
+            else:
+                rejected_vendors.append({
+                    'vendor_name': vendor_name,
+                    'entity_type': classification['entity_type'],
+                    'reasoning': classification['reasoning'],
+                    'confidence': classification['confidence']
+                })
+                
+                # Store rejected entity in Vertex Search for RAG learning
+                try:
+                    vertex_service.store_rejected_entity(
+                        entity_name=vendor_name,
+                        entity_type=classification['entity_type'],
+                        reasoning=classification['reasoning']
+                    )
+                    print(f"   ❌ REJECTED ({classification['entity_type']}) - Stored in RAG for learning")
+                except Exception as store_error:
+                    print(f"   ⚠️ Could not store rejected entity: {store_error}")
+        
+        print(f"\n📊 Classification Results:")
+        print(f"   ✅ Valid vendors: {len(valid_vendors)}")
+        print(f"   ❌ Rejected entities: {len(rejected_vendors)}\n")
+        
         # Initialize BigQuery and ensure table exists
         bq_service = get_bigquery_service()
         bq_service.ensure_table_schema()
         
-        # Merge vendors into BigQuery
-        merge_result = bq_service.merge_vendors(transformed_vendors, source_system)
+        # Only merge VALID vendors into BigQuery
+        merge_result = bq_service.merge_vendors(valid_vendors, source_system)
+        
+        # Add rejection info to result
+        merge_result['rejected_count'] = len(rejected_vendors)
+        merge_result['rejected_vendors'] = rejected_vendors
         
         # VERTEX AI SEARCH RAG FEEDBACK LOOP: Store mapping for future learning
         import_success = len(merge_result.get('errors', [])) == 0
@@ -1156,9 +1277,12 @@ def import_vendor_csv():
             'success': True,
             'filename': filename,
             'vendorsProcessed': len(transformed_vendors),
+            'validVendors': len(valid_vendors),
+            'rejectedEntities': len(rejected_vendors),
             'inserted': merge_result['inserted'],
             'updated': merge_result['updated'],
-            'errors': merge_result['errors']
+            'errors': merge_result['errors'],
+            'rejections': rejected_vendors
         }), 200
         
     except Exception as e:

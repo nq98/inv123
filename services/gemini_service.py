@@ -595,6 +595,29 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
                 "reasoning": f"AI filter error: {str(e)} - Defaulting to KEEP for safety"
             }
     
+    def generate_text(self, prompt, temperature=0.1, response_mime_type='application/json'):
+        """
+        Generate text using Gemini with automatic fallback
+        
+        Args:
+            prompt: Text prompt to send to Gemini
+            temperature: Sampling temperature (0.0-1.0)
+            response_mime_type: MIME type for response (default: application/json)
+            
+        Returns:
+            String response from Gemini
+        """
+        response = self._generate_content_with_fallback(
+            model=self.model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                response_mime_type=response_mime_type
+            )
+        )
+        
+        return response.text or "{}"
+    
     def _create_error_response(self, error_message, warnings, raw_response=None):
         """Create a standardized error response matching the comprehensive schema"""
         response = {

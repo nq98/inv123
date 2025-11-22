@@ -25,9 +25,9 @@ class VendorMatcher:
         self.vertex_search = vertex_search_service
         self.gemini = gemini_service
     
-    def match_vendor(self, invoice_data):
+    def match_vendor(self, invoice_data, classifier_verdict=None):
         """
-        3-step vendor matching pipeline
+        3-step vendor matching pipeline with optional AI-first entity classification
         
         Args:
             invoice_data: dict with vendor_name, tax_id, address, email_domain, phone, country
@@ -39,10 +39,17 @@ class VendorMatcher:
                     "phone": "+1-206-555-0100",
                     "country": "US"
                 }
+            classifier_verdict: Optional dict with semantic entity classification result
+                Example: {
+                    "entity_type": "BANK",
+                    "confidence": "HIGH",
+                    "reasoning": "This is a financial institution",
+                    "is_valid_vendor": False
+                }
         
         Returns:
             dict: {
-                "verdict": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS",
+                "verdict": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS" | "INVALID_VENDOR",
                 "vendor_id": str or None,
                 "confidence": float (0.0-1.0),
                 "reasoning": str,
@@ -56,10 +63,39 @@ class VendorMatcher:
                     "is_subsidiary": bool,
                     "parent_company_detected": str or None
                 },
-                "method": str (TAX_ID_HARD_MATCH, SEMANTIC_MATCH, or NEW_VENDOR)
+                "method": str (TAX_ID_HARD_MATCH, SEMANTIC_MATCH, NEW_VENDOR, or semantic_classifier_rejection)
             }
         """
-        print(f"🔍 Starting vendor matching for: {invoice_data.get('vendor_name', 'Unknown')}")
+        vendor_name = invoice_data.get('vendor_name', 'Unknown')
+        print(f"🔍 Starting vendor matching for: {vendor_name}")
+        
+        # CRITICAL FIX 3: If classifier already rejected entity, don't even try matching
+        if classifier_verdict and not classifier_verdict.get('is_valid_vendor', True):
+            entity_type = classifier_verdict.get('entity_type', 'UNKNOWN')
+            reasoning = classifier_verdict.get('reasoning', 'Entity classified as non-vendor')
+            confidence_str = classifier_verdict.get('confidence', 'HIGH')
+            
+            # Map confidence string to float
+            confidence_map = {'HIGH': 0.95, 'MEDIUM': 0.75, 'LOW': 0.5}
+            confidence_score = confidence_map.get(confidence_str, 0.95)
+            
+            print(f"❌ REJECTED by semantic classifier: {vendor_name} is {entity_type}")
+            print(f"   Reasoning: {reasoning}")
+            
+            return {
+                'verdict': 'INVALID_VENDOR',
+                'entity_type': entity_type,
+                'vendor_id': None,
+                'confidence': confidence_score,
+                'reasoning': f"Semantic classifier rejected: {reasoning}",
+                'risk_analysis': 'HIGH',
+                'database_updates': {},
+                'parent_child_logic': {
+                    'is_subsidiary': False,
+                    'parent_company_detected': None
+                },
+                'method': 'semantic_classifier_rejection'
+            }
         
         # STEP 0: Hard Match by Tax ID (100% confidence if found)
         tax_id = invoice_data.get('tax_id', '')
@@ -126,7 +162,7 @@ class VendorMatcher:
         
         # STEP 2: Supreme Judge Decision (Gemini 1.5 Pro)
         print(f"⚖️ Step 2: Invoking Supreme Judge (Gemini 1.5 Pro)...")
-        judge_decision = self._supreme_judge_decision(invoice_data, candidates)
+        judge_decision = self._supreme_judge_decision(invoice_data, candidates, classifier_verdict)
         
         # Apply self-healing database updates if verdict is MATCH
         if judge_decision['verdict'] == 'MATCH' and judge_decision['vendor_id']:
@@ -286,7 +322,7 @@ class VendorMatcher:
             print(f"❌ Semantic search error: {e}")
             return []
     
-    def _supreme_judge_decision(self, invoice_data, candidates):
+    def _supreme_judge_decision(self, invoice_data, candidates, classifier_verdict=None):
         """
         Step 2: Gemini 1.5 Pro acts as Supreme Judge
         
@@ -294,10 +330,12 @@ class VendorMatcher:
         - MATCH: Invoice vendor matches existing database vendor
         - NEW_VENDOR: No match found, this is a new vendor
         - AMBIGUOUS: Uncertain, requires human review
+        - INVALID_VENDOR: Entity is not a valid vendor (bank, payment processor, etc.)
         
         Args:
             invoice_data: Invoice vendor information
             candidates: List of semantic candidate vendors from Vertex Search
+            classifier_verdict: Optional pre-classification from semantic entity classifier
             
         Returns:
             dict with verdict, vendor_id, confidence, reasoning, database_updates
@@ -313,6 +351,23 @@ class VendorMatcher:
         
         # Format candidates for prompt
         candidates_json = json.dumps(candidates, indent=2)
+        
+        # Build entity classification section if classifier verdict provided
+        entity_classification_section = ""
+        if classifier_verdict:
+            entity_type = classifier_verdict.get('entity_type', 'VENDOR')
+            confidence = classifier_verdict.get('confidence', 'UNKNOWN')
+            reasoning = classifier_verdict.get('reasoning', 'No reasoning provided')
+            
+            entity_classification_section = f"""
+### 🤖 ENTITY CLASSIFICATION (Pre-validated by AI Classifier)
+The entity "{vendor_name}" has been pre-classified as: **{entity_type}**
+Classifier confidence: {confidence}
+Classifier reasoning: {reasoning}
+
+**CRITICAL:** You MUST honor this classification. If the classifier determined this is NOT a vendor 
+(BANK, PAYMENT_PROCESSOR, GOVERNMENT_ENTITY, INDIVIDUAL_PERSON), you MUST return verdict="INVALID_VENDOR".
+"""
         
         # Supreme Court Judge Prompt
         prompt = f"""
@@ -331,6 +386,30 @@ Your job is to decide, beyond a reasonable doubt, if the **INVOICE VENDOR** matc
 
 **2. THE DATABASE CANDIDATES (The Existing Records):**
 {candidates_json}
+{entity_classification_section}
+
+### 🔍 ENTITY VALIDATION (CRITICAL FIRST STEP)
+Before making your decision, verify that the invoice vendor is a legitimate business vendor:
+- **NOT a bank** (e.g., "Chase Bank", "JPMorgan Chase Bank, N.A.", "Wells Fargo", "HSBC", "Barclays")
+- **NOT a payment processor** (e.g., "PayPal", "Stripe", "Square", "Venmo", "Wise")
+- **NOT a government entity** (e.g., "IRS", "Tax Authority", "HMRC", "Treasury Department")
+
+**If the vendor is INVALID (bank/payment processor/government), return:**
+{{
+    "verdict": "INVALID_VENDOR",
+    "match_details": {{
+        "selected_vendor_id": null,
+        "confidence_score": 1.0,
+        "match_reasoning": "Entity classified as [BANK|PAYMENT_PROCESSOR|GOVERNMENT_ENTITY], not a valid vendor",
+        "risk_analysis": "HIGH",
+        "entity_type": "BANK" | "PAYMENT_PROCESSOR" | "GOVERNMENT_ENTITY"
+    }},
+    "database_updates": {{}},
+    "parent_child_logic": {{
+        "is_subsidiary": false,
+        "parent_company_detected": null
+    }}
+}}
 
 ### ⚖️ JUDICIAL LOGIC (THE LAWS OF MATCHING)
 

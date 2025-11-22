@@ -1,0 +1,89 @@
+🔌 LangSmith Agent API
+Programmatic access for AI agents
+
+🔑 Authentication
+Generate an API key to authenticate your LangSmith agents. Include it in the X-API-Key header for all requests.
+
+Client ID *
+langsmith
+Description (optional)
+e.g., Production LangSmith Agent
+⚡ Generate API Key
+✅ API Key Generated Successfully!
+⚠️ Save this key now - it won't be shown again!
+
+sk_o6Vf-ONPhoWey9TBDBRGMHFq-MvB72weNiB6xatRVXM
+📋 Copy
+Client ID: langsmith
+
+Created: 11/22/2025, 10:51:28 PM
+
+📡 Using Your API Key
+curl -X GET "https://your-app.repl.co/api/agent/test" \
+  -H "X-API-Key: sk_your_api_key_here"
+
+# Or use Authorization header
+curl -X GET "https://your-app.repl.co/api/agent/test" \
+  -H "Authorization: Bearer sk_your_api_key_here"
+📚 API Endpoints (12 Total)
+POST
+/api/agent/search
+Search across all vendors, invoices, and documents
+
+GET
+/api/agent/vendor/{vendor_id}
+Get detailed vendor information with invoice statistics
+
+GET
+/api/agent/invoice/{invoice_id}
+Get complete invoice extraction data
+
+GET
+/api/agent/client/{client_id}/summary
+Get client dashboard with statistics
+
+GET
+/api/agent/issues
+List all compliance issues (missing W-9s, duplicates)
+
+POST
+/api/agent/issues/{issue_id}/resolve
+Mark an issue as resolved
+
+POST
+/api/agent/vendor/send-email
+Send automated email to a vendor
+
+POST
+/api/agent/client/notify
+Send notification to client
+
+POST
+/api/agent/actions/create
+Create a pending action for human approval
+
+GET
+/api/agent/actions/pending
+Get all pending actions for approval
+
+POST
+/api/agent/actions/{action_id}/approve
+Approve or reject a pending action
+
+POST
+/api/agent/client/{client_id}/settings
+Update client automation settings
+
+🔒 Security
+Tenant Isolation: API keys are scoped to a single client_id. You can only access your own data.
+API Key Storage: Keys are hashed with bcrypt. The raw key is only shown once during generation.
+Rate Limiting: Coming soon - implement rate limiting in your application if needed.
+HTTPS Only: Always use HTTPS in production to protect API keys in transit.
+🚀 Quick Start for LangSmith
+Generate an API key above using your client_id
+Copy the key and store it securely (e.g., environment variable)
+Configure your LangSmith agent to include the API key in requests
+Start with /api/agent/search to explore your data
+Use /api/agent/issues to detect compliance problems
+Create actions with /api/agent/actions/create for human approval
+please tell me if its working or you have any problem to connect
