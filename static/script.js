@@ -181,21 +181,12 @@ function showProgressWithSteps(containerId, step, totalSteps, message, steps) {
  */
 async function streamSSE(url, method, body, onProgress, onComplete, onError) {
     try {
-        const options = {
+        const response = await fetch(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' }
-        };
-        
-        if (body && method !== 'GET') {
-            options.body = JSON.stringify(body);
-        }
-        
-        const response = await fetch(url, options);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : null
+        });
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -205,80 +196,116 @@ async function streamSSE(url, method, body, onProgress, onComplete, onError) {
             if (done) break;
 
             buffer += decoder.decode(value, {stream: true});
-            const events = buffer.split('\n\n');
-            buffer = events.pop() || ''; // Keep incomplete event in buffer
+            
+            // Split by double newline (SSE message boundary)
+            const messages = buffer.split('\n\n');
+            buffer = messages.pop() || ''; // Keep incomplete message in buffer
 
-            for (const event of events) {
-                if (!event.trim() || !event.startsWith('data: ')) continue;
+            for (const message of messages) {
+                if (!message.trim()) continue;
                 
-                try {
-                    const dataStr = event.replace('data: ', '').trim();
-                    const data = JSON.parse(dataStr);
-                    
-                    if (data.type === 'progress') {
-                        onProgress(data);
-                    } else if (data.type === 'complete') {
-                        onComplete(data);
-                    } else if (data.type === 'error') {
-                        onError(data);
+                // Parse SSE message format:
+                // event: progress
+                // data: {...}
+                const lines = message.split('\n');
+                let eventType = 'message'; // default
+                let dataLines = []; // Collect all data: lines for multi-line JSON support
+                
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.substring(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        dataLines.push(line.substring(6)); // Collect each data: line
                     }
-                } catch (e) {
-                    console.error('Error parsing SSE event:', e, event);
+                }
+                
+                // Join all data lines and parse (handles multi-line JSON)
+                if (dataLines.length > 0) {
+                    try {
+                        const jsonStr = dataLines.join('\n'); // Multi-line JSON support
+                        const data = JSON.parse(jsonStr);
+                        
+                        // Dispatch based on event type
+                        if (eventType === 'progress' && onProgress) {
+                            onProgress(data);
+                        } else if (eventType === 'complete' && onComplete) {
+                            onComplete(data);
+                        } else if (eventType === 'error' && onError) {
+                            onError(data);
+                        } else if (eventType === 'funnel_stats' && onProgress) {
+                            onProgress({type: 'funnel_stats', ...data});
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e, dataLines);
+                    }
                 }
             }
         }
     } catch (error) {
-        console.error('SSE Stream error:', error);
-        onError({message: error.message});
+        console.error('SSE stream error:', error);
+        if (onError) {
+            onError({error: error.message});
+        }
     }
 }
 
 /**
  * Step tracker to manage progress state across SSE events
  * @param {number} totalSteps - Total number of steps in the process
- * @returns {Object} - Step tracker object with update and getSteps methods
+ * @returns {Object} - Step tracker object with updateStep and getStepsHTML methods
  */
 function createStepTracker(totalSteps) {
     const steps = [];
     
-    // Initialize all steps as pending
+    // Initialize all steps as pending with null messages (will be set from backend)
     for (let i = 0; i < totalSteps; i++) {
         steps.push({
-            message: `Step ${i}`,
-            completed: false,
-            current: false,
-            error: false,
-            details: null
+            number: i + 1,
+            message: null, // Will be set from backend
+            status: 'pending',
+            details: ''
         });
     }
     
     return {
-        update: function(stepNumber, message, details = null, completed = false, error = false) {
-            if (stepNumber >= 0 && stepNumber < totalSteps) {
-                // Mark previous steps as completed
-                for (let i = 0; i < stepNumber; i++) {
-                    if (!steps[i].error) {
-                        steps[i].completed = true;
-                        steps[i].current = false;
+        steps: steps,
+        updateStep: function(stepNum, message, details, status) {
+            if (stepNum > 0 && stepNum <= totalSteps) {
+                const step = this.steps[stepNum - 1];
+                if (message) step.message = message; // Use backend message
+                if (details) step.details = details;
+                step.status = status || 'complete';
+                
+                // Mark previous steps as complete
+                for (let i = 0; i < stepNum - 1; i++) {
+                    if (this.steps[i].status === 'pending') {
+                        this.steps[i].status = 'complete';
                     }
-                }
-                
-                // Update current step
-                steps[stepNumber].message = message;
-                steps[stepNumber].details = details;
-                steps[stepNumber].completed = completed;
-                steps[stepNumber].current = !completed && !error;
-                steps[stepNumber].error = error;
-                
-                // Mark future steps as pending
-                for (let i = stepNumber + 1; i < totalSteps; i++) {
-                    steps[i].current = false;
-                    steps[i].completed = false;
                 }
             }
         },
+        getStepsHTML: function() {
+            return this.steps.map(step => {
+                const icon = step.status === 'complete' ? '✓' : 
+                           step.status === 'current' ? '⏳' : 
+                           step.status === 'error' ? '✗' : '⬜';
+                           
+                const statusClass = `step-${step.status}`;
+                const label = step.message || `Step ${step.number}`; // Fallback to generic label
+                const details = step.details ? ` - ${step.details}` : '';
+                
+                return `<div class="${statusClass}">${icon} ${label}${details}</div>`;
+            }).join('');
+        },
+        // Backward compatibility: convert new format to old format
         getSteps: function() {
-            return steps;
+            return this.steps.map(step => ({
+                message: step.message || `Step ${step.number}`,
+                completed: step.status === 'complete',
+                current: step.status === 'current',
+                error: step.status === 'error',
+                details: step.details
+            }));
         }
     };
 }
@@ -372,6 +399,19 @@ function clearTerminal() {
     terminalOutput.innerHTML = '';
 }
 
+function showError(title, message) {
+    const errorHTML = `
+        <div style="background: #ffebee; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                <span style="font-size: 24px; margin-right: 10px;">❌</span>
+                <h3 style="margin: 0; color: #c62828;">${title}</h3>
+            </div>
+            <p style="margin: 0; color: #d32f2f; font-size: 14px;">${message}</p>
+        </div>
+    `;
+    gmailImportResults.innerHTML = errorHTML;
+}
+
 const gmailTimeRange = document.getElementById('gmailTimeRange');
 
 gmailImportBtn.addEventListener('click', async () => {
@@ -396,57 +436,79 @@ gmailImportBtn.addEventListener('click', async () => {
             total: 0
         };
         
-        eventSource.onmessage = (event) => {
+        // Listen for 'progress' events
+        eventSource.addEventListener('progress', (event) => {
             try {
                 const data = JSON.parse(event.data);
-                
-                if (data.type === 'complete') {
-                    importResults = {
-                        imported: data.imported,
-                        skipped: data.skipped,
-                        total: data.total,
-                        invoices: data.invoices || []
-                    };
-                    eventSource.close();
-                    
-                    addTerminalLine('\n' + '─'.repeat(60), 'info');
-                    addTerminalLine('✅ Import session completed successfully!', 'success');
-                    
-                    gmailImportBtn.disabled = false;
-                    gmailImportBtn.textContent = '🔍 Start Smart Scan';
-                    
-                    // Show summary and invoice details
-                    displayImportSummary(importResults);
-                    displayInvoiceData(importResults.invoices);
-                    
-                } else if (data.type === 'error') {
-                    addTerminalLine(data.message, 'error');
-                    eventSource.close();
-                    gmailImportBtn.disabled = false;
-                    gmailImportBtn.textContent = '🔍 Start Import';
-                    
-                } else if (data.type === 'funnel_stats') {
-                    // Display filtering funnel statistics
-                    const funnelHTML = generateGmailFunnelHTML(data.stats);
-                    const funnelDiv = document.createElement('div');
-                    funnelDiv.innerHTML = funnelHTML;
-                    terminalOutput.appendChild(funnelDiv);
-                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
-                    
-                } else {
-                    addTerminalLine(data.message, data.type);
-                }
-                
+                addTerminalLine(data.message, 'info');
             } catch (e) {
-                console.error('Error parsing SSE data:', e);
+                console.error('Error parsing progress event:', e);
             }
-        };
+        });
         
+        // Listen for 'complete' events
+        eventSource.addEventListener('complete', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                importResults = {
+                    imported: data.imported,
+                    skipped: data.skipped,
+                    total: data.total,
+                    invoices: data.invoices || []
+                };
+                eventSource.close();
+                
+                addTerminalLine('\n' + '─'.repeat(60), 'info');
+                addTerminalLine('✅ Import session completed successfully!', 'success');
+                
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
+                
+                // Show summary and invoice details
+                displayImportSummary(importResults);
+                displayInvoiceData(importResults.invoices);
+            } catch (e) {
+                console.error('Error parsing complete event:', e);
+            }
+        });
+        
+        // Listen for 'error' events (SSE event type, not connection error)
+        eventSource.addEventListener('error', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                const errorMessage = data.error || data.message || 'An error occurred during Gmail scan';
+                addTerminalLine(`❌ Error: ${errorMessage}`, 'error');
+                showError('Gmail Scan Error', errorMessage);
+                eventSource.close();
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            } catch (e) {
+                console.error('Error parsing error event:', e);
+            }
+        });
+        
+        // Listen for 'funnel_stats' events
+        eventSource.addEventListener('funnel_stats', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // Display filtering funnel statistics
+                const funnelHTML = generateGmailFunnelHTML(data);
+                const funnelDiv = document.createElement('div');
+                funnelDiv.innerHTML = funnelHTML;
+                terminalOutput.appendChild(funnelDiv);
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            } catch (e) {
+                console.error('Error parsing funnel_stats event:', e);
+            }
+        });
+        
+        // Handle connection errors
         eventSource.onerror = (error) => {
-            console.error('SSE Error:', error);
+            console.error('Gmail SSE connection error:', error);
             
             if (eventSource.readyState === EventSource.CLOSED) {
                 addTerminalLine('❌ Connection closed by server', 'error');
+                showError('Connection Error', 'Lost connection to server. Please try again.');
                 eventSource.close();
                 gmailImportBtn.disabled = false;
                 gmailImportBtn.textContent = '🔍 Start Smart Scan';
@@ -859,9 +921,14 @@ uploadForm.addEventListener('submit', async (e) => {
                 const totalSteps = data.total_steps || 7;
                 const message = data.message || 'Processing...';
                 const details = data.details || null;
-                const completed = data.completed || false;
                 
-                stepTracker.update(step, message, details, completed, false);
+                // Use new updateStep API with backend-provided messages
+                stepTracker.updateStep(
+                    step,
+                    message,      // Backend-provided message
+                    details,      // Backend-provided details
+                    step === totalSteps ? 'complete' : 'current'
+                );
                 showProgressWithSteps('uploadProgress', step, totalSteps, message, stepTracker.getSteps());
             },
             // onComplete
@@ -883,7 +950,7 @@ uploadForm.addEventListener('submit', async (e) => {
                 results.classList.remove('hidden');
                 resultContent.innerHTML = `
                     <div class="error-message">
-                        <strong>Error:</strong> ${data.message || 'Unknown error occurred'}
+                        <strong>Error:</strong> ${data.message || data.error || 'Unknown error occurred'}
                     </div>
                 `;
             }

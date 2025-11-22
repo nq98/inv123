@@ -1,0 +1,92 @@
+🔔 ADDITIONAL ENDPOINTS FOR UI DASHBOARD INTEGRATION
+ENDPOINT 9: Create Pending Action (UI Notification)
+When the agent wants to notify your team in the dashboard UI:
+
+POST /api/agent/actions/create
+Authorization: Bearer {API_KEY}
+
+{
+  "action_type": "send_vendor_email",
+  "priority": "high",
+  "vendor_id": "V12345",
+  "vendor_name": "ABC Corp",
+  "vendor_email": "contact@abc.com",
+  "reason": "Missing W-9 form - needed for payment processing",
+  "suggested_email": {
+    "subject": "Action Required: W-9 Tax Form",
+    "body": "Dear ABC Corp,\n\nWe need your completed W-9..."
+  },
+  "issue_id": "ISS-001",
+  "client_id": "CLIENT123"
+}
+
+RESPONSE:
+{
+  "success": true,
+  "action_id": "ACT-789",
+  "status": "pending_approval",
+  "dashboard_url": "https://yourdashboard.com/actions/ACT-789"
+}
+ENDPOINT 10: Get Pending Actions (For UI Dashboard)
+Your UI dashboard calls this to show pending agent actions:
+
+GET /api/agent/actions/pending
+Authorization: Bearer {API_KEY}
+Query Params: ?client_id=CLIENT123
+
+RESPONSE:
+{
+  "pending_actions": [
+    {
+      "action_id": "ACT-789",
+      "action_type": "send_vendor_email",
+      "priority": "high",
+      "vendor_name": "ABC Corp",
+      "vendor_email": "contact@abc.com",
+      "reason": "Missing W-9 form - needed for payment processing",
+      "email_preview": {
+        "subject": "Action Required: W-9 Tax Form",
+        "body": "Dear ABC Corp..."
+      },
+      "created_at": "2024-12-19T10:30:00Z",
+      "auto_send_enabled": false
+    }
+  ]
+}
+ENDPOINT 11: Approve/Reject Action
+Your UI dashboard uses this when user clicks "Send" or "Reject":
+
+POST /api/agent/actions/{action_id}/approve
+Authorization: Bearer {API_KEY}
+
+{
+  "approved": true,
+  "modified_email": {
+    "subject": "Updated subject...",
+    "body": "Modified body..."
+  }
+}
+
+RESPONSE:
+{
+  "success": true,
+  "action_id": "ACT-789",
+  "email_sent": true,
+  "sent_at": "2024-12-19T11:00:00Z"
+}
+ENDPOINT 12: Update Auto-Send Settings
+Let clients toggle full automation:
+
+POST /api/agent/client/{client_id}/settings
+Authorization: Bearer {API_KEY}
+
+{
+  "auto_send_vendor_emails": true,
+  "auto_send_threshold": "high_priority_only"
+}
+
+RESPONSE:
+{
+  "success": true,
+  "settings_updated": true
+}
