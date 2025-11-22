@@ -5,14 +5,35 @@ from google.genai import types
 from config import config
 
 class GeminiService:
-    """Service for semantic validation and reasoning using Gemini 1.5 Pro"""
+    """Service for semantic validation and reasoning using Gemini 1.5 Pro with automatic fallback"""
     
     def __init__(self):
+        # Primary client: User's AI Studio API key
         api_key = config.GOOGLE_GEMINI_API_KEY or os.getenv('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY is required")
         
         self.client = genai.Client(api_key=api_key)
+        
+        # Fallback client: Replit AI Integrations (billed to Replit credits)
+        self.fallback_client = None
+        replit_api_key = os.getenv('AI_INTEGRATIONS_GEMINI_API_KEY')
+        replit_base_url = os.getenv('AI_INTEGRATIONS_GEMINI_BASE_URL')
+        
+        if replit_api_key and replit_base_url:
+            try:
+                self.fallback_client = genai.Client(
+                    api_key=replit_api_key,
+                    http_options={
+                        'api_version': '',
+                        'base_url': replit_base_url
+                    }
+                )
+                print("✅ Replit Gemini fallback initialized (rate limit protection enabled)")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize Replit Gemini fallback: {e}")
+        else:
+            print("⚠️ Replit Gemini fallback not configured (no rate limit protection)")
         
         self.system_instruction = """You are the **Omni-Global Financial AI**.
 You possess complete knowledge of every accounting standard, currency, and document format on Earth.
@@ -36,6 +57,70 @@ CAPABILITIES:
 Return ONLY valid JSON. No markdown. No commentary."""
         
         self.model_name = 'gemini-2.0-flash-exp'
+    
+    def _is_rate_limit_error(self, exception):
+        """Check if the exception is a rate limit or quota violation error"""
+        error_msg = str(exception)
+        return (
+            "429" in error_msg 
+            or "RATE_LIMIT_EXCEEDED" in error_msg
+            or "quota" in error_msg.lower() 
+            or "rate limit" in error_msg.lower()
+            or (hasattr(exception, 'status') and exception.status == 429)
+        )
+    
+    def _generate_content_with_fallback(self, model, contents, config):
+        """
+        Generate content with automatic fallback to Replit AI Integrations on rate limit
+        
+        Args:
+            model: Model name (e.g., 'gemini-2.0-flash-exp')
+            contents: Prompt contents
+            config: GenerateContentConfig
+            
+        Returns:
+            Response from Gemini (primary or fallback)
+        """
+        # Try primary client first
+        try:
+            response = self.client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            return response
+        except Exception as e:
+            # Check if it's a rate limit error
+            if self._is_rate_limit_error(e):
+                print(f"⚠️ AI Studio rate limit hit: {e}")
+                
+                # Try fallback if available
+                if self.fallback_client:
+                    print("🔄 Falling back to Replit AI Integrations...")
+                    try:
+                        # Map model name to Replit AI Integrations equivalent
+                        fallback_model = model
+                        if 'flash' in model.lower():
+                            fallback_model = 'gemini-2.5-flash'
+                        elif 'pro' in model.lower():
+                            fallback_model = 'gemini-2.5-pro'
+                        
+                        response = self.fallback_client.models.generate_content(
+                            model=fallback_model,
+                            contents=contents,
+                            config=config
+                        )
+                        print(f"✅ Fallback successful using {fallback_model}")
+                        return response
+                    except Exception as fallback_error:
+                        print(f"❌ Fallback also failed: {fallback_error}")
+                        raise fallback_error
+                else:
+                    print("❌ No fallback configured, rate limit cannot be bypassed")
+                    raise e
+            else:
+                # Not a rate limit error, re-raise
+                raise e
     
     def validate_invoice(self, gcs_uri, raw_text, extracted_entities, rag_context, currency_context=None):
         """
@@ -300,7 +385,8 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
         response = None
         for attempt in range(max_retries):
             try:
-                response = self.client.models.generate_content(
+                # Use fallback-enabled method (automatic rate limit protection)
+                response = self._generate_content_with_fallback(
                     model=self.model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
@@ -478,8 +564,8 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
 """
         
         try:
-            # Use Gemini Flash (fast and cheap for filtering)
-            response = self.client.models.generate_content(
+            # Use Gemini Flash with automatic fallback (rate limit protection)
+            response = self._generate_content_with_fallback(
                 model='gemini-2.0-flash-exp',
                 contents=prompt,
                 config=types.GenerateContentConfig(

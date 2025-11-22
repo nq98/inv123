@@ -78,6 +78,12 @@ A 3-step semantic matching system that links invoices to the correct vendor ID i
 -   **Modularity**: The project is structured into logical components (e.g., `invoice_processor.py`, `services/`, `utils/`) for maintainability.
 -   **Configuration**: Environment variables are used for sensitive information and service configurations.
 -   **Asynchronous Processing**: Switched to Gunicorn with gevent workers for handling long-running AI processes and SSE connections.
+-   **Automatic Fallback System (Nov 22, 2025)**: Gemini service now features automatic rate limit protection with dual-client architecture:
+    - **Primary**: User's AI Studio API key (`GOOGLE_GEMINI_API_KEY`)
+    - **Fallback**: Replit AI Integrations (billed to Replit credits)
+    - When rate limits (429 errors) are hit, automatically switches to fallback client
+    - Applies to all Gemini calls: invoice validation, email filtering, and vendor matching
+    - Zero-downtime guarantee: system never fails due to quota limits
 
 ## External Dependencies
 

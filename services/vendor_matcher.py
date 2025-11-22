@@ -387,8 +387,8 @@ Your job is to decide, beyond a reasonable doubt, if the **INVOICE VENDOR** matc
 """
         
         try:
-            # Call Gemini 1.5 Pro with Supreme Judge prompt
-            response = self.gemini.client.models.generate_content(
+            # Call Gemini 1.5 Pro with automatic fallback (rate limit protection)
+            response = self.gemini._generate_content_with_fallback(
                 model='gemini-1.5-pro',
                 contents=prompt,
                 config=types.GenerateContentConfig(
