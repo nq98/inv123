@@ -366,6 +366,167 @@ def upload_invoice():
     
     return jsonify(result), 200
 
+@app.route('/upload/stream', methods=['GET'])
+def upload_invoice_stream():
+    """
+    Upload and process an invoice file with SSE progress tracking (7 steps)
+    Requires: file parameter in multipart form data
+    Query params: filename (base64 encoded temp filename for retrieval)
+    """
+    def generate():
+        try:
+            # Get filename from query params (uploaded via separate endpoint)
+            import base64
+            encoded_filename = request.args.get('filename')
+            if not encoded_filename:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No filename provided'})}\n\n"
+                return
+            
+            filename = base64.b64decode(encoded_filename.encode()).decode()
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            if not os.path.exists(filepath):
+                yield f"data: {json.dumps({'type': 'error', 'message': 'File not found'})}\n\n"
+                return
+            
+            ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'pdf'
+            mime_type = MIME_TYPES.get(ext, 'application/pdf')
+            
+            # Step 0: Initialize
+            yield f"data: {json.dumps({'type': 'progress', 'step': 0, 'total_steps': 7, 'message': 'Initializing invoice processing...'})}\n\n"
+            
+            # Step 1: Upload to Cloud Storage
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 7, 'message': 'Uploading to Cloud Storage...', 'details': f'File: {filename}'})}\n\n"
+            
+            from google.cloud import storage
+            from google.oauth2 import service_account
+            
+            credentials = service_account.Credentials.from_service_account_file(config.VERTEX_RUNNER_SA_PATH)
+            storage_client = storage.Client(project=config.GOOGLE_CLOUD_PROJECT_ID, credentials=credentials)
+            bucket = storage_client.bucket(config.GCS_INPUT_BUCKET)
+            blob = bucket.blob(f"uploads/{filename}")
+            blob.upload_from_filename(filepath, content_type=mime_type)
+            gcs_uri = f"gs://{config.GCS_INPUT_BUCKET}/uploads/{filename}"
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 7, 'message': 'Uploaded to Cloud Storage', 'details': 'File uploaded successfully', 'completed': True})}\n\n"
+            
+            # Get processor instance
+            processor = get_processor()
+            
+            # Step 2: Document AI Extraction
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 7, 'message': 'Layer 1: Document AI Extraction...'})}\n\n"
+            
+            document = processor.doc_ai_service.process_document(gcs_uri, mime_type)
+            raw_text = processor.doc_ai_service.get_raw_text(document)
+            extracted_entities = processor.doc_ai_service.extract_entities(document)
+            text_length = len(raw_text)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 7, 'message': 'Document AI Extraction Complete', 'details': f'Extracted {text_length} characters', 'completed': True})}\n\n"
+            
+            # Step 3: Multi-Currency Detection
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 7, 'message': 'Layer 1.5: Multi-Currency Detection...'})}\n\n"
+            
+            currency_context = processor.multi_currency_detector.analyze_invoice_currencies(raw_text, extracted_entities)
+            currencies_found = currency_context.get('currency_symbols_found', [])
+            currency_str = currencies_found[0] if currencies_found else 'USD'
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 7, 'message': 'Multi-Currency Detection Complete', 'details': f'Currency: {currency_str}', 'completed': True})}\n\n"
+            
+            # Step 4: Vertex Search RAG
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 7, 'message': 'Layer 2: Vertex AI Search RAG...'})}\n\n"
+            
+            from utils import extract_vendor_name
+            vendor_name = extract_vendor_name(extracted_entities)
+            vendor_search_results = []
+            if vendor_name:
+                vendor_search_results = processor.vertex_search_service.search_vendor(vendor_name)
+            matches_count = len(vendor_search_results)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 7, 'message': 'Vertex Search Complete', 'details': f'Found {matches_count} vendor matches', 'completed': True})}\n\n"
+            
+            # Get full RAG context
+            vendor_context = processor.vertex_search_service.format_context(vendor_search_results)
+            invoice_extraction_results = processor.vertex_search_service.search_similar_invoices(raw_text, vendor_name, limit=3)
+            invoice_extraction_context = processor.vertex_search_service.format_invoice_extraction_context(invoice_extraction_results)
+            rag_context = f"{vendor_context}\n\n{invoice_extraction_context}"
+            
+            # Step 5: Gemini Validation
+            yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'total_steps': 7, 'message': 'Layer 3: Gemini Validation...'})}\n\n"
+            
+            validated_data = processor.gemini_service.validate_invoice(gcs_uri, raw_text, extracted_entities, rag_context, currency_context=currency_context)
+            
+            invoice_num = validated_data.get('invoiceNumber', 'N/A')
+            vendor = validated_data.get('vendor', {}).get('name', 'N/A')
+            total = validated_data.get('totals', {}).get('total', 'N/A')
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'total_steps': 7, 'message': 'Gemini Validation Complete', 'details': f'Invoice #{invoice_num} from {vendor}', 'completed': True})}\n\n"
+            
+            # Step 6: Automatic Vendor Matching
+            yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Running automatic vendor matching...'})}\n\n"
+            
+            vendor_match_result = None
+            if validated_data.get('vendor', {}).get('name'):
+                try:
+                    bigquery_service = get_bigquery_service()
+                    matcher = VendorMatcher(bigquery_service=bigquery_service, vertex_search_service=processor.vertex_search_service, gemini_service=processor.gemini_service)
+                    
+                    vendor_data = validated_data.get('vendor', {})
+                    tax_id = vendor_data.get('taxId', '') or vendor_data.get('tax_id', '')
+                    email = vendor_data.get('email', '')
+                    email_domain = '@' + email.split('@')[1] if email and '@' in email else ''
+                    
+                    matching_input = {
+                        'vendor_name': vendor_data.get('name', ''),
+                        'tax_id': tax_id or 'Unknown',
+                        'address': vendor_data.get('address', ''),
+                        'email_domain': email_domain,
+                        'phone': vendor_data.get('phone', ''),
+                        'country': vendor_data.get('country', '')
+                    }
+                    
+                    match_result = matcher.match_vendor(matching_input)
+                    verdict = match_result.get('verdict', 'ERROR')
+                    vendor_match_result = match_result
+                    
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Vendor Matching Complete', 'details': f'Verdict: {verdict}', 'completed': True})}\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Vendor Matching Failed', 'details': str(e), 'error': True})}\n\n"
+                    vendor_match_result = {'verdict': 'ERROR', 'error': str(e)}
+            else:
+                yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Vendor Matching Skipped', 'details': 'No vendor name found', 'completed': True})}\n\n"
+            
+            # Step 7: Complete
+            yield f"data: {json.dumps({'type': 'progress', 'step': 7, 'total_steps': 7, 'message': 'Processing Complete!', 'completed': True})}\n\n"
+            
+            # Send final result
+            result = {
+                'gcs_uri': gcs_uri,
+                'status': 'completed',
+                'validated_data': validated_data,
+                'layers': {
+                    'layer1_document_ai': {'status': 'success', 'text_length': text_length},
+                    'layer1_5_multi_currency': {'status': 'success', 'currency': currency_str},
+                    'layer2_vertex_search': {'status': 'success', 'matches_found': matches_count},
+                    'layer3_gemini': {'status': 'success'}
+                }
+            }
+            
+            if vendor_match_result:
+                result['vendor_match'] = vendor_match_result
+            
+            # Clean up uploaded file
+            try:
+                os.remove(filepath)
+            except:
+                pass
+            
+            yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Processing failed: {str(e)}'})}\n\n"
+    
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
+
 @app.route('/api/vendor/match', methods=['POST'])
 def match_vendor():
     """
@@ -442,6 +603,123 @@ def match_vendor():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/vendor/match/stream', methods=['POST'])
+def match_vendor_stream():
+    """
+    Match invoice vendor to database with SSE progress tracking (4 steps)
+    """
+    def generate():
+        try:
+            data = request.get_json()
+            
+            if not data or not data.get('vendor_name'):
+                yield f"data: {json.dumps({'type': 'error', 'message': 'vendor_name is required'})}\n\n"
+                return
+            
+            # Step 0: Hard Tax ID Match
+            yield f"data: {json.dumps({'type': 'progress', 'step': 0, 'total_steps': 4, 'message': 'Step 0: Hard Tax ID Match...'})}\n\n"
+            
+            processor = get_processor()
+            bigquery_service = get_bigquery_service()
+            matcher = VendorMatcher(bigquery_service=bigquery_service, vertex_search_service=processor.vertex_search_service, gemini_service=processor.gemini_service)
+            
+            tax_id = data.get('tax_id', '')
+            hard_match_result = None
+            if tax_id and tax_id != 'Unknown':
+                hard_match = matcher._hard_match_by_tax_id(tax_id)
+                if hard_match:
+                    matched_vendor = hard_match['vendor_name']
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 0, 'total_steps': 4, 'message': 'Hard Tax ID match found!', 'details': f'Matched vendor: {matched_vendor}', 'completed': True})}\n\n"
+                    result = {
+                        "verdict": "MATCH",
+                        "vendor_id": hard_match['vendor_id'],
+                        "confidence": 1.0,
+                        "reasoning": f"Exact Tax ID match: {tax_id}",
+                        "risk_analysis": "NONE",
+                        "database_updates": {},
+                        "parent_child_logic": {"is_subsidiary": False, "parent_company_detected": None},
+                        "method": "TAX_ID_HARD_MATCH"
+                    }
+                    yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+                    return
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 0, 'total_steps': 4, 'message': 'No hard Tax ID match', 'details': 'Proceeding to semantic search', 'completed': True})}\n\n"
+            
+            # Step 1: Semantic Search
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 4, 'message': 'Step 1: Semantic Search...'})}\n\n"
+            
+            vendor_name = data.get('vendor_name', '')
+            country = data.get('country')
+            candidates = matcher._get_semantic_candidates(vendor_name, country, top_k=5)
+            candidates_count = len(candidates)
+            
+            if not candidates:
+                yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 4, 'message': 'No candidates found', 'details': 'This appears to be a new vendor', 'completed': True})}\n\n"
+                result = {
+                    "verdict": "NEW_VENDOR",
+                    "vendor_id": None,
+                    "confidence": 0.0,
+                    "reasoning": f"No similar vendors found in database for '{vendor_name}'",
+                    "risk_analysis": "LOW",
+                    "database_updates": {},
+                    "parent_child_logic": {"is_subsidiary": False, "parent_company_detected": None},
+                    "method": "NEW_VENDOR"
+                }
+                yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+                return
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 4, 'message': 'Semantic search complete', 'details': f'Found {candidates_count} candidates', 'completed': True})}\n\n"
+            
+            # Step 2: Supreme Judge Decision
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 4, 'message': 'Step 2: Supreme Judge AI Reasoning...'})}\n\n"
+            
+            judge_decision = matcher._supreme_judge_decision(data, candidates)
+            verdict = judge_decision.get('verdict', 'NEW_VENDOR')
+            confidence = judge_decision.get('confidence', 0.0)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 4, 'message': 'Supreme Judge decision complete', 'details': f'Verdict: {verdict} ({int(confidence*100)}% confidence)', 'completed': True})}\n\n"
+            
+            # Step 3: Fetch Database Vendor Details (if MATCH)
+            if verdict == 'MATCH' and judge_decision.get('vendor_id'):
+                yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 4, 'message': 'Step 3: Fetching vendor details from BigQuery...'})}\n\n"
+                
+                vendor_id = judge_decision['vendor_id']
+                query = f"""
+                SELECT vendor_id, global_name, normalized_name, emails, domains, countries, custom_attributes
+                FROM `{bigquery_service.full_table_id}`
+                WHERE vendor_id = @vendor_id
+                LIMIT 1
+                """
+                
+                from google.cloud import bigquery as bq
+                job_config = bq.QueryJobConfig(query_parameters=[bq.ScalarQueryParameter("vendor_id", "STRING", vendor_id)])
+                results = list(bigquery_service.client.query(query, job_config=job_config).result())
+                
+                if results:
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 4, 'message': 'Database vendor details fetched', 'details': f'Retrieved {results[0].global_name}', 'completed': True})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 4, 'message': 'Database vendor details not found', 'completed': True})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 4, 'message': 'Skipped (no match to fetch)', 'completed': True})}\n\n"
+            
+            # Step 4: Complete
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 4, 'message': 'Vendor matching complete!', 'completed': True})}\n\n"
+            
+            # Add method to result
+            if judge_decision['verdict'] == 'MATCH':
+                judge_decision['method'] = 'SEMANTIC_MATCH'
+            elif judge_decision['verdict'] == 'NEW_VENDOR':
+                judge_decision['method'] = 'NEW_VENDOR'
+            else:
+                judge_decision['method'] = 'SEMANTIC_MATCH'
+            
+            yield f"data: {json.dumps({'type': 'complete', 'result': judge_decision})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Vendor matching failed: {str(e)}'})}\n\n"
+    
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
 
 @app.route('/api/ap-automation/gmail/auth', methods=['GET'])
 def gmail_auth():
@@ -602,6 +880,23 @@ def gmail_import_stream():
             
             invoice_count = len(classified_invoices)
             non_invoice_count = len(non_invoices)
+            
+            # Calculate filtering funnel statistics
+            after_language_filter_percent = round((total_found / max(total_found, 1)) * 100, 1)
+            after_ai_filter_percent = round((invoice_count / max(total_found, 1)) * 100, 1)
+            
+            # Send structured filtering funnel event
+            funnel_stats = {
+                'timeRange': time_label,
+                'totalEmails': total_found,
+                'afterLanguageFilter': total_found,
+                'languageFilterPercent': after_language_filter_percent,
+                'afterAIFilter': invoice_count,
+                'aiFilterPercent': after_ai_filter_percent,
+                'invoicesFound': 0,  # Will be updated after extraction
+                'invoicesPercent': 0.0
+            }
+            yield f"data: {json.dumps({'type': 'funnel_stats', 'stats': funnel_stats})}\n\n"
             
             filter_results_msg = '\n📊 FILTERING RESULTS:'
             yield f"data: {json.dumps({'type': 'success', 'message': filter_results_msg})}\n\n"
@@ -1027,6 +1322,122 @@ def import_vendor_csv():
         except:
             pass
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vendors/csv/import/stream', methods=['POST'])
+def import_vendor_csv_stream():
+    """
+    Import vendor CSV with SSE progress tracking (7 steps)
+    """
+    def generate():
+        try:
+            data = request.get_json()
+            upload_id = data.get('uploadId')
+            column_mapping = data.get('columnMapping')
+            source_system = data.get('sourceSystem', 'csv_upload')
+            
+            if not upload_id or not column_mapping:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Upload ID and column mapping required'})}\n\n"
+                return
+            
+            # Retrieve CSV data
+            upload_data = csv_uploads.get(upload_id)
+            if not upload_data:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'CSV upload expired. Please analyze again.'})}\n\n"
+                return
+            
+            csv_content = upload_data['csv_content']
+            filename = upload_data['filename']
+            original_headers = upload_data['headers']
+            original_analysis = upload_data['analysis']
+            
+            # Step 1: Retrieved CSV file
+            file_size = len(csv_content.encode('utf-8')) / (1024 * 1024)  # MB
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 7, 'message': 'Retrieved CSV file', 'details': f'{filename} ({file_size:.2f} MB)', 'completed': True})}\n\n"
+            
+            # Step 2: AI analyzing columns
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 7, 'message': 'AI analyzing columns...'})}\n\n"
+            
+            column_count = len(original_headers) if original_headers else len(column_mapping)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 7, 'message': 'AI analysis complete', 'details': f'Analyzed {column_count} columns', 'completed': True})}\n\n"
+            
+            # Step 3: Mapping to schema
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 7, 'message': 'Mapping to vendor schema...'})}\n\n"
+            
+            mapped_fields = len([v for v in column_mapping.values() if v.get('targetField') and not v['targetField'].startswith('custom_attributes')])
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 7, 'message': 'Schema mapping complete', 'details': f'Mapped {mapped_fields} fields', 'completed': True})}\n\n"
+            
+            # Step 4: Transforming data
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 7, 'message': 'Transforming CSV data...'})}\n\n"
+            
+            csv_mapper = get_csv_mapper()
+            transformed_vendors = csv_mapper.transform_csv_data(csv_content, {
+                'columnMapping': column_mapping,
+                'sourceSystemGuess': source_system
+            })
+            
+            if not transformed_vendors:
+                csv_uploads.pop(upload_id, None)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No valid vendor records found in CSV'})}\n\n"
+                return
+            
+            row_count = len(transformed_vendors)
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 7, 'message': 'Data transformation complete', 'details': f'Transformed {row_count} rows', 'completed': True})}\n\n"
+            
+            # Step 5: Uploading to BigQuery
+            yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'total_steps': 7, 'message': 'Uploading to BigQuery...'})}\n\n"
+            
+            bq_service = get_bigquery_service()
+            bq_service.ensure_table_schema()
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'total_steps': 7, 'message': 'BigQuery upload complete', 'details': 'Data uploaded successfully', 'completed': True})}\n\n"
+            
+            # Step 6: Smart deduplication
+            yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Running smart deduplication...'})}\n\n"
+            
+            merge_result = bq_service.merge_vendors(transformed_vendors, source_system)
+            inserted = merge_result.get('inserted', 0)
+            updated = merge_result.get('updated', 0)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Deduplication complete', 'details': f'{inserted} new, {updated} updated', 'completed': True})}\n\n"
+            
+            # Store mapping to knowledge base
+            import_success = len(merge_result.get('errors', [])) == 0
+            if import_success and original_headers and original_analysis:
+                try:
+                    csv_mapper.store_mapping_to_knowledge_base(headers=original_headers, column_mapping=original_analysis, success=True)
+                except Exception as e:
+                    print(f"⚠️ Could not store mapping to knowledge base: {e}")
+            
+            # Step 7: Complete
+            yield f"data: {json.dumps({'type': 'progress', 'step': 7, 'total_steps': 7, 'message': 'Import complete!', 'completed': True})}\n\n"
+            
+            # Clean up
+            csv_uploads.pop(upload_id, None)
+            
+            # Send final result
+            result = {
+                'success': True,
+                'filename': filename,
+                'vendorsProcessed': len(transformed_vendors),
+                'inserted': inserted,
+                'updated': updated,
+                'errors': merge_result.get('errors', [])
+            }
+            
+            yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'CSV import failed: {str(e)}'})}\n\n"
+            try:
+                upload_id = request.get_json().get('uploadId') if request.get_json() else None
+                if upload_id:
+                    csv_uploads.pop(upload_id, None)
+            except:
+                pass
+    
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
 
 @app.route('/api/vendors/search', methods=['GET'])
 def search_vendors():

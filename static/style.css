@@ -1384,3 +1384,263 @@ button {
         max-width: 1800px;
     }
 }
+
+/* ========== PROGRESS TRACKING ========== */
+/* Progress Container */
+.progress-container {
+    background: var(--white);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-md);
+}
+
+/* Progress Bar */
+.progress-bar {
+    width: 100%;
+    height: 12px;
+    background: var(--gray-200);
+    border-radius: 100px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 12px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--purple-500) 0%, var(--purple-700) 100%);
+    border-radius: 100px;
+    transition: width 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.progress-text {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 8px;
+}
+
+.progress-message {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--gray-900);
+    margin-bottom: 16px;
+}
+
+/* Step List */
+.steps-list {
+    margin-top: 16px;
+}
+
+.step-item {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    transition: var(--transition-fast);
+    font-size: 0.9375rem;
+}
+
+.step-complete {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-left: 3px solid var(--success);
+}
+
+.step-current {
+    background: #e3f2fd;
+    color: #1976d2;
+    border-left: 3px solid var(--info);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.step-pending {
+    background: var(--gray-50);
+    color: var(--gray-500);
+    border-left: 3px solid var(--gray-300);
+}
+
+.step-error {
+    background: #ffebee;
+    color: #c62828;
+    border-left: 3px solid var(--error);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.step-icon {
+    font-size: 1.125rem;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.step-details {
+    font-size: 0.8125rem;
+    opacity: 0.9;
+}
+
+/* ========== FILTERING FUNNEL (Gmail Terminal) ========== */
+.filtering-funnel {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 20px;
+    border-radius: var(--radius);
+    margin: 16px 0;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    border: 1px solid #3d3d3d;
+}
+
+.filtering-funnel h4 {
+    color: #4fc3f7;
+    font-size: 1rem;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.funnel-step {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    margin: 6px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    border-left: 3px solid #666;
+    transition: var(--transition-fast);
+}
+
+.funnel-step:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-left-color: var(--purple-500);
+}
+
+.funnel-step.final {
+    border-left-color: var(--success);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.funnel-label {
+    color: #9575cd;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.funnel-value {
+    color: #81c784;
+    font-weight: 600;
+    font-size: 0.9375rem;
+}
+
+.funnel-divider {
+    height: 1px;
+    background: #3d3d3d;
+    margin: 12px 0;
+}
+
+/* ========== PROGRESS VARIANTS ========== */
+.progress-compact {
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.progress-compact .progress-bar {
+    height: 8px;
+    margin-bottom: 8px;
+}
+
+.progress-compact .progress-text {
+    font-size: 0.8125rem;
+}
+
+.progress-compact .progress-message {
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+}
+
+/* Small step items for compact displays */
+.step-item-sm {
+    padding: 6px 10px;
+    font-size: 0.875rem;
+    margin-bottom: 6px;
+}
+
+.step-item-sm .step-icon {
+    font-size: 1rem;
+    width: 20px;
+}
+
+/* ========== RESPONSIVE PROGRESS ========== */
+@media (min-width: 768px) {
+    .progress-container {
+        padding: 24px;
+    }
+    
+    .progress-bar {
+        height: 14px;
+    }
+    
+    .progress-text {
+        font-size: 0.9375rem;
+    }
+    
+    .progress-message {
+        font-size: 1.125rem;
+    }
+    
+    .step-item {
+        padding: 12px 16px;
+        font-size: 1rem;
+    }
+    
+    .filtering-funnel {
+        padding: 24px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .progress-bar {
+        height: 16px;
+    }
+    
+    .step-item {
+        padding: 14px 20px;
+    }
+}

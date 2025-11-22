@@ -133,6 +133,9 @@
                     <button type="submit" id="submitBtn" class="btn btn-primary btn-full" disabled>Process Invoice</button>
                 </form>
                 
+                <!-- Invoice Upload Progress -->
+                <div id="uploadProgress" class="hidden"></div>
+                
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
                     <p>Processing invoice through 4-layer pipeline...</p>
@@ -191,6 +194,9 @@
                         </button>
                     </div>
                 </div>
+                
+                <!-- CSV Import Progress -->
+                <div id="csvImportProgress" class="hidden"></div>
                 
                 <!-- Import Results -->
                 <div id="csvImportResults" class="card hidden"></div>
@@ -302,6 +308,9 @@
                         🔍 Match Vendor with Supreme Judge AI
                     </button>
                 </form>
+                
+                <!-- Vendor Matching Progress -->
+                <div id="vendorMatchProgress" class="hidden"></div>
                 
                 <div id="matchLoading" class="loading hidden">
                     <div class="spinner"></div>

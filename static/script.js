@@ -21,6 +21,268 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// ==================== PROGRESS TRACKING HELPERS ====================
+/**
+ * Show a progress bar with percentage and message
+ * @param {string} containerId - ID of the container element
+ * @param {number} step - Current step number
+ * @param {number} totalSteps - Total number of steps
+ * @param {string} message - Progress message to display
+ */
+function showProgressBar(containerId, step, totalSteps, message) {
+    const percentage = Math.round((step / totalSteps) * 100);
+    const html = `
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: ${percentage}%"></div>
+            </div>
+            <div class="progress-text">${percentage}% - Step ${step} of ${totalSteps}</div>
+            <div class="progress-message">${message}</div>
+        </div>
+    `;
+    document.getElementById(containerId).innerHTML = html;
+}
+
+/**
+ * Update progress bar percentage and message
+ * @param {string} containerId - ID of the container element
+ * @param {number} step - Current step number
+ * @param {number} totalSteps - Total number of steps
+ * @param {string} message - Progress message to display
+ */
+function updateProgressBar(containerId, step, totalSteps, message) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const percentage = Math.round((step / totalSteps) * 100);
+    const progressFill = container.querySelector('.progress-fill');
+    const progressText = container.querySelector('.progress-text');
+    const progressMessage = container.querySelector('.progress-message');
+    
+    if (progressFill) progressFill.style.width = `${percentage}%`;
+    if (progressText) progressText.textContent = `${percentage}% - Step ${step} of ${totalSteps}`;
+    if (progressMessage) progressMessage.textContent = message;
+}
+
+/**
+ * Generate HTML for a list of steps with status indicators
+ * @param {Array} steps - Array of step objects {message, completed, current, error}
+ * @returns {string} HTML string for steps list
+ */
+function generateStepsList(steps) {
+    return steps.map((step, index) => {
+        let icon = '⬜';
+        let className = 'step-pending';
+        
+        if (step.error) {
+            icon = '✗';
+            className = 'step-error';
+        } else if (step.completed) {
+            icon = '✓';
+            className = 'step-complete';
+        } else if (step.current) {
+            icon = '⏳';
+            className = 'step-current';
+        }
+        
+        const details = step.details ? `<div class="step-details">${step.details}</div>` : '';
+        
+        return `
+            <div class="step-item ${className}">
+                <div class="step-icon">${icon}</div>
+                <div class="step-content">
+                    <div class="step-title">${step.message}</div>
+                    ${details}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Update a specific step in the steps list
+ * @param {string} containerId - ID of the container element
+ * @param {Array} steps - Updated array of step objects
+ */
+function updateStepsList(containerId, steps) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    container.innerHTML = `<div class="steps-list">${generateStepsList(steps)}</div>`;
+}
+
+/**
+ * Generate HTML for Gmail filtering funnel
+ * @param {Object} stats - Statistics object
+ * @returns {string} HTML string for filtering funnel
+ */
+function generateGmailFunnelHTML(stats) {
+    return `
+        <div class="filtering-funnel">
+            <h4>📊 FILTERING FUNNEL:</h4>
+            <div class="funnel-step">
+                <span class="funnel-label">Total Emails (${stats.timeRange}):</span>
+                <span class="funnel-value">${stats.totalEmails.toLocaleString()} emails</span>
+            </div>
+            <div class="funnel-step">
+                <span class="funnel-label">After Multi-Language Filter:</span>
+                <span class="funnel-value">${stats.afterLanguageFilter.toLocaleString()} emails (${stats.languageFilterPercent}%)</span>
+            </div>
+            <div class="funnel-step">
+                <span class="funnel-label">After AI Semantic Filter:</span>
+                <span class="funnel-value">${stats.afterAIFilter.toLocaleString()} emails (${stats.aiFilterPercent}%)</span>
+            </div>
+            <div class="funnel-step final">
+                <span class="funnel-label">Invoices/Receipts Found:</span>
+                <span class="funnel-value">${stats.invoicesFound.toLocaleString()} documents (${stats.invoicesPercent}%)</span>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Show progress with steps list
+ * @param {string} containerId - ID of the container element
+ * @param {number} step - Current step number
+ * @param {number} totalSteps - Total number of steps
+ * @param {string} message - Progress message
+ * @param {Array} steps - Array of step objects
+ */
+function showProgressWithSteps(containerId, step, totalSteps, message, steps) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const percentage = Math.round((step / totalSteps) * 100);
+    const html = `
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: ${percentage}%"></div>
+            </div>
+            <div class="progress-text">${percentage}% - Step ${step} of ${totalSteps}</div>
+            <div class="progress-message">${message}</div>
+            <div class="steps-list">
+                ${generateStepsList(steps)}
+            </div>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+// ==================== SSE STREAMING HELPERS ====================
+
+/**
+ * Stream SSE from a POST endpoint (manual parsing since EventSource only supports GET)
+ * @param {string} url - The URL to fetch from
+ * @param {string} method - HTTP method (POST, GET)
+ * @param {Object|null} body - Request body (will be JSON stringified)
+ * @param {Function} onProgress - Callback for progress events
+ * @param {Function} onComplete - Callback for complete events
+ * @param {Function} onError - Callback for error events
+ */
+async function streamSSE(url, method, body, onProgress, onComplete, onError) {
+    try {
+        const options = {
+            method: method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        
+        if (body && method !== 'GET') {
+            options.body = JSON.stringify(body);
+        }
+        
+        const response = await fetch(url, options);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+            for (const event of events) {
+                if (!event.trim() || !event.startsWith('data: ')) continue;
+                
+                try {
+                    const dataStr = event.replace('data: ', '').trim();
+                    const data = JSON.parse(dataStr);
+                    
+                    if (data.type === 'progress') {
+                        onProgress(data);
+                    } else if (data.type === 'complete') {
+                        onComplete(data);
+                    } else if (data.type === 'error') {
+                        onError(data);
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE event:', e, event);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('SSE Stream error:', error);
+        onError({message: error.message});
+    }
+}
+
+/**
+ * Step tracker to manage progress state across SSE events
+ * @param {number} totalSteps - Total number of steps in the process
+ * @returns {Object} - Step tracker object with update and getSteps methods
+ */
+function createStepTracker(totalSteps) {
+    const steps = [];
+    
+    // Initialize all steps as pending
+    for (let i = 0; i < totalSteps; i++) {
+        steps.push({
+            message: `Step ${i}`,
+            completed: false,
+            current: false,
+            error: false,
+            details: null
+        });
+    }
+    
+    return {
+        update: function(stepNumber, message, details = null, completed = false, error = false) {
+            if (stepNumber >= 0 && stepNumber < totalSteps) {
+                // Mark previous steps as completed
+                for (let i = 0; i < stepNumber; i++) {
+                    if (!steps[i].error) {
+                        steps[i].completed = true;
+                        steps[i].current = false;
+                    }
+                }
+                
+                // Update current step
+                steps[stepNumber].message = message;
+                steps[stepNumber].details = details;
+                steps[stepNumber].completed = completed;
+                steps[stepNumber].current = !completed && !error;
+                steps[stepNumber].error = error;
+                
+                // Mark future steps as pending
+                for (let i = stepNumber + 1; i < totalSteps; i++) {
+                    steps[i].current = false;
+                    steps[i].completed = false;
+                }
+            }
+        },
+        getSteps: function() {
+            return steps;
+        }
+    };
+}
+
 // ==================== INVOICE UPLOAD ====================
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
@@ -162,6 +424,14 @@ gmailImportBtn.addEventListener('click', async () => {
                     eventSource.close();
                     gmailImportBtn.disabled = false;
                     gmailImportBtn.textContent = '🔍 Start Import';
+                    
+                } else if (data.type === 'funnel_stats') {
+                    // Display filtering funnel statistics
+                    const funnelHTML = generateGmailFunnelHTML(data.stats);
+                    const funnelDiv = document.createElement('div');
+                    funnelDiv.innerHTML = funnelHTML;
+                    terminalOutput.appendChild(funnelDiv);
+                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
                     
                 } else {
                     addTerminalLine(data.message, data.type);
@@ -552,30 +822,76 @@ uploadForm.addEventListener('submit', async (e) => {
     
     const formData = new FormData();
     formData.append('file', selectedFile);
+    const filename = selectedFile.name;
     
-    loading.classList.remove('hidden');
+    // Hide old UI elements
+    loading.classList.add('hidden');
     results.classList.add('hidden');
     submitBtn.disabled = true;
     
+    // Show progress container
+    const uploadProgressDiv = document.getElementById('uploadProgress');
+    uploadProgressDiv.classList.remove('hidden');
+    uploadProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Uploading file...</p></div>';
+    
     try {
-        const response = await fetch('/upload', {
+        // Step 1: Upload file to server
+        const uploadResponse = await fetch('/upload', {
             method: 'POST',
             body: formData
         });
         
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            const text = await response.text();
-            throw new Error(`Server returned non-JSON response: ${text.substring(0, 200)}`);
+        if (!uploadResponse.ok) {
+            throw new Error(`Upload failed: ${uploadResponse.status}`);
         }
         
-        const data = await response.json();
+        // Step 2: Stream processing progress via SSE
+        const encodedFilename = btoa(filename);
+        const stepTracker = createStepTracker(7);
         
-        loading.classList.add('hidden');
-        displayResults(data);
+        await streamSSE(
+            `/upload/stream?filename=${encodedFilename}`,
+            'GET',
+            null,
+            // onProgress
+            (data) => {
+                const step = data.step || 0;
+                const totalSteps = data.total_steps || 7;
+                const message = data.message || 'Processing...';
+                const details = data.details || null;
+                const completed = data.completed || false;
+                
+                stepTracker.update(step, message, details, completed, false);
+                showProgressWithSteps('uploadProgress', step, totalSteps, message, stepTracker.getSteps());
+            },
+            // onComplete
+            (data) => {
+                uploadProgressDiv.classList.add('hidden');
+                submitBtn.disabled = false;
+                
+                if (data.result) {
+                    displayResults(data.result);
+                } else {
+                    results.classList.remove('hidden');
+                    resultContent.innerHTML = '<div class="success-badge">✓ Processing Complete</div>';
+                }
+            },
+            // onError
+            (data) => {
+                uploadProgressDiv.classList.add('hidden');
+                submitBtn.disabled = false;
+                results.classList.remove('hidden');
+                resultContent.innerHTML = `
+                    <div class="error-message">
+                        <strong>Error:</strong> ${data.message || 'Unknown error occurred'}
+                    </div>
+                `;
+            }
+        );
         
     } catch (error) {
-        loading.classList.add('hidden');
+        uploadProgressDiv.classList.add('hidden');
+        submitBtn.disabled = false;
         results.classList.remove('hidden');
         resultContent.innerHTML = `
             <div class="error-message">
@@ -1174,7 +1490,7 @@ function displayCsvMapping(data) {
     csvSubmitBtn.textContent = '🧠 Analyze CSV with AI';
 }
 
-// Step 2: Import CSV to BigQuery
+// Step 2: Import CSV to BigQuery with SSE progress streaming
 csvImportBtn.addEventListener('click', async () => {
     if (!csvAnalysisData) {
         alert('No CSV analysis data found. Please analyze CSV first.');
@@ -1184,32 +1500,78 @@ csvImportBtn.addEventListener('click', async () => {
     csvImportBtn.disabled = true;
     csvImportBtn.textContent = '⏳ Importing to BigQuery...';
     
+    // Show progress container
+    const csvImportProgressDiv = document.getElementById('csvImportProgress');
+    csvImportProgressDiv.classList.remove('hidden');
+    csvImportProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Starting CSV import...</p></div>';
+    
+    // Hide previous results
+    csvImportResults.classList.add('hidden');
+    
+    const stepTracker = createStepTracker(7);
+    
     try {
-        const response = await fetch('/api/vendors/csv/import', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
+        await streamSSE(
+            '/api/vendors/csv/import/stream',
+            'POST',
+            {
                 uploadId: csvAnalysisData.uploadId,
                 columnMapping: csvAnalysisData.analysis.columnMapping,
                 sourceSystem: csvAnalysisData.analysis.sourceSystemGuess || 'csv_upload'
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Import failed');
-        }
-        
-        displayCsvImportResults(data);
+            },
+            // onProgress
+            (data) => {
+                const step = data.step || 0;
+                const totalSteps = data.total_steps || 7;
+                const message = data.message || 'Processing...';
+                const details = data.details || null;
+                const completed = data.completed || false;
+                
+                stepTracker.update(step, message, details, completed, false);
+                showProgressWithSteps('csvImportProgress', step, totalSteps, message, stepTracker.getSteps());
+            },
+            // onComplete
+            (data) => {
+                csvImportProgressDiv.classList.add('hidden');
+                csvImportBtn.disabled = false;
+                csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
+                
+                if (data.result) {
+                    displayCsvImportResults(data.result);
+                } else {
+                    csvImportResults.innerHTML = '<div class="success-badge">✓ Import Complete</div>';
+                    csvImportResults.classList.remove('hidden');
+                }
+                
+                // Reset form state
+                csvMappingReview.classList.add('hidden');
+                csvUploadArea.querySelector('p').textContent = 'Drag & drop your vendor CSV here or click to browse';
+                csvSubmitBtn.disabled = true;
+                selectedCsvFile = null;
+                csvAnalysisData = null;
+            },
+            // onError
+            (data) => {
+                csvImportProgressDiv.classList.add('hidden');
+                csvImportBtn.disabled = false;
+                csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
+                
+                csvImportResults.innerHTML = `
+                    <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
+                        <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Import Failed</h3>
+                        <p style="margin: 0; color: #666;">${data.message || 'Unknown error occurred'}</p>
+                    </div>
+                `;
+                csvImportResults.classList.remove('hidden');
+            }
+        );
         
     } catch (error) {
-        alert('CSV import failed: ' + error.message);
-    } finally {
+        csvImportProgressDiv.classList.add('hidden');
         csvImportBtn.disabled = false;
         csvImportBtn.textContent = '✅ Confirm & Import to BigQuery';
+        
+        alert('CSV import failed: ' + error.message);
     }
 });
 
@@ -1576,45 +1938,66 @@ vendorMatchForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    // Show loading
-    matchLoading.classList.remove('hidden');
+    // Hide old UI elements
+    matchLoading.classList.add('hidden');
     matchResults.classList.add('hidden');
     
+    // Show progress container
+    const vendorMatchProgressDiv = document.getElementById('vendorMatchProgress');
+    vendorMatchProgressDiv.classList.remove('hidden');
+    vendorMatchProgressDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Starting vendor matching...</p></div>';
+    
+    const stepTracker = createStepTracker(4);
+    
     try {
-        const response = await fetch('/api/vendor/match', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
+        await streamSSE(
+            '/api/vendor/match/stream',
+            'POST',
+            {
                 vendor_name: vendorName,
                 tax_id: taxId || null,
                 email_domain: emailDomain || null,
                 country: country || null,
                 address: address || null,
                 phone: phone || null
-            })
-        });
-        
-        const data = await response.json();
-        
-        // Hide loading
-        matchLoading.classList.add('hidden');
-        
-        if (data.success) {
-            displayMatchResults(data.result);
-        } else {
-            matchResults.innerHTML = `
-                <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
-                    <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Matching Failed</h3>
-                    <p style="margin: 0; color: #666;">${data.error || 'Unknown error occurred'}</p>
-                </div>
-            `;
-            matchResults.classList.remove('hidden');
-        }
+            },
+            // onProgress
+            (data) => {
+                const step = data.step || 0;
+                const totalSteps = data.total_steps || 4;
+                const message = data.message || 'Processing...';
+                const details = data.details || null;
+                const completed = data.completed || false;
+                
+                stepTracker.update(step, message, details, completed, false);
+                showProgressWithSteps('vendorMatchProgress', step, totalSteps, message, stepTracker.getSteps());
+            },
+            // onComplete
+            (data) => {
+                vendorMatchProgressDiv.classList.add('hidden');
+                
+                if (data.result) {
+                    displayMatchResults(data.result);
+                } else {
+                    matchResults.innerHTML = '<div class="success-badge">✓ Matching Complete</div>';
+                    matchResults.classList.remove('hidden');
+                }
+            },
+            // onError
+            (data) => {
+                vendorMatchProgressDiv.classList.add('hidden');
+                matchResults.innerHTML = `
+                    <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
+                        <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Matching Failed</h3>
+                        <p style="margin: 0; color: #666;">${data.message || 'Unknown error occurred'}</p>
+                    </div>
+                `;
+                matchResults.classList.remove('hidden');
+            }
+        );
         
     } catch (error) {
-        matchLoading.classList.add('hidden');
+        vendorMatchProgressDiv.classList.add('hidden');
         matchResults.innerHTML = `
             <div style="padding: 20px; background: #ffebee; border-left: 4px solid #f44336; border-radius: 6px;">
                 <h3 style="color: #c62828; margin: 0 0 10px 0;">❌ Network Error</h3>
