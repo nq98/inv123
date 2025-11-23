@@ -3204,6 +3204,470 @@ def sync_invoice_to_netsuite(invoice_id):
             'invoice_id': invoice_id
         }), 500
 
+# New endpoints for enhanced dashboard
+
+@app.route('/api/netsuite/vendors/all', methods=['GET'])
+def get_all_vendors_with_sync_status():
+    """
+    Get all vendors from BigQuery with NetSuite sync status
+    """
+    try:
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '')
+        filter_status = request.args.get('filter', 'all')
+        
+        # Initialize BigQuery service
+        bigquery_service = BigQueryService()
+        
+        # Build the query
+        offset = (page - 1) * limit
+        
+        where_clauses = []
+        params = []
+        
+        # Add search filter
+        if search:
+            where_clauses.append("""
+                (LOWER(global_name) LIKE @search_term 
+                 OR LOWER(vendor_id) LIKE @search_term
+                 OR EXISTS (SELECT 1 FROM UNNEST(emails) AS email WHERE LOWER(email) LIKE @search_term))
+            """)
+            params.append(bigquery.ScalarQueryParameter(
+                "search_term", "STRING", f"%{search.lower()}%"
+            ))
+        
+        # Add status filter
+        if filter_status == 'synced':
+            where_clauses.append("netsuite_internal_id IS NOT NULL")
+        elif filter_status == 'not_synced':
+            where_clauses.append("netsuite_internal_id IS NULL")
+        
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        
+        # Count total records
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors`
+        {where_clause}
+        """
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params) if params else None
+        count_result = bigquery_service.client.query(count_query, job_config=job_config).result()
+        total_count = list(count_result)[0]['total']
+        
+        # Get paginated data
+        data_query = f"""
+        SELECT 
+            vendor_id,
+            global_name,
+            ARRAY_TO_STRING(emails, ', ') as email_list,
+            ARRAY_TO_STRING(countries, ', ') as country_list,
+            'not_synced' as sync_status,
+            last_updated
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors`
+        {where_clause}
+        ORDER BY last_updated DESC NULLS LAST, vendor_id
+        LIMIT @limit OFFSET @offset
+        """
+        
+        # Add pagination parameters
+        params.extend([
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset)
+        ])
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        result = bigquery_service.client.query(data_query, job_config=job_config).result()
+        
+        vendors = []
+        for row in result:
+            vendors.append({
+                'vendor_id': row.vendor_id,
+                'name': row.global_name,
+                'emails': row.email_list or '',
+                'countries': row.country_list or '',
+                'netsuite_internal_id': None,  # NetSuite sync not yet tracked in this table
+                'sync_status': 'not_synced',
+                'last_updated': row.last_updated.isoformat() if row.last_updated else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'vendors': vendors,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error fetching vendors: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/invoices/all', methods=['GET'])
+def get_all_invoices_with_sync_status():
+    """
+    Get all invoices from BigQuery with NetSuite sync status
+    """
+    try:
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '')
+        filter_status = request.args.get('filter', 'all')
+        
+        # Initialize BigQuery service
+        bigquery_service = BigQueryService()
+        
+        # Build the query
+        offset = (page - 1) * limit
+        
+        where_clauses = []
+        params = []
+        
+        # Add search filter
+        if search:
+            where_clauses.append("""
+                (LOWER(invoice_id) LIKE @search_term 
+                 OR LOWER(vendor_name) LIKE @search_term)
+            """)
+            params.append(bigquery.ScalarQueryParameter(
+                "search_term", "STRING", f"%{search.lower()}%"
+            ))
+        
+        # Add status filter - since we don't have sync tracking in this table yet
+        # all invoices are considered not synced for now
+        # This can be enhanced later with a separate sync tracking table
+        
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        
+        # Count total records
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        {where_clause}
+        """
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params) if params else None
+        count_result = bigquery_service.client.query(count_query, job_config=job_config).result()
+        total_count = list(count_result)[0]['total']
+        
+        # Get paginated data
+        data_query = f"""
+        SELECT 
+            invoice_id,
+            vendor_name,
+            vendor_id,
+            invoice_date,
+            amount,
+            currency,
+            'NOT_SYNCED' as sync_status,
+            created_at
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        {where_clause}
+        ORDER BY created_at DESC NULLS LAST, invoice_id
+        LIMIT @limit OFFSET @offset
+        """
+        
+        # Add pagination parameters
+        params.extend([
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset)
+        ])
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        result = bigquery_service.client.query(data_query, job_config=job_config).result()
+        
+        invoices = []
+        for row in result:
+            invoices.append({
+                'invoice_id': row.invoice_id,
+                'invoice_number': row.invoice_id,  # Using invoice_id as invoice_number since that field doesn't exist
+                'vendor_name': row.vendor_name,
+                'vendor_id': row.vendor_id,
+                'invoice_date': row.invoice_date.isoformat() if row.invoice_date else None,
+                'total_amount': float(row.amount) if row.amount else 0,
+                'currency': row.currency or 'USD',
+                'netsuite_bill_id': None,  # NetSuite sync not yet tracked in this table
+                'sync_status': 'not-synced',
+                'sync_date': None,
+                'created_at': row.created_at.isoformat() if row.created_at else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'invoices': invoices,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error fetching invoices: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/sync/vendors/bulk', methods=['POST'])
+def bulk_sync_vendors():
+    """
+    Bulk sync multiple vendors to NetSuite
+    """
+    try:
+        data = request.get_json()
+        vendor_ids = data.get('vendor_ids', [])
+        
+        if not vendor_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No vendor IDs provided'
+            }), 400
+        
+        # Initialize services
+        netsuite = NetSuiteService()
+        bigquery_service = BigQueryService()
+        
+        results = {
+            'successful': [],
+            'failed': [],
+            'already_synced': []
+        }
+        
+        for vendor_id in vendor_ids:
+            try:
+                # Get vendor from BigQuery
+                query = f"""
+                SELECT *
+                FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors`
+                WHERE vendor_id = @vendor_id
+                """
+                
+                job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
+                    ]
+                )
+                
+                result = bigquery_service.client.query(query, job_config=job_config).result()
+                rows = list(result)
+                
+                if not rows:
+                    results['failed'].append({
+                        'vendor_id': vendor_id,
+                        'error': 'Vendor not found'
+                    })
+                    continue
+                
+                vendor_data = dict(rows[0])
+                
+                # Check if already synced
+                if vendor_data.get('netsuite_internal_id'):
+                    results['already_synced'].append({
+                        'vendor_id': vendor_id,
+                        'netsuite_id': vendor_data['netsuite_internal_id']
+                    })
+                    continue
+                
+                # Sync to NetSuite
+                sync_result = netsuite.create_vendor(vendor_data)
+                
+                if sync_result.get('success'):
+                    # Update BigQuery
+                    update_query = f"""
+                    UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors`
+                    SET netsuite_internal_id = @internal_id,
+                        last_updated = CURRENT_TIMESTAMP()
+                    WHERE vendor_id = @vendor_id
+                    """
+                    
+                    job_config = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("internal_id", "STRING", sync_result['internal_id']),
+                            bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
+                        ]
+                    )
+                    
+                    bigquery_service.client.query(update_query, job_config=job_config).result()
+                    
+                    results['successful'].append({
+                        'vendor_id': vendor_id,
+                        'netsuite_id': sync_result['internal_id']
+                    })
+                else:
+                    results['failed'].append({
+                        'vendor_id': vendor_id,
+                        'error': sync_result.get('error', 'Unknown error')
+                    })
+                    
+            except Exception as e:
+                results['failed'].append({
+                    'vendor_id': vendor_id,
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'summary': {
+                'total': len(vendor_ids),
+                'successful': len(results['successful']),
+                'failed': len(results['failed']),
+                'already_synced': len(results['already_synced'])
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in bulk vendor sync: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/sync/invoices/bulk', methods=['POST'])
+def bulk_sync_invoices():
+    """
+    Bulk sync multiple invoices to NetSuite
+    """
+    try:
+        data = request.get_json()
+        invoice_ids = data.get('invoice_ids', [])
+        
+        if not invoice_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No invoice IDs provided'
+            }), 400
+        
+        # Initialize services
+        netsuite = NetSuiteService()
+        bigquery_service = BigQueryService()
+        
+        results = {
+            'successful': [],
+            'failed': [],
+            'already_synced': []
+        }
+        
+        for invoice_id in invoice_ids:
+            try:
+                # Get invoice from BigQuery
+                query = f"""
+                SELECT *
+                FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                WHERE invoice_id = @invoice_id
+                """
+                
+                job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                    ]
+                )
+                
+                result = bigquery_service.client.query(query, job_config=job_config).result()
+                rows = list(result)
+                
+                if not rows:
+                    results['failed'].append({
+                        'invoice_id': invoice_id,
+                        'error': 'Invoice not found'
+                    })
+                    continue
+                
+                invoice_data = dict(rows[0])
+                
+                # Check if already synced
+                if invoice_data.get('netsuite_bill_id'):
+                    results['already_synced'].append({
+                        'invoice_id': invoice_id,
+                        'netsuite_bill_id': invoice_data['netsuite_bill_id']
+                    })
+                    continue
+                
+                # Sync to NetSuite
+                sync_result = netsuite.create_vendor_bill(invoice_data)
+                
+                if sync_result.get('success'):
+                    # Update BigQuery
+                    update_query = f"""
+                    UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                    SET netsuite_bill_id = @bill_id,
+                        netsuite_sync_status = 'SYNCED',
+                        netsuite_sync_date = CURRENT_TIMESTAMP()
+                    WHERE invoice_id = @invoice_id
+                    """
+                    
+                    job_config = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("bill_id", "STRING", sync_result['bill_id']),
+                            bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                        ]
+                    )
+                    
+                    bigquery_service.client.query(update_query, job_config=job_config).result()
+                    
+                    results['successful'].append({
+                        'invoice_id': invoice_id,
+                        'netsuite_bill_id': sync_result['bill_id']
+                    })
+                else:
+                    results['failed'].append({
+                        'invoice_id': invoice_id,
+                        'error': sync_result.get('error', 'Unknown error')
+                    })
+                    
+                    # Update sync status as failed
+                    update_query = f"""
+                    UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                    SET netsuite_sync_status = 'FAILED',
+                        netsuite_sync_error = @error_msg,
+                        netsuite_sync_date = CURRENT_TIMESTAMP()
+                    WHERE invoice_id = @invoice_id
+                    """
+                    
+                    job_config = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("error_msg", "STRING", sync_result.get('error', '')),
+                            bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                        ]
+                    )
+                    
+                    bigquery_service.client.query(update_query, job_config=job_config).result()
+                    
+            except Exception as e:
+                results['failed'].append({
+                    'invoice_id': invoice_id,
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'summary': {
+                'total': len(invoice_ids),
+                'successful': len(results['successful']),
+                'failed': len(results['failed']),
+                'already_synced': len(results['already_synced'])
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in bulk invoice sync: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'

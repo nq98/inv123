@@ -401,6 +401,283 @@
             opacity: 0.3;
         }
 
+        /* Tab Navigation */
+        .tab-navigation {
+            display: flex;
+            gap: 0;
+            background: #f8f9fa;
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+            overflow: hidden;
+            margin-bottom: 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px 20px;
+            background: #e9ecef;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .tab-btn:hover {
+            background: #dee2e6;
+        }
+
+        .tab-btn.active {
+            background: white;
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Data Controls */
+        .data-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .data-controls > * {
+            flex: 0 0 auto;
+        }
+
+        .bulk-sync-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .bulk-sync-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .bulk-sync-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .search-input {
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            width: 200px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .selection-info {
+            padding: 8px 12px;
+            background: #e7f3ff;
+            color: #0066cc;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        .data-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 14px;
+        }
+
+        .data-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .data-table tbody tr.selected {
+            background: #e7f3ff;
+        }
+
+        /* Checkboxes */
+        .data-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        /* Sync Status */
+        .sync-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .sync-status.not-synced {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .sync-status.synced {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .sync-status.syncing {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .sync-status.failed {
+            background: #fce4ec;
+            color: #ad1457;
+        }
+
+        .status-icon {
+            font-size: 14px;
+        }
+
+        /* Action Buttons in Table */
+        .table-action-btn {
+            padding: 4px 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .table-action-btn:hover {
+            background: #5a67d8;
+        }
+
+        .table-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 15px;
+        }
+
+        .pagination-btn {
+            padding: 6px 12px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .page-info {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Loading Spinner for Table */
+        .table-loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .table-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(102, 126, 234, 0.1);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
         /* Responsive Design */
         @media (max-width: 1200px) {
             .dashboard-container {
@@ -417,6 +694,15 @@
             .header-info {
                 flex-wrap: wrap;
                 justify-content: center;
+            }
+            
+            .data-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-input {
+                width: 100%;
             }
         }
     </style>
@@ -490,83 +776,159 @@
             </div>
         </div>
 
-        <!-- Center Column: Data Flow Monitor -->
+        <!-- Center Column: Data Management -->
         <div class="dashboard-column">
-            <!-- Recent Sync Activities -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h3 class="card-title">Recent Sync Activities</h3>
-                    <button id="refreshActivitiesBtn" class="sync-button" style="padding: 4px 12px; font-size: 12px;">
-                        Refresh
+            <!-- Data Management Card with Tabs -->
+            <div class="dashboard-card" style="overflow: visible;">
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-btn active" data-tab="vendors">
+                        📁 Vendors
+                    </button>
+                    <button class="tab-btn" data-tab="invoices">
+                        📄 Invoices
                     </button>
                 </div>
-                <div class="card-content">
-                    <div id="activityTableContainer" style="max-height: 400px; overflow-y: auto;">
-                        <table class="activity-table">
+                
+                <!-- Vendors Tab Content -->
+                <div id="vendors-tab" class="tab-content active">
+                    <!-- Controls -->
+                    <div class="data-controls">
+                        <button class="bulk-sync-btn" onclick="syncSelectedVendors()">
+                            🔄 Sync Selected to NetSuite
+                        </button>
+                        <input type="text" 
+                               class="search-input" 
+                               placeholder="Search vendors..." 
+                               id="vendor-search"
+                               onkeyup="filterVendors()">
+                        <select class="filter-select" 
+                                id="vendor-filter" 
+                                onchange="filterVendors()">
+                            <option value="all">All Vendors</option>
+                            <option value="not_synced">Not Synced</option>
+                            <option value="synced">Synced</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                        <div class="selection-info" id="vendor-selection-info" style="display: none;">
+                            <span id="vendor-selection-count">0</span> selected
+                        </div>
+                    </div>
+                    
+                    <!-- Vendors Table -->
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" id="vendors-table">
                             <thead>
                                 <tr>
-                                    <th>Timestamp</th>
-                                    <th>Type</th>
-                                    <th>Entity</th>
-                                    <th>Status</th>
-                                    <th>Duration</th>
-                                    <th>Details</th>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" 
+                                               class="data-checkbox" 
+                                               id="select-all-vendors"
+                                               onchange="toggleAllVendors(this)">
+                                    </th>
+                                    <th>Vendor ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Country</th>
+                                    <th>Sync Status</th>
+                                    <th>NetSuite ID</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="activityTableBody">
+                            <tbody id="vendors-tbody">
                                 <tr>
-                                    <td colspan="6" class="empty-state">
-                                        <div class="empty-state-icon">📊</div>
-                                        <div>No sync activities yet</div>
+                                    <td colspan="8" class="table-loading">
+                                        <div class="table-spinner"></div>
+                                        <div style="margin-top: 10px;">Loading vendors...</div>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination -->
+                    <div class="pagination" id="vendors-pagination">
+                        <!-- Pagination controls will be inserted here -->
+                    </div>
+                </div>
+                
+                <!-- Invoices Tab Content -->
+                <div id="invoices-tab" class="tab-content">
+                    <!-- Controls -->
+                    <div class="data-controls">
+                        <button class="bulk-sync-btn" onclick="syncSelectedInvoices()">
+                            🔄 Sync Selected to NetSuite
+                        </button>
+                        <input type="text" 
+                               class="search-input" 
+                               placeholder="Search invoices..." 
+                               id="invoice-search"
+                               onkeyup="filterInvoices()">
+                        <select class="filter-select" 
+                                id="invoice-filter" 
+                                onchange="filterInvoices()">
+                            <option value="all">All Invoices</option>
+                            <option value="not_synced">Not Synced</option>
+                            <option value="synced">Synced</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                        <div class="selection-info" id="invoice-selection-info" style="display: none;">
+                            <span id="invoice-selection-count">0</span> selected
+                        </div>
+                    </div>
+                    
+                    <!-- Invoices Table -->
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" id="invoices-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" 
+                                               class="data-checkbox" 
+                                               id="select-all-invoices"
+                                               onchange="toggleAllInvoices(this)">
+                                    </th>
+                                    <th>Invoice ID</th>
+                                    <th>Invoice Number</th>
+                                    <th>Vendor</th>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Sync Status</th>
+                                    <th>NetSuite Bill ID</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="invoices-tbody">
+                                <tr>
+                                    <td colspan="9" class="table-loading">
+                                        <div class="table-spinner"></div>
+                                        <div style="margin-top: 10px;">Loading invoices...</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div class="pagination" id="invoices-pagination">
+                        <!-- Pagination controls will be inserted here -->
+                    </div>
                 </div>
             </div>
-
-            <!-- Manual Sync Tools -->
+            
+            <!-- Recent Activity Log -->
             <div class="dashboard-card">
                 <div class="card-header">
-                    <h3 class="card-title">Manual Sync Tools</h3>
+                    <h3 class="card-title">Recent Sync Activity</h3>
+                    <button class="sync-button" style="padding: 4px 12px; font-size: 12px;" onclick="loadRecentActivity()">
+                        Refresh
+                    </button>
                 </div>
                 <div class="card-content">
-                    <!-- Sync Vendor -->
-                    <div class="sync-tool">
-                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Sync Vendor</label>
-                        <div class="sync-input-group">
-                            <input type="text" id="vendorIdInput" class="sync-input" placeholder="Enter Vendor ID">
-                            <button id="syncVendorBtn" class="sync-button">Sync</button>
-                        </div>
-                    </div>
-
-                    <!-- Sync Invoice -->
-                    <div class="sync-tool">
-                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Sync Invoice</label>
-                        <div class="sync-input-group">
-                            <input type="text" id="invoiceIdInput" class="sync-input" placeholder="Enter Invoice ID">
-                            <button id="syncInvoiceBtn" class="sync-button">Sync</button>
-                        </div>
-                    </div>
-
-                    <!-- Bulk Sync -->
-                    <div class="sync-tool">
-                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Bulk Sync</label>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <button id="bulkSyncVendorsBtn" class="action-button">
-                                Sync Pending Vendors
-                            </button>
-                            <button id="bulkSyncInvoicesBtn" class="action-button">
-                                Sync Pending Invoices
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Sync Results -->
-                    <div id="syncResults" style="margin-top: 20px; display: none;">
-                        <div style="padding: 12px; border-radius: 6px;" id="syncResultContent">
-                            <!-- Results will appear here -->
+                    <div id="activityLog" style="max-height: 200px; overflow-y: auto;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📊</div>
+                            <div>No recent activity</div>
                         </div>
                     </div>
                 </div>

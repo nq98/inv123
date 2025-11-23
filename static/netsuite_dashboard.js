@@ -1,6 +1,6 @@
 /**
  * NetSuite Integration Dashboard JavaScript
- * Handles real-time updates, sync operations, and dashboard interactions
+ * Enhanced with vendors/invoices tabs, selection management, and bulk sync
  */
 
 // Dashboard state management
@@ -8,9 +8,27 @@ let dashboardState = {
     connected: false,
     accountId: null,
     lastSync: null,
-    activities: [],
     statistics: {},
-    refreshInterval: null
+    refreshInterval: null,
+    vendors: {
+        data: [],
+        selectedIds: new Set(),
+        currentPage: 1,
+        totalPages: 1,
+        totalCount: 0,
+        search: '',
+        filter: 'all'
+    },
+    invoices: {
+        data: [],
+        selectedIds: new Set(),
+        currentPage: 1,
+        totalPages: 1,
+        totalCount: 0,
+        search: '',
+        filter: 'all'
+    },
+    activeTab: 'vendors'
 };
 
 // Initialize dashboard on load
@@ -19,20 +37,780 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initial data load
     checkNetSuiteStatus();
-    loadActivities();
     loadStatistics();
+    
+    // Load initial tab data
+    loadVendors();
+    loadInvoices();
     
     // Set up auto-refresh (every 30 seconds)
     dashboardState.refreshInterval = setInterval(() => {
         console.log('Auto-refreshing dashboard...');
         checkNetSuiteStatus();
-        loadActivities();
         loadStatistics();
+        // Refresh current tab data
+        if (dashboardState.activeTab === 'vendors') {
+            loadVendors();
+        } else {
+            loadInvoices();
+        }
     }, 30000);
     
     // Set up event listeners
     setupEventListeners();
+    setupTabListeners();
 });
+
+// Set up tab switching listeners
+function setupTabListeners() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const tabName = e.target.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+}
+
+// Switch between tabs
+function switchTab(tabName) {
+    // Update active tab in state
+    dashboardState.activeTab = tabName;
+    
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+    
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    const activeContent = document.getElementById(`${tabName}-tab`);
+    if (activeContent) {
+        activeContent.classList.add('active');
+    }
+    
+    // Load data for the active tab
+    if (tabName === 'vendors') {
+        loadVendors();
+    } else if (tabName === 'invoices') {
+        loadInvoices();
+    }
+}
+
+// Load vendors data
+async function loadVendors(page = 1) {
+    try {
+        const params = new URLSearchParams({
+            page: page,
+            limit: 20,
+            search: dashboardState.vendors.search,
+            filter: dashboardState.vendors.filter
+        });
+        
+        const response = await fetch(`/api/netsuite/vendors/all?${params}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            dashboardState.vendors.data = data.vendors;
+            dashboardState.vendors.currentPage = data.pagination.page;
+            dashboardState.vendors.totalPages = data.pagination.total_pages;
+            dashboardState.vendors.totalCount = data.pagination.total;
+            
+            displayVendors();
+            updateVendorsPagination();
+        }
+    } catch (error) {
+        console.error('Error loading vendors:', error);
+        showError('Failed to load vendors');
+    }
+}
+
+// Display vendors in table
+function displayVendors() {
+    const tbody = document.getElementById('vendors-tbody');
+    if (!tbody) return;
+    
+    const vendors = dashboardState.vendors.data;
+    
+    if (!vendors || vendors.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="empty-state">
+                    <div class="empty-state-icon">📁</div>
+                    <div>No vendors found</div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    vendors.forEach(vendor => {
+        const row = document.createElement('tr');
+        const isSelected = dashboardState.vendors.selectedIds.has(vendor.vendor_id);
+        
+        if (isSelected) {
+            row.classList.add('selected');
+        }
+        
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" 
+                       class="data-checkbox vendor-checkbox" 
+                       data-vendor-id="${vendor.vendor_id}"
+                       ${isSelected ? 'checked' : ''}
+                       onchange="toggleVendorSelection('${vendor.vendor_id}')">
+            </td>
+            <td style="font-size: 12px;">${vendor.vendor_id}</td>
+            <td style="font-weight: 500;">${vendor.name || '-'}</td>
+            <td style="font-size: 13px;">${vendor.emails || '-'}</td>
+            <td style="font-size: 13px;">${vendor.countries || '-'}</td>
+            <td>${getSyncStatusBadge(vendor.sync_status)}</td>
+            <td style="font-size: 12px;">${vendor.netsuite_internal_id || '-'}</td>
+            <td>
+                ${vendor.sync_status !== 'synced' ? 
+                    `<button class="table-action-btn" onclick="syncSingleVendor('${vendor.vendor_id}')">
+                        Sync
+                    </button>` : 
+                    '<span style="color: #28a745;">✓</span>'
+                }
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+    
+    updateSelectionInfo('vendors');
+}
+
+// Load invoices data
+async function loadInvoices(page = 1) {
+    try {
+        const params = new URLSearchParams({
+            page: page,
+            limit: 20,
+            search: dashboardState.invoices.search,
+            filter: dashboardState.invoices.filter
+        });
+        
+        const response = await fetch(`/api/netsuite/invoices/all?${params}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            dashboardState.invoices.data = data.invoices;
+            dashboardState.invoices.currentPage = data.pagination.page;
+            dashboardState.invoices.totalPages = data.pagination.total_pages;
+            dashboardState.invoices.totalCount = data.pagination.total;
+            
+            displayInvoices();
+            updateInvoicesPagination();
+        }
+    } catch (error) {
+        console.error('Error loading invoices:', error);
+        showError('Failed to load invoices');
+    }
+}
+
+// Display invoices in table
+function displayInvoices() {
+    const tbody = document.getElementById('invoices-tbody');
+    if (!tbody) return;
+    
+    const invoices = dashboardState.invoices.data;
+    
+    if (!invoices || invoices.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <div>No invoices found</div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    invoices.forEach(invoice => {
+        const row = document.createElement('tr');
+        const isSelected = dashboardState.invoices.selectedIds.has(invoice.invoice_id);
+        
+        if (isSelected) {
+            row.classList.add('selected');
+        }
+        
+        const formattedAmount = formatCurrency(invoice.total_amount, invoice.currency);
+        const formattedDate = formatDate(invoice.invoice_date);
+        
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" 
+                       class="data-checkbox invoice-checkbox" 
+                       data-invoice-id="${invoice.invoice_id}"
+                       ${isSelected ? 'checked' : ''}
+                       onchange="toggleInvoiceSelection('${invoice.invoice_id}')">
+            </td>
+            <td style="font-size: 12px;">${invoice.invoice_id}</td>
+            <td style="font-weight: 500;">${invoice.invoice_number || '-'}</td>
+            <td>${invoice.vendor_name || '-'}</td>
+            <td style="font-size: 13px;">${formattedDate}</td>
+            <td style="font-weight: 600;">${formattedAmount}</td>
+            <td>${getSyncStatusBadge(invoice.sync_status)}</td>
+            <td style="font-size: 12px;">${invoice.netsuite_bill_id || '-'}</td>
+            <td>
+                ${invoice.sync_status !== 'synced' ? 
+                    `<button class="table-action-btn" onclick="syncSingleInvoice('${invoice.invoice_id}')">
+                        Sync
+                    </button>` : 
+                    '<span style="color: #28a745;">✓</span>'
+                }
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+    
+    updateSelectionInfo('invoices');
+}
+
+// Get sync status badge HTML
+function getSyncStatusBadge(status) {
+    const statusMap = {
+        'synced': { class: 'synced', icon: '🟢', text: 'Synced' },
+        'not-synced': { class: 'not-synced', icon: '🔴', text: 'Not Synced' },
+        'not_synced': { class: 'not-synced', icon: '🔴', text: 'Not Synced' },
+        'failed': { class: 'failed', icon: '⚠️', text: 'Failed' },
+        'syncing': { class: 'syncing', icon: '🟡', text: 'Syncing' }
+    };
+    
+    const statusInfo = statusMap[status] || statusMap['not-synced'];
+    
+    return `
+        <span class="sync-status ${statusInfo.class}">
+            <span class="status-icon">${statusInfo.icon}</span>
+            ${statusInfo.text}
+        </span>
+    `;
+}
+
+// Toggle vendor selection
+function toggleVendorSelection(vendorId) {
+    if (dashboardState.vendors.selectedIds.has(vendorId)) {
+        dashboardState.vendors.selectedIds.delete(vendorId);
+    } else {
+        dashboardState.vendors.selectedIds.add(vendorId);
+    }
+    
+    // Update row appearance
+    const checkbox = document.querySelector(`.vendor-checkbox[data-vendor-id="${vendorId}"]`);
+    if (checkbox) {
+        const row = checkbox.closest('tr');
+        if (dashboardState.vendors.selectedIds.has(vendorId)) {
+            row.classList.add('selected');
+        } else {
+            row.classList.remove('selected');
+        }
+    }
+    
+    updateSelectionInfo('vendors');
+}
+
+// Toggle invoice selection
+function toggleInvoiceSelection(invoiceId) {
+    if (dashboardState.invoices.selectedIds.has(invoiceId)) {
+        dashboardState.invoices.selectedIds.delete(invoiceId);
+    } else {
+        dashboardState.invoices.selectedIds.add(invoiceId);
+    }
+    
+    // Update row appearance
+    const checkbox = document.querySelector(`.invoice-checkbox[data-invoice-id="${invoiceId}"]`);
+    if (checkbox) {
+        const row = checkbox.closest('tr');
+        if (dashboardState.invoices.selectedIds.has(invoiceId)) {
+            row.classList.add('selected');
+        } else {
+            row.classList.remove('selected');
+        }
+    }
+    
+    updateSelectionInfo('invoices');
+}
+
+// Toggle all vendors
+function toggleAllVendors(checkbox) {
+    if (checkbox.checked) {
+        // Select all vendors on current page
+        dashboardState.vendors.data.forEach(vendor => {
+            dashboardState.vendors.selectedIds.add(vendor.vendor_id);
+        });
+    } else {
+        // Deselect all vendors on current page
+        dashboardState.vendors.data.forEach(vendor => {
+            dashboardState.vendors.selectedIds.delete(vendor.vendor_id);
+        });
+    }
+    
+    // Update all checkboxes
+    document.querySelectorAll('.vendor-checkbox').forEach(cb => {
+        cb.checked = checkbox.checked;
+        const row = cb.closest('tr');
+        if (checkbox.checked) {
+            row.classList.add('selected');
+        } else {
+            row.classList.remove('selected');
+        }
+    });
+    
+    updateSelectionInfo('vendors');
+}
+
+// Toggle all invoices
+function toggleAllInvoices(checkbox) {
+    if (checkbox.checked) {
+        // Select all invoices on current page
+        dashboardState.invoices.data.forEach(invoice => {
+            dashboardState.invoices.selectedIds.add(invoice.invoice_id);
+        });
+    } else {
+        // Deselect all invoices on current page
+        dashboardState.invoices.data.forEach(invoice => {
+            dashboardState.invoices.selectedIds.delete(invoice.invoice_id);
+        });
+    }
+    
+    // Update all checkboxes
+    document.querySelectorAll('.invoice-checkbox').forEach(cb => {
+        cb.checked = checkbox.checked;
+        const row = cb.closest('tr');
+        if (checkbox.checked) {
+            row.classList.add('selected');
+        } else {
+            row.classList.remove('selected');
+        }
+    });
+    
+    updateSelectionInfo('invoices');
+}
+
+// Update selection info
+function updateSelectionInfo(type) {
+    const count = type === 'vendors' ? 
+        dashboardState.vendors.selectedIds.size :
+        dashboardState.invoices.selectedIds.size;
+    
+    const infoElement = document.getElementById(`${type.slice(0, -1)}-selection-info`);
+    const countElement = document.getElementById(`${type.slice(0, -1)}-selection-count`);
+    
+    if (infoElement && countElement) {
+        if (count > 0) {
+            infoElement.style.display = 'block';
+            countElement.textContent = count;
+        } else {
+            infoElement.style.display = 'none';
+        }
+    }
+}
+
+// Filter vendors
+function filterVendors() {
+    const search = document.getElementById('vendor-search').value;
+    const filter = document.getElementById('vendor-filter').value;
+    
+    dashboardState.vendors.search = search;
+    dashboardState.vendors.filter = filter;
+    dashboardState.vendors.currentPage = 1;
+    
+    loadVendors(1);
+}
+
+// Filter invoices
+function filterInvoices() {
+    const search = document.getElementById('invoice-search').value;
+    const filter = document.getElementById('invoice-filter').value;
+    
+    dashboardState.invoices.search = search;
+    dashboardState.invoices.filter = filter;
+    dashboardState.invoices.currentPage = 1;
+    
+    loadInvoices(1);
+}
+
+// Sync selected vendors
+async function syncSelectedVendors() {
+    const selectedIds = Array.from(dashboardState.vendors.selectedIds);
+    
+    if (selectedIds.length === 0) {
+        showError('Please select vendors to sync');
+        return;
+    }
+    
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = `Syncing ${selectedIds.length} vendor(s)...`;
+    
+    try {
+        const response = await fetch('/api/netsuite/sync/vendors/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor_ids: selectedIds })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const summary = data.summary;
+            showSuccess(
+                `Sync completed: ${summary.successful} successful, ${summary.failed} failed, ${summary.already_synced} already synced`
+            );
+            
+            // Clear selection and reload
+            dashboardState.vendors.selectedIds.clear();
+            loadVendors(dashboardState.vendors.currentPage);
+            loadStatistics();
+        } else {
+            showError(`Sync failed: ${data.error}`);
+        }
+    } catch (error) {
+        showError(`Error during sync: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = '🔄 Sync Selected to NetSuite';
+    }
+}
+
+// Sync selected invoices
+async function syncSelectedInvoices() {
+    const selectedIds = Array.from(dashboardState.invoices.selectedIds);
+    
+    if (selectedIds.length === 0) {
+        showError('Please select invoices to sync');
+        return;
+    }
+    
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = `Syncing ${selectedIds.length} invoice(s)...`;
+    
+    try {
+        const response = await fetch('/api/netsuite/sync/invoices/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoice_ids: selectedIds })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const summary = data.summary;
+            showSuccess(
+                `Sync completed: ${summary.successful} successful, ${summary.failed} failed, ${summary.already_synced} already synced`
+            );
+            
+            // Clear selection and reload
+            dashboardState.invoices.selectedIds.clear();
+            loadInvoices(dashboardState.invoices.currentPage);
+            loadStatistics();
+        } else {
+            showError(`Sync failed: ${data.error}`);
+        }
+    } catch (error) {
+        showError(`Error during sync: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = '🔄 Sync Selected to NetSuite';
+    }
+}
+
+// Sync single vendor
+async function syncSingleVendor(vendorId) {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Syncing...';
+    
+    try {
+        const response = await fetch(`/api/netsuite/sync/vendor/${vendorId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess(`Vendor synced successfully! NetSuite ID: ${data.netsuite_id}`);
+            loadVendors(dashboardState.vendors.currentPage);
+            loadStatistics();
+        } else {
+            showError(`Failed to sync vendor: ${data.error}`);
+        }
+    } catch (error) {
+        showError(`Error syncing vendor: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Sync';
+    }
+}
+
+// Sync single invoice
+async function syncSingleInvoice(invoiceId) {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Syncing...';
+    
+    try {
+        const response = await fetch(`/api/netsuite/sync/invoice/${invoiceId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess(`Invoice synced successfully! NetSuite Bill ID: ${data.netsuite_bill_id}`);
+            loadInvoices(dashboardState.invoices.currentPage);
+            loadStatistics();
+        } else {
+            showError(`Failed to sync invoice: ${data.error}`);
+        }
+    } catch (error) {
+        showError(`Error syncing invoice: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Sync';
+    }
+}
+
+// Update vendors pagination
+function updateVendorsPagination() {
+    const container = document.getElementById('vendors-pagination');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const state = dashboardState.vendors;
+    
+    // Previous button
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = '← Previous';
+    prevBtn.disabled = state.currentPage === 1;
+    prevBtn.onclick = () => loadVendors(state.currentPage - 1);
+    container.appendChild(prevBtn);
+    
+    // Page info
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'page-info';
+    pageInfo.textContent = `Page ${state.currentPage} of ${state.totalPages} (${state.totalCount} vendors)`;
+    container.appendChild(pageInfo);
+    
+    // Next button
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = 'Next →';
+    nextBtn.disabled = state.currentPage === state.totalPages;
+    nextBtn.onclick = () => loadVendors(state.currentPage + 1);
+    container.appendChild(nextBtn);
+}
+
+// Update invoices pagination
+function updateInvoicesPagination() {
+    const container = document.getElementById('invoices-pagination');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const state = dashboardState.invoices;
+    
+    // Previous button
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = '← Previous';
+    prevBtn.disabled = state.currentPage === 1;
+    prevBtn.onclick = () => loadInvoices(state.currentPage - 1);
+    container.appendChild(prevBtn);
+    
+    // Page info
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'page-info';
+    pageInfo.textContent = `Page ${state.currentPage} of ${state.totalPages} (${state.totalCount} invoices)`;
+    container.appendChild(pageInfo);
+    
+    // Next button
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = 'Next →';
+    nextBtn.disabled = state.currentPage === state.totalPages;
+    nextBtn.onclick = () => loadInvoices(state.currentPage + 1);
+    container.appendChild(nextBtn);
+}
+
+// Load recent activity
+async function loadRecentActivity() {
+    try {
+        const response = await fetch('/api/netsuite/activities?limit=10');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayRecentActivity(data.activities || []);
+        }
+    } catch (error) {
+        console.error('Error loading recent activity:', error);
+    }
+}
+
+// Display recent activity
+function displayRecentActivity(activities) {
+    const container = document.getElementById('activityLog');
+    if (!container) return;
+    
+    if (!activities || activities.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <div>No recent activity</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    activities.forEach(activity => {
+        const item = document.createElement('div');
+        item.style.padding = '8px';
+        item.style.borderBottom = '1px solid #e0e0e0';
+        
+        const statusColor = activity.status === 'success' ? '#28a745' : 
+                          activity.status === 'failed' ? '#dc3545' : '#ffc107';
+        
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: ${statusColor};">
+                        ${activity.entity_type} ${activity.status}
+                    </strong>
+                    <div style="font-size: 12px; color: #666;">
+                        ${formatTimestamp(activity.timestamp)}
+                    </div>
+                </div>
+                <div style="font-size: 12px;">
+                    ${activity.netsuite_id || activity.entity_id || ''}
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(item);
+    });
+}
+
+// Format currency
+function formatCurrency(amount, currency = 'USD') {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency
+    }).format(amount || 0);
+}
+
+// Format date
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Show success message
+function showSuccess(message) {
+    showNotification(message, 'success');
+}
+
+// Show error message
+function showError(message) {
+    showNotification(message, 'error');
+}
+
+// Show notification
+function showNotification(message, type) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 16px 24px;
+        border-radius: 8px;
+        z-index: 10000;
+        max-width: 400px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        animation: slideIn 0.3s ease;
+    `;
+    
+    if (type === 'success') {
+        notification.style.background = '#d4edda';
+        notification.style.color = '#155724';
+        notification.style.border = '1px solid #c3e6cb';
+        notification.innerHTML = `✅ ${message}`;
+    } else if (type === 'error') {
+        notification.style.background = '#f8d7da';
+        notification.style.color = '#721c24';
+        notification.style.border = '1px solid #f5c6cb';
+        notification.innerHTML = `❌ ${message}`;
+    } else {
+        notification.style.background = '#fff3cd';
+        notification.style.color = '#856404';
+        notification.style.border = '1px solid #ffeaa7';
+        notification.innerHTML = `⚠️ ${message}`;
+    }
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 5000);
+}
+
+// Add CSS animations
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// Original functions (kept for compatibility)
 
 // Set up all event listeners
 function setupEventListeners() {
@@ -40,35 +818,6 @@ function setupEventListeners() {
     const testBtn = document.getElementById('testConnectionBtn');
     if (testBtn) {
         testBtn.addEventListener('click', testConnection);
-    }
-    
-    // Refresh Activities button
-    const refreshBtn = document.getElementById('refreshActivitiesBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', loadActivities);
-    }
-    
-    // Sync Vendor button
-    const syncVendorBtn = document.getElementById('syncVendorBtn');
-    if (syncVendorBtn) {
-        syncVendorBtn.addEventListener('click', syncVendor);
-    }
-    
-    // Sync Invoice button
-    const syncInvoiceBtn = document.getElementById('syncInvoiceBtn');
-    if (syncInvoiceBtn) {
-        syncInvoiceBtn.addEventListener('click', syncInvoice);
-    }
-    
-    // Bulk Sync buttons
-    const bulkVendorsBtn = document.getElementById('bulkSyncVendorsBtn');
-    if (bulkVendorsBtn) {
-        bulkVendorsBtn.addEventListener('click', () => bulkSync('vendors'));
-    }
-    
-    const bulkInvoicesBtn = document.getElementById('bulkSyncInvoicesBtn');
-    if (bulkInvoicesBtn) {
-        bulkInvoicesBtn.addEventListener('click', () => bulkSync('invoices'));
     }
 }
 
@@ -122,10 +871,9 @@ function updateConnectionStatus(data) {
     // Update base URL
     const baseUrl = document.getElementById('baseUrl');
     if (baseUrl && data.base_url) {
-        // Truncate long URLs for display
         const url = data.base_url;
         baseUrl.textContent = url.length > 40 ? url.substring(0, 40) + '...' : url;
-        baseUrl.title = url; // Full URL on hover
+        baseUrl.title = url;
     }
     
     // Update last sync
@@ -165,91 +913,6 @@ function updateAvailableActions(actions) {
         button.textContent = action;
         button.addEventListener('click', () => performAction(action));
         actionList.appendChild(button);
-    });
-}
-
-// Load sync activities
-async function loadActivities() {
-    try {
-        const response = await fetch('/api/netsuite/activities?limit=20');
-        const data = await response.json();
-        
-        if (data.success) {
-            displayActivities(data.activities || []);
-        }
-    } catch (error) {
-        console.error('Error loading activities:', error);
-    }
-}
-
-// Display activities in table
-function displayActivities(activities) {
-    const tbody = document.getElementById('activityTableBody');
-    if (!tbody) return;
-    
-    if (!activities || activities.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="empty-state">
-                    <div class="empty-state-icon">📊</div>
-                    <div>No sync activities yet</div>
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    tbody.innerHTML = '';
-    
-    activities.forEach(activity => {
-        const row = document.createElement('tr');
-        
-        // Timestamp
-        const timestampCell = document.createElement('td');
-        timestampCell.textContent = formatTimestamp(activity.timestamp);
-        timestampCell.style.fontSize = '12px';
-        row.appendChild(timestampCell);
-        
-        // Type
-        const typeCell = document.createElement('td');
-        typeCell.textContent = activity.entity_type || '-';
-        row.appendChild(typeCell);
-        
-        // Entity
-        const entityCell = document.createElement('td');
-        entityCell.textContent = activity.entity_id ? activity.entity_id.substring(0, 8) + '...' : '-';
-        entityCell.title = activity.entity_id || '';
-        row.appendChild(entityCell);
-        
-        // Status
-        const statusCell = document.createElement('td');
-        const statusBadge = document.createElement('span');
-        statusBadge.className = `status-badge ${activity.status || 'pending'}`;
-        statusBadge.textContent = activity.status || 'pending';
-        statusCell.appendChild(statusBadge);
-        row.appendChild(statusCell);
-        
-        // Duration
-        const durationCell = document.createElement('td');
-        if (activity.duration_ms) {
-            durationCell.textContent = `${activity.duration_ms}ms`;
-        } else {
-            durationCell.textContent = '-';
-        }
-        row.appendChild(durationCell);
-        
-        // Details
-        const detailsCell = document.createElement('td');
-        if (activity.error_message) {
-            detailsCell.innerHTML = `<span style="color: #dc3545; font-size: 12px;" title="${activity.error_message}">Error</span>`;
-        } else if (activity.netsuite_id) {
-            detailsCell.innerHTML = `<span style="color: #28a745; font-size: 12px;">NS: ${activity.netsuite_id}</span>`;
-        } else {
-            detailsCell.textContent = activity.details || activity.action || '-';
-        }
-        row.appendChild(detailsCell);
-        
-        tbody.appendChild(row);
     });
 }
 
@@ -301,11 +964,6 @@ function displayStatistics(stats) {
         const rate = stats.overall?.success_rate || 0;
         successRate.textContent = `${rate.toFixed(1)}%`;
     }
-    
-    // Update errors if any failed syncs
-    if (stats.overall?.total_failed > 0) {
-        loadRecentErrors();
-    }
 }
 
 // Test NetSuite connection
@@ -318,147 +976,13 @@ async function testConnection() {
     
     try {
         await checkNetSuiteStatus();
-        showSyncResult('Connection test completed', 'success');
+        showSuccess('Connection test completed');
     } catch (error) {
-        showSyncResult('Connection test failed: ' + error.message, 'error');
+        showError('Connection test failed: ' + error.message);
     } finally {
         if (button) {
             button.disabled = false;
             button.textContent = 'Test Connection';
-        }
-    }
-}
-
-// Sync vendor
-async function syncVendor() {
-    const input = document.getElementById('vendorIdInput');
-    const button = document.getElementById('syncVendorBtn');
-    
-    if (!input || !input.value) {
-        showSyncResult('Please enter a vendor ID', 'error');
-        return;
-    }
-    
-    const vendorId = input.value.trim();
-    
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Syncing...';
-    }
-    
-    try {
-        const response = await fetch(`/api/netsuite/sync/vendor/${vendorId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showSyncResult(`Vendor ${data.vendor_name || vendorId} synced successfully! NetSuite ID: ${data.netsuite_id}`, 'success');
-            input.value = '';
-            // Reload activities and stats
-            loadActivities();
-            loadStatistics();
-        } else {
-            showSyncResult(`Failed to sync vendor: ${data.error}`, 'error');
-        }
-    } catch (error) {
-        showSyncResult(`Error syncing vendor: ${error.message}`, 'error');
-    } finally {
-        if (button) {
-            button.disabled = false;
-            button.textContent = 'Sync';
-        }
-    }
-}
-
-// Sync invoice
-async function syncInvoice() {
-    const input = document.getElementById('invoiceIdInput');
-    const button = document.getElementById('syncInvoiceBtn');
-    
-    if (!input || !input.value) {
-        showSyncResult('Please enter an invoice ID', 'error');
-        return;
-    }
-    
-    const invoiceId = input.value.trim();
-    
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Syncing...';
-    }
-    
-    try {
-        const response = await fetch(`/api/netsuite/sync/invoice/${invoiceId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showSyncResult(`Invoice ${invoiceId} synced successfully! NetSuite Bill ID: ${data.netsuite_bill_id}`, 'success');
-            input.value = '';
-            // Reload activities and stats
-            loadActivities();
-            loadStatistics();
-        } else {
-            showSyncResult(`Failed to sync invoice: ${data.error}`, 'error');
-        }
-    } catch (error) {
-        showSyncResult(`Error syncing invoice: ${error.message}`, 'error');
-    } finally {
-        if (button) {
-            button.disabled = false;
-            button.textContent = 'Sync';
-        }
-    }
-}
-
-// Bulk sync
-async function bulkSync(type) {
-    const button = document.getElementById(`bulkSync${type === 'vendors' ? 'Vendors' : 'Invoices'}Btn`);
-    
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Syncing...';
-    }
-    
-    try {
-        const response = await fetch('/api/netsuite/sync/bulk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type, limit: 10 })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            const message = `Bulk sync completed: ${data.synced_count} synced, ${data.failed_count} failed`;
-            showSyncResult(message, data.failed_count > 0 ? 'warning' : 'success');
-            
-            // Display details
-            if (data.synced_items && data.synced_items.length > 0) {
-                console.log('Synced items:', data.synced_items);
-            }
-            if (data.failed_items && data.failed_items.length > 0) {
-                console.error('Failed items:', data.failed_items);
-            }
-            
-            // Reload activities and stats
-            loadActivities();
-            loadStatistics();
-        } else {
-            showSyncResult(`Bulk sync failed: ${data.error}`, 'error');
-        }
-    } catch (error) {
-        showSyncResult(`Error during bulk sync: ${error.message}`, 'error');
-    } finally {
-        if (button) {
-            button.disabled = false;
-            button.textContent = `Sync Pending ${type === 'vendors' ? 'Vendors' : 'Invoices'}`;
         }
     }
 }
@@ -470,114 +994,10 @@ function performAction(action) {
             testConnection();
             break;
         case 'View Sync History':
-            loadActivities();
-            break;
-        case 'Bulk Sync Vendors':
-            bulkSync('vendors');
-            break;
-        case 'Bulk Sync Invoices':
-            bulkSync('invoices');
+            loadRecentActivity();
             break;
         default:
             console.log('Action not implemented:', action);
-    }
-}
-
-// Load recent errors
-async function loadRecentErrors() {
-    try {
-        const response = await fetch('/api/netsuite/activities?limit=10');
-        const data = await response.json();
-        
-        if (data.success && data.activities) {
-            const errors = data.activities.filter(a => a.status === 'failed');
-            displayErrors(errors);
-        }
-    } catch (error) {
-        console.error('Error loading recent errors:', error);
-    }
-}
-
-// Display errors
-function displayErrors(errors) {
-    const errorLog = document.getElementById('errorLog');
-    if (!errorLog) return;
-    
-    if (!errors || errors.length === 0) {
-        errorLog.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">✅</div>
-                <div>No errors to display</div>
-            </div>
-        `;
-        return;
-    }
-    
-    errorLog.innerHTML = '';
-    
-    errors.slice(0, 5).forEach(error => {
-        const errorItem = document.createElement('div');
-        errorItem.className = 'error-item';
-        
-        errorItem.innerHTML = `
-            <div class="error-timestamp">${formatTimestamp(error.timestamp)}</div>
-            <div class="error-message">${error.error_message || 'Unknown error'}</div>
-            <button class="retry-button" onclick="retrySync('${error.entity_type}', '${error.entity_id}')">
-                Retry
-            </button>
-        `;
-        
-        errorLog.appendChild(errorItem);
-    });
-}
-
-// Retry sync for failed item
-async function retrySync(entityType, entityId) {
-    if (entityType === 'vendor') {
-        document.getElementById('vendorIdInput').value = entityId;
-        await syncVendor();
-    } else if (entityType === 'invoice') {
-        document.getElementById('invoiceIdInput').value = entityId;
-        await syncInvoice();
-    }
-}
-
-// Show sync result message
-function showSyncResult(message, type) {
-    const resultsDiv = document.getElementById('syncResults');
-    const contentDiv = document.getElementById('syncResultContent');
-    
-    if (resultsDiv && contentDiv) {
-        resultsDiv.style.display = 'block';
-        
-        let bgColor = '#f8f9fa';
-        let textColor = '#333';
-        
-        switch(type) {
-            case 'success':
-                bgColor = '#d4edda';
-                textColor = '#155724';
-                break;
-            case 'error':
-                bgColor = '#f8d7da';
-                textColor = '#721c24';
-                break;
-            case 'warning':
-                bgColor = '#fff3cd';
-                textColor = '#856404';
-                break;
-        }
-        
-        contentDiv.style.backgroundColor = bgColor;
-        contentDiv.style.color = textColor;
-        contentDiv.innerHTML = `
-            <strong>${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'} ${message}</strong>
-        `;
-        
-        // Auto-hide after 5 seconds
-        setTimeout(() => {
-            resultsDiv.style.display = 'none';
-        }, 5000);
     }
 }
 
