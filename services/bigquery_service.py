@@ -212,9 +212,7 @@ class BigQueryService:
             global_name,
             emails,
             countries,
-            addresses,
-            phone_numbers,
-            tax_id,
+            custom_attributes,
             created_at,
             last_updated
         FROM `{self.full_table_id}`
@@ -233,14 +231,38 @@ class BigQueryService:
             vendors = []
             
             for row in results:
+                # Parse custom_attributes JSON to extract additional fields
+                custom_attrs = {}
+                if row.custom_attributes:
+                    if isinstance(row.custom_attributes, str):
+                        import json
+                        custom_attrs = json.loads(row.custom_attributes)
+                    else:
+                        custom_attrs = row.custom_attributes
+                
+                # Extract fields from custom_attributes
+                addresses = custom_attrs.get('addresses', custom_attrs.get('address', ''))
+                if isinstance(addresses, list) and addresses:
+                    addresses = ', '.join(addresses)
+                elif not addresses:
+                    addresses = ''
+                
+                phone_numbers = custom_attrs.get('phone_numbers', custom_attrs.get('phone', ''))
+                if isinstance(phone_numbers, list) and phone_numbers:
+                    phone_numbers = ', '.join(phone_numbers)
+                elif not phone_numbers:
+                    phone_numbers = ''
+                    
+                tax_id = custom_attrs.get('tax_id', custom_attrs.get('taxId', ''))
+                
                 vendors.append({
                     "vendor_id": row.vendor_id,
                     "global_name": row.global_name,
                     "emails": row.emails if row.emails else '',
                     "countries": row.countries if row.countries else '',
-                    "addresses": row.addresses if row.addresses else '',
-                    "phone_numbers": row.phone_numbers if row.phone_numbers else '',
-                    "tax_id": row.tax_id if row.tax_id else '',
+                    "addresses": addresses,
+                    "phone_numbers": phone_numbers,
+                    "tax_id": tax_id,
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "last_updated": row.last_updated.isoformat() if row.last_updated else None
                 })
