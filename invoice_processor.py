@@ -1,5 +1,6 @@
 import json
 from services import DocumentAIService, VertexSearchService, GeminiService
+from services.semantic_vendor_resolver import SemanticVendorResolver
 from utils import extract_vendor_name, format_search_results
 from utils.multi_currency_detector import MultiCurrencyDetector
 from config import config
@@ -18,6 +19,7 @@ class InvoiceProcessor:
         self.multi_currency_detector = MultiCurrencyDetector()
         self.vertex_search_service = VertexSearchService()
         self.gemini_service = GeminiService()
+        self.vendor_resolver = SemanticVendorResolver(self.gemini_service)
     
     def process_invoice(self, gcs_uri, mime_type='application/pdf'):
         """
@@ -201,6 +203,66 @@ class InvoiceProcessor:
                 result['layers']['layer3_gemini'] = {
                     'status': 'success',
                     'validation_flags': flags
+                }
+            
+            # LAYER 3.5: Semantic Vendor Identity Resolution (AI-First Vendor Identification)
+            try:
+                print("\n🧠 LAYER 3.5: Semantic Vendor Identity Resolution")
+                print("-" * 60)
+                
+                # Resolve TRUE vendor identity using AI reasoning
+                vendor_resolution = self.vendor_resolver.resolve_vendor_identity(
+                    document_ai_entities={'entities': extracted_entities},
+                    validated_data=validated_data,
+                    rag_context=result['layers'].get('layer2_vertex_search')
+                )
+                
+                # Replace vendor in validated_data with semantically resolved vendor
+                if vendor_resolution and 'true_vendor' in vendor_resolution:
+                    true_vendor_name = vendor_resolution['true_vendor']['name']
+                    true_vendor_confidence = vendor_resolution['true_vendor']['confidence']
+                    
+                    # Update vendor in validated_data
+                    if 'vendor' not in validated_data:
+                        validated_data['vendor'] = {}
+                    
+                    # Store original vendor for audit trail
+                    validated_data['vendor']['original_supplier_name'] = validated_data.get('vendor', {}).get('name')
+                    
+                    # Replace with semantically resolved vendor
+                    validated_data['vendor']['name'] = true_vendor_name
+                    
+                    # Add resolution metadata
+                    validated_data['vendor_resolution'] = {
+                        'is_intermediary': vendor_resolution.get('is_intermediary_scenario', False),
+                        'supplier_relationship': vendor_resolution.get('supplier_relationship'),
+                        'resolution_confidence': true_vendor_confidence,
+                        'reasoning': vendor_resolution.get('reasoning'),
+                        'conflicts_detected': vendor_resolution.get('conflicts_detected', []),
+                        'alternate_names': vendor_resolution.get('alternate_names', [])
+                    }
+                    
+                    print(f"✓ Vendor resolution complete")
+                    
+                    result['layers']['layer3_5_vendor_resolution'] = {
+                        'status': 'success',
+                        'true_vendor': true_vendor_name,
+                        'original_supplier': validated_data['vendor'].get('original_supplier_name'),
+                        'confidence': true_vendor_confidence,
+                        'is_intermediary': vendor_resolution.get('is_intermediary_scenario', False)
+                    }
+                else:
+                    print("⚠️ Vendor resolution returned no results")
+                    result['layers']['layer3_5_vendor_resolution'] = {
+                        'status': 'warning',
+                        'message': 'No vendor resolution results'
+                    }
+                    
+            except Exception as e:
+                print(f"⚠️ Vendor resolution error (non-critical): {str(e)}")
+                result['layers']['layer3_5_vendor_resolution'] = {
+                    'status': 'error',
+                    'error': str(e)
                 }
             
             result['status'] = 'completed'
