@@ -2776,54 +2776,37 @@ def create_vendor_in_netsuite(vendor_id):
     Always creates a new record without checking for duplicates
     """
     try:
-        # Get vendor from BigQuery
+        # Get vendor from BigQuery - ensure we're using the right method
         bigquery_service = BigQueryService()
-        vendors = bigquery_service.search_vendor_by_id(vendor_id)
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
         
-        if not vendors:
+        if not vendor:
             return jsonify({
                 'success': False,
                 'error': 'Vendor not found in database',
                 'vendor_id': vendor_id
             }), 404
         
-        vendor = vendors[0]
-        
         # Sync to NetSuite
         netsuite = NetSuiteService()
         
-        # Prepare vendor data for NetSuite using correct field names
+        # Prepare vendor data for NetSuite with correct field names for create_vendor_only
         vendor_data = {
-            'name': vendor.get('global_name', ''),  # Use 'global_name' from BigQuery
-            'external_id': f"{vendor_id}_created_{int(datetime.now().timestamp())}",
+            'externalId': f"{vendor_id}_created_{int(datetime.now().timestamp())}",
+            'companyName': vendor.get('global_name', ''),  # Use global_name
             'email': vendor.get('emails', '').split(',')[0] if vendor.get('emails') else None,
-            'force_create': True  # Flag to force creation
+            'phone': vendor.get('phone_numbers', '').split(',')[0] if vendor.get('phone_numbers') else None,
+            'taxId': vendor.get('tax_id'),
+            'isPerson': False,
+            'subsidiary': {'id': '2'}
         }
         
-        # Add phone if available
-        if vendor.get('phone_numbers'):
-            vendor_data['phone'] = vendor.get('phone_numbers', '').split(',')[0]
+        # Create in NetSuite using create_vendor_only method
+        result = netsuite.create_vendor_only(vendor_data)
         
-        # Add tax ID if available  
-        if vendor.get('tax_id'):
-            vendor_data['tax_id'] = vendor.get('tax_id')
-        
-        # Add address if available
-        if vendor.get('addresses'):
-            vendor_data['address'] = {
-                'line1': vendor.get('addresses'),
-                'city': '',
-                'state': '',
-                'postal_code': '',
-                'country': vendor.get('countries', 'US').split(',')[0] if vendor.get('countries') else 'US'
-            }
-        
-        # Create in NetSuite
-        result = netsuite.create_vendor(vendor_data)
-        
-        if result.get('success'):
+        if result:
             # Update BigQuery with NetSuite ID
-            netsuite_id = result.get('netsuite_id')
+            netsuite_id = result.get('id')
             if netsuite_id:
                 bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_id)
             
@@ -2838,7 +2821,7 @@ def create_vendor_in_netsuite(vendor_id):
         else:
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Failed to create vendor in NetSuite'),
+                'error': 'Failed to create vendor in NetSuite',
                 'vendor_id': vendor_id
             }), 500
             

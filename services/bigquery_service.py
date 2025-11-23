@@ -251,6 +251,13 @@ class BigQueryService:
             print(f"❌ Error searching vendor by ID: {e}")
             return []
     
+    def get_vendor_by_id(self, vendor_id):
+        """Get a single vendor by ID (returns dict instead of list)"""
+        vendors = self.search_vendor_by_id(vendor_id)
+        if vendors and len(vendors) > 0:
+            return vendors[0]
+        return None
+    
     def search_vendor_by_name(self, vendor_name, limit=5):
         """Search for vendors by name using fuzzy matching with punctuation normalization"""
         

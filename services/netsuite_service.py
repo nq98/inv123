@@ -845,7 +845,7 @@ class NetSuiteService:
         try:
             result = self._make_request(
                 'POST', 
-                '/record/v1/vendorbill',  # Correct endpoint
+                '/record/v1/vendorbill',  # Using full REST API path
                 netsuite_bill,
                 entity_type='invoice',
                 entity_id=invoice_data.get('externalId'),
@@ -1030,66 +1030,6 @@ class NetSuiteService:
             logger.error(f"Error searching for invoice: {e}")
             return []
     
-    def create_invoice(self, invoice_data: Dict) -> Dict:
-        """
-        Create a new invoice/vendor bill in NetSuite
-        Always creates a new record without checking for duplicates
-        
-        Args:
-            invoice_data: Invoice data with fields
-            
-        Returns:
-            Dict with success status and details
-        """
-        if not self.enabled:
-            return {'success': False, 'error': 'NetSuite not enabled'}
-        
-        try:
-            # Find vendor in NetSuite first
-            vendor_search = self.search_vendors(name=invoice_data.get('vendor_name'))
-            if not vendor_search:
-                return {
-                    'success': False,
-                    'error': f"Vendor '{invoice_data.get('vendor_name')}' not found in NetSuite"
-                }
-            
-            vendor_id = vendor_search[0].get('id')
-            
-            # Prepare bill data
-            bill_data = {
-                'invoice_id': invoice_data.get('external_id', ''),
-                'vendor_netsuite_id': vendor_id,
-                'invoice_number': invoice_data.get('invoice_number', ''),
-                'invoice_date': invoice_data.get('invoice_date', ''),
-                'due_date': invoice_data.get('due_date', ''),
-                'currency': invoice_data.get('currency', 'USD'),
-                'total_amount': invoice_data.get('total_amount', 0),
-                'line_items': invoice_data.get('line_items', []),
-                'memo': f"Created from AI system - {invoice_data.get('invoice_number', '')}"
-            }
-            
-            # Create the vendor bill
-            result = self.create_vendor_bill(bill_data)
-            
-            if result:
-                return {
-                    'success': True,
-                    'bill_id': result.get('id'),
-                    'action': 'created',
-                    'data': result
-                }
-            
-            return {
-                'success': False,
-                'error': 'Failed to create invoice in NetSuite'
-            }
-            
-        except Exception as e:
-            logger.error(f"Error creating invoice: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
     
     def update_invoice(self, invoice_data: Dict) -> Dict:
         """
@@ -1192,47 +1132,3 @@ class NetSuiteService:
                                    action='create')
         return result
     
-    def create_invoice(self, invoice_data: Dict) -> Optional[Dict]:
-        """
-        Create a vendor bill using the correct NetSuite format
-        
-        Args:
-            invoice_data: Invoice data with NetSuite field names
-            
-        Returns:
-            Created vendor bill data with NetSuite internal ID or None
-        """
-        if not self.enabled:
-            return None
-        
-        # Based on the example, format should be:
-        netsuite_bill = {
-            'externalId': invoice_data.get('externalId'),
-            'entity': {'id': invoice_data.get('vendor_netsuite_id')},  # Vendor internal ID in NetSuite
-            'subsidiary': {'id': self.DEFAULT_SUBSIDIARY_ID},
-            'currency': {'id': self.CURRENCY_MAP.get(invoice_data.get('currency', 'USD'), '1')},  # Default USD
-            'tranDate': invoice_data.get('tranDate', datetime.now().strftime('%Y-%m-%d')),
-            'memo': invoice_data.get('memo', ''),
-            'tranId': invoice_data.get('tranId', '')
-        }
-        
-        # Add expense lines
-        if invoice_data.get('amount'):
-            netsuite_bill['expense'] = {
-                'items': [{
-                    'account': {'id': self.DEFAULT_EXPENSE_ACCOUNT_ID},  # Expense account from example
-                    'amount': invoice_data.get('amount'),
-                    'memo': invoice_data.get('line_memo', ''),
-                    'department': {'id': '115'},  # From example
-                    'taxCode': {'id': self.DEFAULT_TAX_CODE_ID}  # From example
-                }]
-            }
-        
-        # Remove None/empty values
-        netsuite_bill = {k: v for k, v in netsuite_bill.items() if v}
-        
-        logger.info(f"Creating vendor bill with create_invoice: {invoice_data.get('tranId')}")
-        result = self._make_request('POST', '/record/v1/vendorbill', data=netsuite_bill,
-                                   entity_type='invoice', entity_id=invoice_data.get('externalId'),
-                                   action='create')
-        return result
