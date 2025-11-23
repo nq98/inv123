@@ -680,9 +680,9 @@ Classify email domains into these categories:
 1. **CORPORATE_UNIQUE (Gold Tier, +45%)**: 
    - Domain matches or semantically relates to the company name
    - Examples: 
-     * @slack.com for "Slack Technologies"
-     * @fully-booked.ca for "Fully Booked" or "Artem Revva"
-     * @stripe.com for "Stripe Inc."
+     * @acmecorp.com for "ACME Corporation"
+     * @techservices.io for "Tech Services Ltd"
+     * @vendor-business.co for "Vendor Business Inc"
    - Custom business domains that uniquely identify the vendor
    - High confidence evidence for matching
 
@@ -707,13 +707,13 @@ Classify email domains into these categories:
    - Example: "US-12-3456789" == "US123456789" → MATCH (1.0 confidence)
 2. **IBAN/Bank Account Match:** Bank account numbers are identical
 3. **CORPORATE_UNIQUE Domain Match:** Invoice email domain semantically matches vendor name
-   - Invoice: billing@slack.com + DB: support@slack.com → Same domain, MATCH (0.95 confidence)
-   - Invoice: invoices@fully-booked.ca + DB: contact@fully-booked.ca → Same domain, MATCH (0.95 confidence)
+   - Invoice: billing@acmecorp.com + DB: support@acmecorp.com → Same domain, MATCH (0.95 confidence)
+   - Invoice: invoices@vendor.io + DB: contact@vendor.io → Same domain, MATCH (0.95 confidence)
 
 **🥈 SILVER TIER EVIDENCE (Strong Evidence → Confidence 0.75-0.90)**
-1. **Semantic Name Match:** "Amazon Web Services" == "AWS" == "Amazon.com Inc."
-   - Example: "Google Ireland" == "Google LLC" (geographic subsidiary)
-   - Example: "Facebook" == "Meta Platforms" (corporate rebrand)
+1. **Semantic Name Match:** "Global Tech Services" == "GTS" == "Global Tech Inc."
+   - Example: "TechCorp Ireland" == "TechCorp LLC" (geographic subsidiary)
+   - Example: "OldBrand" == "NewBrand Holdings" (corporate rebrand)
 2. **Address Proximity:** Same street address despite formatting differences
    - Example: "100 Main St" == "100 Main Street, Suite 400" → High confidence
    - Example: "Menlo Park, CA" matches "1 Hacker Way, Menlo Park" → Medium confidence
@@ -729,46 +729,46 @@ Classify email domains into these categories:
 Use these principles to think like a human accountant:
 
 **1. CORPORATE HIERARCHY & ACQUISITIONS**
-- If Invoice says "Slack" and DB says "Salesforce", check if Salesforce acquired Slack → MATCH (parent/child)
-- If Invoice says "Instagram" and DB says "Meta Platforms" → MATCH (subsidiary relationship)
+- If Invoice says "SubCo" and DB says "ParentCorp", check if ParentCorp acquired SubCo → MATCH (parent/child)
+- If Invoice says "ProductBrand" and DB says "Holding Company" → MATCH (subsidiary relationship)
 - Mark `is_subsidiary: true` and identify `parent_company_detected`
 
 **2. BRAND vs. LEGAL ENTITY**
-- Invoice: "Oreo" → DB: "Mondelez International" → MATCH (brand owned by legal entity)
-- Invoice: "GitHub" → DB: "Microsoft Corporation" → MATCH (brand/parent relationship)
-- Invoice: "YouTube" → DB: "Google LLC" → MATCH (product/parent relationship)
+- Invoice: "Brand Name" → DB: "Legal Entity Corp" → MATCH (brand owned by legal entity)
+- Invoice: "Product Brand" → DB: "Parent Corporation" → MATCH (brand/parent relationship)
+- Invoice: "Service Name" → DB: "Operating Company LLC" → MATCH (product/parent relationship)
 
 **3. GEOGRAPHIC SUBSIDIARIES**
-- "Uber BV" (Netherlands) == "Uber Technologies Inc" (USA) → MATCH (global entity)
-- "Apple Ireland" == "Apple Inc." → MATCH (tax subsidiary)
-- "Amazon UK Ltd" == "Amazon.com Inc" → MATCH (regional entity)
+- "VendorCo BV" (Netherlands) == "VendorCo Inc" (USA) → MATCH (global entity)
+- "TechCorp Ireland" == "TechCorp Inc." → MATCH (tax subsidiary)
+- "GlobalCo UK Ltd" == "GlobalCo Inc" → MATCH (regional entity)
 
 **4. TYPOS & OCR ERRORS (AI-First Tolerance)**
-- "G0ogle" == "Google" (OCR misread O as 0)
-- "Microsft" == "Microsoft" (typo)
-- "Amaz0n" == "Amazon" (OCR error)
-- "Salesf0rce" == "Salesforce" (OCR misread o as 0)
+- "Tech C0rp" == "Tech Corp" (OCR misread O as 0)
+- "Buisness Services" == "Business Services" (typo)
+- "Vend0r Inc" == "Vendor Inc" (OCR error)
+- "C0mpany Ltd" == "Company Ltd" (OCR misread o as 0)
 
 **5. MULTILINGUAL VENDOR NAMES**
-- "חברת חשמל" (Hebrew) == "Israel Electric Corp" (English translation)
-- "株式会社ソニー" (Japanese) == "Sony Corporation" (English)
+- "חברת טכנולוגיה" (Hebrew) == "Technology Company Ltd" (English translation)
+- "株式会社テクノロジー" (Japanese) == "Technology Corporation" (English)
 - Use semantic understanding of translations, not exact matching
 
 **6. THE "FALSE FRIEND" TRAP (Prevent Hallucinations)**
-- "Apple Landscaping" ≠ "Apple Inc." → Different industries, verify address/domain
-- "Delta Airlines" ≠ "Delta Dental" → Different industries, same name
-- "American Express" (bank) ≠ "American Express Delivery" (courier) → Validate entity type
+- "Phoenix Landscaping" ≠ "Phoenix Tech Inc." → Different industries, verify address/domain
+- "Summit Airlines" ≠ "Summit Dental" → Different industries, same name
+- "Global Express" (bank) ≠ "Global Express Delivery" (courier) → Validate entity type
 
 **7. FRANCHISE & BRANCH LOGIC**
-- "McDonald's (Tel Aviv)" vs "McDonald's Corporation (HQ)"
+- "FranchiseCo (City Branch)" vs "FranchiseCo Corporation (HQ)"
   - If paying HQ → MATCH to HQ
   - If paying branch directly → MATCH to HQ unless DB has specific branch IDs
 
 **8. DATA EVOLUTION (Self-Healing Database)**
 - If MATCH found but invoice shows new information, flag for database updates:
-  - New alias: DB has "Facebook", Invoice says "Meta" → add_new_alias: "Meta"
-  - New address: DB has "1 Hacker Way", Invoice shows "1 Meta Way" → add_new_address
-  - New domain: DB has "@fb.com", Invoice shows "@meta.com" → add_new_domain
+  - New alias: DB has "OldCorp", Invoice says "NewCorp" → add_new_alias: "NewCorp"
+  - New address: DB has "123 Old St", Invoice shows "123 New St" → add_new_address
+  - New domain: DB has "@oldco.com", Invoice shows "@newco.com" → add_new_domain
 
 ### 📝 THE VERDICT SCHEMA (JSON ONLY)
 {{

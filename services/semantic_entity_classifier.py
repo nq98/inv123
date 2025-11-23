@@ -58,10 +58,10 @@ CATEGORIES:
    Examples: Commercial banks, credit unions, investment banks, financial services
    
 3. PAYMENT_PROCESSOR - A company that facilitates payment transactions
-   Examples: Payment gateways (Stripe, PayPal), merchant services, payment platforms
+   Examples: Payment gateways, merchant services, payment platforms, transaction processors
    
 4. GOVERNMENT_ENTITY - Government agency, tax authority, or regulatory body
-   Examples: IRS, tax departments, regulatory agencies, government offices
+   Examples: Tax departments, regulatory agencies, government offices, public authorities
    
 5. INDIVIDUAL_PERSON - A natural person who is NOT providing vendor services
    Examples: Employees receiving salary, personal reimbursements, non-business individuals

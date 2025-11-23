@@ -129,7 +129,7 @@ class GmailService:
         
         # BROAD NET: Multi-language financial document query
         # Supports: English, Hebrew, French, German, Spanish
-        # NOTE: No 'has:attachment' filter - allows link-only invoices (Stripe, AWS, etc.)
+        # NOTE: No 'has:attachment' filter - allows link-only invoices (web receipts)
         # AI Gatekeeper will filter out junk emails in Stage 2
         query = (
             f'after:{after_date} '

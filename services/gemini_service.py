@@ -751,18 +751,22 @@ URL: {url}
 Email Context: {email_context}
 
 Classify as ONE of:
-1. **direct_pdf**: Direct PDF download link (file.pdf, download endpoint, direct file)
-2. **web_receipt**: Web-based receipt page that can be viewed in browser (Stripe receipts, PayPal invoices, AWS bills, etc.)
-3. **auth_required**: Requires login/authentication to access (dashboard, account portal, authenticated API)
+1. **direct_pdf**: Direct PDF download link (ends in .pdf, has content-disposition, direct file download)
+2. **web_receipt**: Web-based receipt page that renders in a browser (public receipt view, invoice display page, bill summary)
+3. **auth_required**: Requires login/authentication to access (dashboard, account portal, authenticated session)
 
-Use SEMANTIC INTELLIGENCE:
-- Analyze the domain, path structure, and parameters
-- Consider what the link ACTUALLY does, not just keywords
-- Think about whether a headless browser can access it
-- Stripe receipt URLs (pay.stripe.com/receipts/*, dashboard.stripe.com/receipts/*) are 'web_receipt' - they render in browser
-- PayPal invoice URLs are 'web_receipt'
-- AWS billing PDFs with pre-signed URLs are 'direct_pdf'
-- Dashboard/portal links requiring login are 'auth_required'
+Use PURE SEMANTIC INTELLIGENCE (NO hardcoded domain rules):
+- Analyze the URL structure: Does it look like a file download, public view page, or protected dashboard?
+- Path semantics: "/receipt/", "/invoice/", "/view/", "/download/" suggest public access
+- Auth indicators: "/dashboard/", "/account/", "/login/", "/api/" often require authentication
+- Parameters: Tokens like "?token=", "?key=", "?signature=" suggest pre-authenticated public access
+- File extensions: .pdf at the end means direct download
+- Consider whether a headless browser can access it without logging in
+
+Think step-by-step:
+1. Does the URL end in .pdf or have download parameters? → direct_pdf
+2. Does it have public receipt/invoice view tokens/signatures? → web_receipt  
+3. Does it require dashboard/account login? → auth_required
 
 Return ONLY valid JSON:
 {{
