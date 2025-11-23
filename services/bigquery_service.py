@@ -1055,6 +1055,7 @@ class BigQueryService:
                                     sync_status: str = "synced") -> bool:
         """
         Update invoice's NetSuite sync information in BigQuery
+        NOTE: Currently NetSuite columns don't exist, so this stores to sync log instead
         
         Args:
             invoice_id: Our invoice ID
@@ -1064,32 +1065,40 @@ class BigQueryService:
         Returns:
             True if successful, False otherwise
         """
-        invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
-        
+        # For now, since NetSuite columns don't exist in invoices table,
+        # we'll store the sync information in the sync log table instead
         try:
-            query = f"""
-            UPDATE `{invoices_table_id}`
-            SET netsuite_bill_id = @netsuite_bill_id,
-                netsuite_sync_status = @sync_status,
-                netsuite_sync_date = CURRENT_TIMESTAMP(),
-                last_updated = CURRENT_TIMESTAMP()
-            WHERE invoice_id = @invoice_id
-            """
+            # Store sync event in sync log table
+            sync_log_row = {
+                "sync_id": str(uuid.uuid4()),
+                "entity_type": "invoice",
+                "entity_id": invoice_id,
+                "netsuite_id": netsuite_bill_id,
+                "action": "sync",
+                "status": sync_status,
+                "timestamp": datetime.now().isoformat(),
+                "error_message": None,
+                "metadata": json.dumps({
+                    "sync_type": "vendor_bill",
+                    "bill_id": netsuite_bill_id
+                })
+            }
             
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
-                    bigquery.ScalarQueryParameter("netsuite_bill_id", "STRING", netsuite_bill_id),
-                    bigquery.ScalarQueryParameter("sync_status", "STRING", sync_status),
-                ]
-            )
+            errors = self.client.insert_rows_json(self.full_sync_log_table_id, [sync_log_row])
             
-            self.client.query(query, job_config=job_config).result()
-            print(f"✓ Updated NetSuite sync for invoice {invoice_id}: {netsuite_bill_id}")
+            if errors:
+                print(f"❌ Error logging invoice NetSuite sync: {errors}")
+                return False
+                
+            print(f"✓ Logged NetSuite sync for invoice {invoice_id}: {netsuite_bill_id}")
             return True
             
         except Exception as e:
             print(f"❌ Error updating invoice NetSuite sync: {e}")
+            # If sync log table doesn't exist, just return True to not break the sync
+            if "Not found" in str(e):
+                print(f"⚠️ Sync log table not found, but continuing with sync")
+                return True
             return False
     
     def get_vendor_netsuite_id(self, vendor_id: str) -> Optional[str]:

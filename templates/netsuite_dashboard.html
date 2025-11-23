@@ -193,6 +193,64 @@
             cursor: not-allowed;
         }
 
+        /* New Create/Update Buttons */
+        .btn-create, .btn-update {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 12px;
+            margin: 0 2px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-create {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+        }
+
+        .btn-create:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.4);
+        }
+
+        .btn-update {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+            color: white;
+        }
+
+        .btn-update:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(23, 162, 184, 0.4);
+        }
+
+        .btn-create:disabled, .btn-update:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Bulk Actions */
+        .bulk-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .bulk-action-select {
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .bulk-action-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
         /* Activity Table */
         .activity-table {
             width: 100%;
@@ -840,9 +898,15 @@
                 <div id="vendors-tab" class="tab-content active">
                     <!-- Controls -->
                     <div class="data-controls">
-                        <button class="bulk-sync-btn" onclick="syncSelectedVendors()">
-                            🔄 Sync Selected to NetSuite
-                        </button>
+                        <div class="bulk-actions">
+                            <select id="vendor-bulk-action-type" class="bulk-action-select">
+                                <option value="create">Create New in NetSuite</option>
+                                <option value="update">Update Existing in NetSuite</option>
+                            </select>
+                            <button class="bulk-sync-btn" onclick="bulkSyncSelected('vendors')">
+                                Apply to Selected
+                            </button>
+                        </div>
                         <input type="text" 
                                class="search-input" 
                                placeholder="Search vendors..." 
@@ -902,9 +966,15 @@
                 <div id="invoices-tab" class="tab-content">
                     <!-- Controls -->
                     <div class="data-controls">
-                        <button class="bulk-sync-btn" onclick="syncSelectedInvoices()">
-                            🔄 Sync Selected to NetSuite
-                        </button>
+                        <div class="bulk-actions">
+                            <select id="invoice-bulk-action-type" class="bulk-action-select">
+                                <option value="create">Create New in NetSuite</option>
+                                <option value="update">Update Existing in NetSuite</option>
+                            </select>
+                            <button class="bulk-sync-btn" onclick="bulkSyncSelected('invoices')">
+                                Apply to Selected
+                            </button>
+                        </div>
                         <input type="text" 
                                class="search-input" 
                                placeholder="Search invoices..." 

@@ -512,7 +512,7 @@ class NetSuiteService:
         result = self._make_request('GET', f'/record/v1/vendor/{vendor_id}')
         return result
     
-    def create_vendor(self, vendor_data: Dict) -> Optional[Dict]:
+    def create_vendor(self, vendor_data: Dict) -> Dict:
         """
         Create a new vendor in NetSuite
         
@@ -524,105 +524,148 @@ class NetSuiteService:
                 - phone: Phone number
                 - address: Address dictionary
                 - external_id: Our vendor_id for reference
+                - force_create: If True, always creates new (ignores duplicates)
                 
         Returns:
-            Created vendor data with NetSuite internal ID
+            Dict with success status and details
         """
         if not self.enabled:
-            return None
+            return {'success': False, 'error': 'NetSuite not enabled'}
         
-        # Map our data to NetSuite format
-        netsuite_vendor = {
-            'companyName': vendor_data.get('name', ''),
-            'isPerson': False,
-            'subsidiary': {
-                'id': os.getenv('NETSUITE_SUBSIDIARY_ID', self.DEFAULT_SUBSIDIARY_ID)
+        try:
+            # Map our data to NetSuite format
+            netsuite_vendor = {
+                'companyName': vendor_data.get('name', ''),
+                'isPerson': False,
+                'subsidiary': {
+                    'id': os.getenv('NETSUITE_SUBSIDIARY_ID', self.DEFAULT_SUBSIDIARY_ID)
+                }
             }
-        }
-        
-        # Add optional fields if present
-        if vendor_data.get('tax_id'):
-            netsuite_vendor['vatRegNumber'] = vendor_data['tax_id']
-        
-        if vendor_data.get('email'):
-            netsuite_vendor['email'] = vendor_data['email']
-        
-        if vendor_data.get('phone'):
-            netsuite_vendor['phone'] = vendor_data['phone']
-        
-        if vendor_data.get('external_id'):
-            netsuite_vendor['externalId'] = f"VENDOR_{vendor_data['external_id']}"
-        
-        # Add address if provided
-        if vendor_data.get('address'):
-            addr = vendor_data['address']
-            netsuite_vendor['addressbook'] = {
-                'items': [{
-                    'addressbookAddress': {
-                        'addr1': addr.get('line1', ''),
-                        'city': addr.get('city', ''),
-                        'state': addr.get('state', ''),
-                        'zip': addr.get('postal_code', ''),
-                        'country': addr.get('country', 'US')
-                    },
-                    'defaultBilling': True,
-                    'defaultShipping': True
-                }]
+            
+            # Add optional fields if present
+            if vendor_data.get('tax_id'):
+                netsuite_vendor['vatRegNumber'] = vendor_data['tax_id']
+            
+            if vendor_data.get('email'):
+                netsuite_vendor['email'] = vendor_data['email']
+            
+            if vendor_data.get('phone'):
+                netsuite_vendor['phone'] = vendor_data['phone']
+            
+            if vendor_data.get('external_id'):
+                netsuite_vendor['externalId'] = f"VENDOR_{vendor_data['external_id']}"
+            
+            # Add address if provided
+            if vendor_data.get('address'):
+                addr = vendor_data['address']
+                netsuite_vendor['addressbook'] = {
+                    'items': [{
+                        'addressbookAddress': {
+                            'addr1': addr.get('line1', ''),
+                            'city': addr.get('city', ''),
+                            'state': addr.get('state', ''),
+                            'zip': addr.get('postal_code', ''),
+                            'country': addr.get('country', 'US')
+                        },
+                        'defaultBilling': True,
+                        'defaultShipping': True
+                    }]
+                }
+            
+            logger.info(f"Creating vendor in NetSuite: {vendor_data.get('name')}")
+            result = self._make_request('POST', '/record/v1/vendor', data=netsuite_vendor)
+            
+            if result:
+                logger.info(f"Successfully created vendor with ID: {result.get('id')}")
+                return {
+                    'success': True,
+                    'netsuite_id': result.get('id'),
+                    'action': 'created',
+                    'data': result
+                }
+            
+            return {
+                'success': False,
+                'error': f"Failed to create vendor: {vendor_data.get('name')}"
             }
-        
-        logger.info(f"Creating vendor in NetSuite: {vendor_data.get('name')}")
-        result = self._make_request('POST', '/record/v1/vendor', data=netsuite_vendor)
-        
-        if result:
-            logger.info(f"Successfully created vendor with ID: {result.get('id')}")
-            return result
-        
-        logger.error(f"Failed to create vendor: {vendor_data.get('name')}")
-        return None
+            
+        except Exception as e:
+            logger.error(f"Error creating vendor: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
     
-    def update_vendor(self, vendor_id: str, updates: Dict) -> Optional[Dict]:
+    def update_vendor(self, vendor_data: Dict) -> Dict:
         """
-        Update vendor information in NetSuite
+        Find and update vendor in NetSuite by tax ID or name
         
         Args:
-            vendor_id: NetSuite vendor internal ID
-            updates: Fields to update
+            vendor_data: Vendor data with fields to search and update
             
         Returns:
-            Updated vendor data or None
+            Dict with success status and details
         """
         if not self.enabled:
-            return None
+            return {'success': False, 'error': 'NetSuite not enabled'}
         
-        # Map update fields to NetSuite format
-        netsuite_updates = {}
-        
-        if 'name' in updates:
-            netsuite_updates['companyName'] = updates['name']
-        
-        if 'tax_id' in updates:
-            netsuite_updates['vatRegNumber'] = updates['tax_id']
-        
-        if 'email' in updates:
-            netsuite_updates['email'] = updates['email']
-        
-        if 'phone' in updates:
-            netsuite_updates['phone'] = updates['phone']
-        
-        if not netsuite_updates:
-            logger.warning("No valid updates provided")
-            return None
-        
-        logger.info(f"Updating vendor {vendor_id} in NetSuite")
-        result = self._make_request('PATCH', f'/record/v1/vendor/{vendor_id}', 
-                                   data=netsuite_updates)
-        
-        if result:
-            logger.info(f"Successfully updated vendor {vendor_id}")
-            return result
-        
-        logger.error(f"Failed to update vendor {vendor_id}")
-        return None
+        try:
+            # First, search for existing vendor
+            search_result = self.search_vendors(
+                name=vendor_data.get('name'),
+                tax_id=vendor_data.get('tax_id')
+            )
+            
+            if not search_result:
+                return {
+                    'success': False,
+                    'error': 'Vendor not found in NetSuite for update'
+                }
+            
+            # Get the first matching vendor
+            existing_vendor = search_result[0]
+            vendor_id = existing_vendor.get('id')
+            
+            # Map update fields to NetSuite format
+            netsuite_updates = {}
+            
+            if vendor_data.get('name'):
+                netsuite_updates['companyName'] = vendor_data['name']
+            
+            if vendor_data.get('tax_id'):
+                netsuite_updates['vatRegNumber'] = vendor_data['tax_id']
+            
+            if vendor_data.get('email'):
+                netsuite_updates['email'] = vendor_data['email']
+            
+            if vendor_data.get('phone'):
+                netsuite_updates['phone'] = vendor_data['phone']
+            
+            # Update the vendor
+            logger.info(f"Updating vendor {vendor_id} in NetSuite")
+            result = self._make_request('PATCH', f'/record/v1/vendor/{vendor_id}', 
+                                       data=netsuite_updates)
+            
+            if result:
+                logger.info(f"Successfully updated vendor {vendor_id}")
+                return {
+                    'success': True,
+                    'netsuite_id': vendor_id,
+                    'action': 'updated',
+                    'data': result
+                }
+            
+            return {
+                'success': False,
+                'error': f"Failed to update vendor {vendor_id}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error updating vendor: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
     
     def create_vendor_bill(self, bill_data: Dict) -> Optional[Dict]:
         """
@@ -867,4 +910,160 @@ class NetSuiteService:
                 'success': False,
                 'error': str(e),
                 'netsuite_bill_id': None
+            }
+    
+    def search_invoice(self, invoice_number: str) -> List[Dict]:
+        """
+        Search for invoices/vendor bills in NetSuite by invoice number
+        
+        Args:
+            invoice_number: Invoice number to search for
+            
+        Returns:
+            List of matching vendor bills
+        """
+        if not self.enabled:
+            return []
+        
+        try:
+            # Search for vendor bill by transaction ID (invoice number)
+            params = {
+                'q': f"tranId IS '{invoice_number}'",
+                'limit': 10
+            }
+            
+            result = self._make_request('GET', '/record/v1/vendorbill', params=params)
+            
+            if result and 'items' in result:
+                return result['items']
+            
+            return []
+        except Exception as e:
+            logger.error(f"Error searching for invoice: {e}")
+            return []
+    
+    def create_invoice(self, invoice_data: Dict) -> Dict:
+        """
+        Create a new invoice/vendor bill in NetSuite
+        Always creates a new record without checking for duplicates
+        
+        Args:
+            invoice_data: Invoice data with fields
+            
+        Returns:
+            Dict with success status and details
+        """
+        if not self.enabled:
+            return {'success': False, 'error': 'NetSuite not enabled'}
+        
+        try:
+            # Find vendor in NetSuite first
+            vendor_search = self.search_vendors(name=invoice_data.get('vendor_name'))
+            if not vendor_search:
+                return {
+                    'success': False,
+                    'error': f"Vendor '{invoice_data.get('vendor_name')}' not found in NetSuite"
+                }
+            
+            vendor_id = vendor_search[0].get('id')
+            
+            # Prepare bill data
+            bill_data = {
+                'invoice_id': invoice_data.get('external_id', ''),
+                'vendor_netsuite_id': vendor_id,
+                'invoice_number': invoice_data.get('invoice_number', ''),
+                'invoice_date': invoice_data.get('invoice_date', ''),
+                'due_date': invoice_data.get('due_date', ''),
+                'currency': invoice_data.get('currency', 'USD'),
+                'total_amount': invoice_data.get('total_amount', 0),
+                'line_items': invoice_data.get('line_items', []),
+                'memo': f"Created from AI system - {invoice_data.get('invoice_number', '')}"
+            }
+            
+            # Create the vendor bill
+            result = self.create_vendor_bill(bill_data)
+            
+            if result:
+                return {
+                    'success': True,
+                    'bill_id': result.get('id'),
+                    'action': 'created',
+                    'data': result
+                }
+            
+            return {
+                'success': False,
+                'error': 'Failed to create invoice in NetSuite'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating invoice: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def update_invoice(self, invoice_data: Dict) -> Dict:
+        """
+        Find and update invoice/vendor bill in NetSuite by invoice number
+        
+        Args:
+            invoice_data: Invoice data with fields to search and update
+            
+        Returns:
+            Dict with success status and details
+        """
+        if not self.enabled:
+            return {'success': False, 'error': 'NetSuite not enabled'}
+        
+        try:
+            # First, search for existing invoice
+            search_result = self.search_invoice(invoice_data.get('invoice_number'))
+            
+            if not search_result:
+                return {
+                    'success': False,
+                    'error': 'Invoice not found in NetSuite for update'
+                }
+            
+            # Get the first matching invoice
+            existing_bill = search_result[0]
+            bill_id = existing_bill.get('id')
+            
+            # Build update data
+            netsuite_updates = {}
+            
+            if invoice_data.get('invoice_date'):
+                netsuite_updates['trandate'] = invoice_data['invoice_date']
+            
+            if invoice_data.get('due_date'):
+                netsuite_updates['duedate'] = invoice_data['due_date']
+            
+            if invoice_data.get('memo'):
+                netsuite_updates['memo'] = invoice_data['memo']
+            
+            # Update the vendor bill
+            logger.info(f"Updating vendor bill {bill_id} in NetSuite")
+            result = self._make_request('PATCH', f'/record/v1/vendorbill/{bill_id}', 
+                                       data=netsuite_updates)
+            
+            if result:
+                logger.info(f"Successfully updated vendor bill {bill_id}")
+                return {
+                    'success': True,
+                    'bill_id': bill_id,
+                    'action': 'updated',
+                    'data': result
+                }
+            
+            return {
+                'success': False,
+                'error': f"Failed to update vendor bill {bill_id}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error updating invoice: {e}")
+            return {
+                'success': False,
+                'error': str(e)
             }

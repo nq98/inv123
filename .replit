@@ -12,6 +12,10 @@ externalPort = 3000
 localPort = 34765
 externalPort = 3001
 
+[[ports]]
+localPort = 39335
+externalPort = 3002
+
 [agent]
 expertMode = true
 integrations = ["python_gemini_ai_integrations:1.0.0"]

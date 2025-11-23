@@ -175,13 +175,13 @@ function displayVendors() {
             <td style="font-size: 13px;">${vendor.countries || '-'}</td>
             <td>${getSyncStatusBadge(vendor.sync_status)}</td>
             <td style="font-size: 12px;">${vendor.netsuite_internal_id || '-'}</td>
-            <td>
-                ${vendor.sync_status !== 'synced' ? 
-                    `<button class="table-action-btn" onclick="syncSingleVendor('${vendor.vendor_id}')">
-                        Sync
-                    </button>` : 
-                    '<span style="color: #28a745;">✓</span>'
-                }
+            <td class="actions-cell">
+                <button class="btn-create" onclick="createInNetSuite('vendor', '${vendor.vendor_id}')">
+                    Create New
+                </button>
+                <button class="btn-update" onclick="updateInNetSuite('vendor', '${vendor.vendor_id}')">
+                    Update
+                </button>
             </td>
         `;
         
@@ -266,13 +266,13 @@ function displayInvoices() {
             <td style="font-weight: 600;">${formattedAmount}</td>
             <td>${getSyncStatusBadge(invoice.sync_status)}</td>
             <td style="font-size: 12px;">${invoice.netsuite_bill_id || '-'}</td>
-            <td>
-                ${invoice.sync_status !== 'synced' ? 
-                    `<button class="table-action-btn" onclick="syncSingleInvoice('${invoice.invoice_id}')">
-                        Sync
-                    </button>` : 
-                    '<span style="color: #28a745;">✓</span>'
-                }
+            <td class="actions-cell">
+                <button class="btn-create" onclick="createInNetSuite('invoice', '${invoice.invoice_id}')">
+                    Create New
+                </button>
+                <button class="btn-update" onclick="updateInNetSuite('invoice', '${invoice.invoice_id}')">
+                    Update
+                </button>
             </td>
         `;
         
@@ -283,14 +283,25 @@ function displayInvoices() {
 }
 
 // Get sync status badge HTML
-function getSyncStatusBadge(status) {
+function getSyncStatusBadge(status, action) {
     const statusMap = {
         'synced': { class: 'synced', icon: '🟢', text: 'Synced' },
+        'created': { class: 'synced', icon: '🆕', text: 'Created' },
+        'updated': { class: 'synced', icon: '🔄', text: 'Updated' },
         'not-synced': { class: 'not-synced', icon: '🔴', text: 'Not Synced' },
         'not_synced': { class: 'not-synced', icon: '🔴', text: 'Not Synced' },
+        'not_found': { class: 'failed', icon: '❌', text: 'Not Found' },
+        'duplicate': { class: 'failed', icon: '⚠️', text: 'Duplicate' },
         'failed': { class: 'failed', icon: '⚠️', text: 'Failed' },
         'syncing': { class: 'syncing', icon: '🟡', text: 'Syncing' }
     };
+    
+    // If action is provided, adjust status
+    if (action === 'created' && status === 'synced') {
+        status = 'created';
+    } else if (action === 'updated' && status === 'synced') {
+        status = 'updated';
+    }
     
     const statusInfo = statusMap[status] || statusMap['not-synced'];
     
@@ -1028,6 +1039,173 @@ function formatTimestamp(timestamp) {
     
     // Otherwise show date and time
     return date.toLocaleString();
+}
+
+// Individual Create action with confirmation
+async function createInNetSuite(type, id) {
+    const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
+    
+    if (!confirm(`Are you sure you want to CREATE a NEW ${type} in NetSuite? This will create a new record even if one already exists.`)) {
+        return;
+    }
+    
+    try {
+        showNotification(`Creating new ${type} in NetSuite...`, 'info');
+        
+        const response = await fetch(`/api/netsuite/${type}/${id}/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess(`🆕 ${typeCapitalized} created successfully in NetSuite!`);
+            // Reload the data to show updated status
+            if (type === 'vendor') {
+                loadVendors();
+            } else if (type === 'invoice') {
+                loadInvoices();
+            }
+        } else {
+            showError(`Failed to create ${type}: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error(`Error creating ${type}:`, error);
+        showError(`Error creating ${type}: ${error.message}`);
+    }
+}
+
+// Individual Update action with confirmation
+async function updateInNetSuite(type, id) {
+    const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
+    
+    if (!confirm(`Are you sure you want to UPDATE the existing ${type} in NetSuite? This will search for and update the existing record.`)) {
+        return;
+    }
+    
+    try {
+        showNotification(`Updating ${type} in NetSuite...`, 'info');
+        
+        const response = await fetch(`/api/netsuite/${type}/${id}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess(`🔄 ${typeCapitalized} updated successfully in NetSuite!`);
+            // Reload the data to show updated status
+            if (type === 'vendor') {
+                loadVendors();
+            } else if (type === 'invoice') {
+                loadInvoices();
+            }
+        } else {
+            if (data.error && data.error.includes('not found')) {
+                showError(`❌ ${typeCapitalized} not found in NetSuite for update`);
+            } else {
+                showError(`Failed to update ${type}: ${data.error || 'Unknown error'}`);
+            }
+        }
+    } catch (error) {
+        console.error(`Error updating ${type}:`, error);
+        showError(`Error updating ${type}: ${error.message}`);
+    }
+}
+
+// Bulk sync with action selection
+async function bulkSyncSelected(type) {
+    const actionSelect = type === 'vendors' ? 
+        document.getElementById('vendor-bulk-action-type') : 
+        document.getElementById('invoice-bulk-action-type');
+    
+    if (!actionSelect) {
+        showError('Action type selector not found');
+        return;
+    }
+    
+    const action = actionSelect.value;
+    const selectedIds = Array.from(dashboardState[type].selectedIds);
+    
+    if (selectedIds.length === 0) {
+        showWarning(`Please select at least one ${type.slice(0, -1)} to ${action}`);
+        return;
+    }
+    
+    const actionText = action === 'create' ? 'CREATE NEW' : 'UPDATE EXISTING';
+    const confirmMessage = `Are you sure you want to ${actionText} ${selectedIds.length} ${type} in NetSuite?`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        showNotification(`Processing bulk ${action} for ${selectedIds.length} ${type}...`, 'info');
+        
+        const response = await fetch(`/api/netsuite/${type}/bulk/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                [`${type.slice(0, -1)}_ids`]: selectedIds
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const summary = data.summary;
+            if (summary.successful > 0 && summary.failed > 0) {
+                showWarning(`Bulk ${action} completed: ${summary.successful} successful, ${summary.failed} failed`);
+            } else if (summary.successful > 0) {
+                showSuccess(`✅ Successfully ${action}d ${summary.successful} ${type} in NetSuite!`);
+            } else {
+                showError(`All ${type} failed to ${action}`);
+            }
+            
+            // Clear selections and reload data
+            dashboardState[type].selectedIds.clear();
+            if (type === 'vendors') {
+                loadVendors();
+            } else {
+                loadInvoices();
+            }
+        } else {
+            showError(`Bulk ${action} failed: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error(`Error in bulk ${action}:`, error);
+        showError(`Error in bulk ${action}: ${error.message}`);
+    }
+}
+
+// Helper function to show notifications
+function showNotification(message, type = 'info') {
+    const notificationArea = document.getElementById('notification-area');
+    if (notificationArea) {
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notificationArea.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    } else {
+        console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+}
+
+// Helper function to show warning messages
+function showWarning(message) {
+    showNotification(message, 'warning');
 }
 
 // Cleanup on page unload
