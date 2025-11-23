@@ -12,7 +12,7 @@ import hmac
 import random
 import base64
 import uuid
-from urllib.parse import quote_plus, urlparse, parse_qs, urlencode
+from urllib.parse import quote, quote_plus, urlparse, parse_qs, urlencode
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import requests
@@ -121,11 +121,14 @@ class NetSuiteService:
         sorted_params = sorted(all_params.items())
         
         # Step 3: Encode and format parameters
+        # CRITICAL: Use quote() not quote_plus() for OAuth 1.0a compliance (RFC 5849)
+        # OAuth requires percent-encoding with %20 for spaces, not + signs
         encoded_params = []
         for key, value in sorted_params:
-            # URL encode key and value using quote_plus
-            encoded_key = quote_plus(str(key))
-            encoded_value = quote_plus(str(value))
+            # URL encode key and value using quote with OAuth-safe characters
+            # Per RFC 5849: unreserved characters are ALPHA / DIGIT / "-" / "." / "_" / "~"
+            encoded_key = quote(str(key), safe='~-._')
+            encoded_value = quote(str(value), safe='~-._')
             encoded_params.append(f"{encoded_key}={encoded_value}")
         
         # Step 4: Join parameters with &
@@ -133,7 +136,8 @@ class NetSuiteService:
         
         # Step 5: Create signature base string
         # Format: METHOD&URL&PARAMETERS
-        signature_base = f"{method.upper()}&{quote_plus(url)}&{quote_plus(param_string)}"
+        # Use quote() here too for OAuth compliance
+        signature_base = f"{method.upper()}&{quote(url, safe='')}&{quote(param_string, safe='')}"
         
         # Log signature base for debugging
         logger.debug(f"Signature base string: {signature_base}")
@@ -208,14 +212,15 @@ class NetSuiteService:
         for key in sorted(oauth_params.keys()):
             value = oauth_params[key]
             # URL encode all values, including the signature
-            # The signature is base64 but still needs to be URL encoded for the header
-            encoded_value = quote_plus(str(value))
+            # Use quote() not quote_plus() for OAuth 1.0a compliance
+            encoded_value = quote(str(value), safe='~-._')
             auth_parts.append(f'{key}="{encoded_value}"')
         
         # Join all parts with comma and space
         auth_header = 'OAuth ' + ', '.join(auth_parts)
         
-        logger.debug(f"Generated Authorization header: {auth_header[:100]}...")  # Log first 100 chars
+        # SECURITY: Don't log Authorization header to prevent credential leakage
+        # logger.debug(f"Generated Authorization header: [REDACTED]")
         return auth_header
     
     def _log_sync_to_bigquery(self, entity_type: str, entity_id: str, action: str, 
@@ -595,6 +600,24 @@ class NetSuiteService:
                     'data': result
                 }
             
+            # If creation failed, check if it's because vendor already exists
+            logger.warning(f"Creation failed for {vendor_data.get('name')}. Checking if it already exists...")
+            
+            # Search for the vendor by name to get the existing ID
+            existing_vendors = self.search_vendors(name=vendor_data.get('name'))
+            
+            if existing_vendors:
+                existing_id = existing_vendors[0].get('id')
+                logger.info(f"✅ Found existing vendor in NetSuite: {existing_id}")
+                
+                # Return success with the EXISTING ID so the invoice can proceed
+                return {
+                    'success': True,
+                    'netsuite_id': existing_id,
+                    'action': 'found_existing',
+                    'data': existing_vendors[0]
+                }
+            
             return {
                 'success': False,
                 'error': f"Failed to create vendor: {vendor_data.get('name')}"
@@ -924,17 +947,17 @@ class NetSuiteService:
             else:
                 # Create new vendor
                 result = self.create_vendor(vendor_data)
-                if result:
+                if result and result.get('success'):
                     return {
                         'success': True,
-                        'action': 'created',
-                        'netsuite_id': result.get('id'),
-                        'vendor_data': result
+                        'action': result.get('action', 'created'),
+                        'netsuite_id': result.get('netsuite_id'),
+                        'vendor_data': result.get('data', result)
                     }
                 else:
                     return {
                         'success': False,
-                        'error': 'Failed to create vendor in NetSuite',
+                        'error': result.get('error', 'Failed to create vendor in NetSuite'),
                         'netsuite_id': None
                     }
                     
