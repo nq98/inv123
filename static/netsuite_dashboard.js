@@ -71,6 +71,29 @@ let dashboardState = {
     activeTab: 'vendors'
 };
 
+// Custom confirmation modal variables
+let confirmationResolver = null;
+
+// Custom confirmation modal functions
+function showConfirmModal(title, message, confirmText = 'Confirm') {
+    return new Promise((resolve) => {
+        confirmationResolver = resolve;
+        
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-message').textContent = message;
+        document.getElementById('modal-confirm-btn').textContent = confirmText;
+        document.getElementById('confirmation-modal').style.display = 'flex';
+    });
+}
+
+function closeConfirmModal(confirmed) {
+    document.getElementById('confirmation-modal').style.display = 'none';
+    if (confirmationResolver) {
+        confirmationResolver(confirmed);
+        confirmationResolver = null;
+    }
+}
+
 // Initialize dashboard on load
 document.addEventListener('DOMContentLoaded', () => {
     console.log('NetSuite Dashboard initializing...');
@@ -99,7 +122,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up event listeners
     setupEventListeners();
     setupTabListeners();
+    
+    // Set up modal keyboard support
+    setupModalKeyboardSupport();
 });
+
+// Set up keyboard support for the modal
+function setupModalKeyboardSupport() {
+    // Add ESC key to close modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('confirmation-modal');
+            if (modal && modal.style.display !== 'none') {
+                closeConfirmModal(false);
+            }
+        }
+    });
+    
+    // Close modal when clicking outside
+    const modal = document.getElementById('confirmation-modal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeConfirmModal(false);
+            }
+        });
+    }
+}
 
 // Set up tab switching listeners
 function setupTabListeners() {
@@ -1055,7 +1104,14 @@ function formatTimestamp(timestamp) {
 async function createInNetSuite(type, id) {
     const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
     
-    if (!confirm(`Are you sure you want to CREATE a NEW ${type} in NetSuite? This will create a new record even if one already exists.`)) {
+    // Use custom modal instead of browser confirm
+    const confirmed = await showConfirmModal(
+        `Create New ${typeCapitalized}`,
+        `Are you sure you want to create a NEW ${type} in NetSuite? This will create a new record even if one already exists.`,
+        'Create New'
+    );
+    
+    if (!confirmed) {
         return;
     }
     
@@ -1092,7 +1148,14 @@ async function createInNetSuite(type, id) {
 async function updateInNetSuite(type, id) {
     const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
     
-    if (!confirm(`Are you sure you want to UPDATE the existing ${type} in NetSuite? This will search for and update the existing record.`)) {
+    // Use custom modal instead of browser confirm
+    const confirmed = await showConfirmModal(
+        `Update ${typeCapitalized}`,
+        `Are you sure you want to update the existing ${type} in NetSuite? This will search for an existing record and update it.`,
+        'Update'
+    );
+    
+    if (!confirmed) {
         return;
     }
     
@@ -1151,7 +1214,15 @@ async function bulkSyncSelected(type) {
     const actionText = action === 'create' ? 'CREATE NEW' : 'UPDATE EXISTING';
     const confirmMessage = `Are you sure you want to ${actionText} ${selectedIds.length} ${type} in NetSuite?`;
     
-    if (!confirm(confirmMessage)) {
+    // Use custom modal instead of browser confirm
+    const modalTitle = `Bulk ${action === 'create' ? 'Create' : 'Update'} ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+    const confirmed = await showConfirmModal(
+        modalTitle,
+        confirmMessage,
+        action === 'create' ? 'Create All' : 'Update All'
+    );
+    
+    if (!confirmed) {
         return;
     }
     
