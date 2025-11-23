@@ -3014,17 +3014,16 @@ def create_invoice_in_netsuite(invoice_id):
                 'vendor_id': vendor_id
             }), 400
         
-        # Prepare invoice data for NetSuite with vendor ID
+        # Prepare invoice data for NetSuite with vendor ID - MATCHING EXPECTED FIELD NAMES
         invoice_data = {
             'vendor_name': invoice.get('vendor_name', ''),
-            'vendor_netsuite_id': netsuite_vendor_id,  # ADD THIS CRITICAL FIELD
-            'invoice_number': invoice.get('invoice_number', ''),
-            'invoice_date': invoice.get('invoice_date', ''),
-            'due_date': invoice.get('due_date', ''),
+            'vendor_netsuite_id': netsuite_vendor_id,  # CRITICAL FIELD - properly set now
+            'externalId': f"{invoice_id}_created_{int(datetime.now().timestamp())}",
+            'tranId': invoice.get('invoice_number', ''),  # Maps to tranId
+            'tranDate': invoice.get('invoice_date', ''),  # Maps to trandate (lowercase in service)
+            'amount': invoice.get('total_amount', 0),  # Maps to amount
+            'memo': f"Invoice {invoice.get('invoice_number', '')} from {invoice.get('vendor_name', '')}",
             'currency': invoice.get('currency', 'USD'),
-            'total_amount': invoice.get('total_amount', 0),
-            'line_items': invoice.get('line_items', []),
-            'external_id': f"{invoice_id}_created_{int(datetime.now().timestamp())}",
             'force_create': True
         }
         
@@ -3144,17 +3143,16 @@ def update_invoice_in_netsuite(invoice_id):
                 'vendor_id': vendor_id
             }), 400
         
-        # Prepare invoice data for update with vendor ID
+        # Prepare invoice data for update with vendor ID - MATCHING EXPECTED FIELD NAMES
         invoice_data = {
             'vendor_name': invoice.get('vendor_name', ''),
-            'vendor_netsuite_id': netsuite_vendor_id,  # ADD THIS CRITICAL FIELD
-            'invoice_number': invoice.get('invoice_number', ''),
-            'invoice_date': invoice.get('invoice_date', ''),
-            'due_date': invoice.get('due_date', ''),
-            'currency': invoice.get('currency', 'USD'),
-            'total_amount': invoice.get('total_amount', 0),
-            'line_items': invoice.get('line_items', []),
-            'external_id': invoice_id
+            'vendor_netsuite_id': netsuite_vendor_id,  # CRITICAL FIELD - properly set now
+            'externalId': invoice_id,
+            'tranId': invoice.get('invoice_number', ''),  # Maps to tranId
+            'tranDate': invoice.get('invoice_date', ''),  # Maps to trandate (lowercase in service)
+            'amount': invoice.get('total_amount', 0),  # Maps to amount
+            'memo': f"Invoice {invoice.get('invoice_number', '')} from {invoice.get('vendor_name', '')}",
+            'currency': invoice.get('currency', 'USD')
         }
         
         # Update in NetSuite
