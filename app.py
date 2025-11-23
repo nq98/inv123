@@ -2972,7 +2972,8 @@ def create_invoice_in_netsuite(invoice_id):
         # Create in NetSuite
         result = netsuite.create_invoice(invoice_data)
         
-        if result.get('success'):
+        # Handle None result safely
+        if result and result.get('success'):
             # Update BigQuery with NetSuite Bill ID
             netsuite_bill_id = result.get('bill_id')
             if netsuite_bill_id:
@@ -2987,10 +2988,13 @@ def create_invoice_in_netsuite(invoice_id):
                 'invoice_number': invoice.get('invoice_number')
             })
         else:
+            # Handle None result or error
+            error_msg = result.get('error') if result else "NetSuite service returned None (Check logs for details)"
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Failed to create invoice in NetSuite'),
-                'invoice_id': invoice_id
+                'error': error_msg,
+                'invoice_id': invoice_id,
+                'details': 'Check server logs for more information about the NetSuite API call'
             }), 500
             
     except Exception as e:
@@ -3038,7 +3042,8 @@ def update_invoice_in_netsuite(invoice_id):
         # Update in NetSuite
         result = netsuite.update_invoice(invoice_data)
         
-        if result.get('success'):
+        # Handle None result safely
+        if result and result.get('success'):
             # Update BigQuery with NetSuite Bill ID
             netsuite_bill_id = result.get('bill_id')
             if netsuite_bill_id:
@@ -3053,10 +3058,13 @@ def update_invoice_in_netsuite(invoice_id):
                 'invoice_number': invoice.get('invoice_number')
             })
         else:
+            # Handle None result or error
+            error_msg = result.get('error') if result else "NetSuite service returned None (Check logs for details)"
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Failed to update invoice in NetSuite'),
-                'invoice_id': invoice_id
+                'error': error_msg,
+                'invoice_id': invoice_id,
+                'details': 'Check server logs for more information about the NetSuite API call'
             }), 500
             
     except Exception as e:
