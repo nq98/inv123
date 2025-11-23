@@ -364,11 +364,23 @@ class InvoiceProcessor:
         from google.cloud import storage
         from google.oauth2 import service_account
         import os
+        import json
         
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                config.VERTEX_RUNNER_SA_PATH
-            )
+            credentials = None
+            
+            sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+            if sa_json:
+                try:
+                    sa_info = json.loads(sa_json)
+                    credentials = service_account.Credentials.from_service_account_info(sa_info)
+                except json.JSONDecodeError:
+                    print("Warning: Failed to parse GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON")
+            elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+                credentials = service_account.Credentials.from_service_account_file(
+                    config.VERTEX_RUNNER_SA_PATH
+                )
+            
             storage_client = storage.Client(
                 project=config.GOOGLE_CLOUD_PROJECT_ID,
                 credentials=credentials

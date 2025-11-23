@@ -9,14 +9,26 @@ class BigQueryService:
     
     def __init__(self):
         # Use vertex-runner service account (has BigQuery access)
-        credentials_path = config.VERTEX_RUNNER_SA_PATH
-        if not credentials_path or not os.path.exists(credentials_path):
-            raise ValueError(f"BigQuery service account credentials not found at {credentials_path}")
+        credentials = None
         
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
+        sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+        if sa_json:
+            try:
+                sa_info = json.loads(sa_json)
+                credentials = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+            except json.JSONDecodeError:
+                print("Warning: Failed to parse GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON")
+        elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+            credentials = service_account.Credentials.from_service_account_file(
+                config.VERTEX_RUNNER_SA_PATH,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+        
+        if not credentials:
+            raise ValueError("BigQuery service account credentials not found in environment or file")
         
         self.client = bigquery.Client(
             credentials=credentials,
