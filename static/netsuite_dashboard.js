@@ -3,6 +3,46 @@
  * Enhanced with vendors/invoices tabs, selection management, and bulk sync
  */
 
+// Toast Notification Function
+function showToast(message, type = 'info', duration = 5000) {
+    const container = document.getElementById('toast-container');
+    
+    const icons = {
+        success: '✅',
+        error: '❌',
+        warning: '⚠️',
+        info: 'ℹ️'
+    };
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+        <span class="toast-icon">${icons[type]}</span>
+        <span class="toast-message">${message}</span>
+        <span class="toast-close" onclick="this.parentElement.remove()">✕</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-remove after duration
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease-out';
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// Helper function for button loading states
+function setButtonLoading(button, loading) {
+    if (loading) {
+        button.disabled = true;
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '<span class="spinner">⟳</span> Syncing...';
+    } else {
+        button.disabled = false;
+        button.innerHTML = button.dataset.originalText || 'Sync';
+    }
+}
+
 // Dashboard state management
 let dashboardState = {
     connected: false,
@@ -744,54 +784,24 @@ function formatDate(dateString) {
 
 // Show success message
 function showSuccess(message) {
-    showNotification(message, 'success');
+    showToast(message, 'success');
 }
 
 // Show error message
 function showError(message) {
-    showNotification(message, 'error');
+    showToast(message, 'error', 8000);
 }
 
-// Show notification
+// Show notification - wrapper for showToast
 function showNotification(message, type) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 16px 24px;
-        border-radius: 8px;
-        z-index: 10000;
-        max-width: 400px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        animation: slideIn 0.3s ease;
-    `;
+    // Map the type to our toast types
+    const toastType = type === 'error' ? 'error' :
+                     type === 'success' ? 'success' :
+                     type === 'warning' ? 'warning' : 'info';
     
-    if (type === 'success') {
-        notification.style.background = '#d4edda';
-        notification.style.color = '#155724';
-        notification.style.border = '1px solid #c3e6cb';
-        notification.innerHTML = `✅ ${message}`;
-    } else if (type === 'error') {
-        notification.style.background = '#f8d7da';
-        notification.style.color = '#721c24';
-        notification.style.border = '1px solid #f5c6cb';
-        notification.innerHTML = `❌ ${message}`;
-    } else {
-        notification.style.background = '#fff3cd';
-        notification.style.color = '#856404';
-        notification.style.border = '1px solid #ffeaa7';
-        notification.innerHTML = `⚠️ ${message}`;
-    }
-    
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => notification.remove(), 300);
-    }, 5000);
+    // Call the showToast function
+    const duration = type === 'error' ? 8000 : 5000;
+    showToast(message, toastType, duration);
 }
 
 // Add CSS animations
@@ -1146,7 +1156,11 @@ async function bulkSyncSelected(type) {
     }
     
     try {
-        showNotification(`Processing bulk ${action} for ${selectedIds.length} ${type}...`, 'info');
+        // Show initial progress notification
+        showToast(`Processing ${selectedIds.length} ${type}...`, 'info');
+        
+        // Simulate progress tracking (will be updated with real progress in future)
+        let completed = 0;
         
         const response = await fetch(`/api/netsuite/${type}/bulk/${action}`, {
             method: 'POST',
@@ -1186,26 +1200,9 @@ async function bulkSyncSelected(type) {
     }
 }
 
-// Helper function to show notifications
-function showNotification(message, type = 'info') {
-    const notificationArea = document.getElementById('notification-area');
-    if (notificationArea) {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-        notificationArea.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.remove();
-        }, 5000);
-    } else {
-        console.log(`[${type.toUpperCase()}] ${message}`);
-    }
-}
-
 // Helper function to show warning messages
 function showWarning(message) {
-    showNotification(message, 'warning');
+    showToast(message, 'warning');
 }
 
 // Cleanup on page unload
