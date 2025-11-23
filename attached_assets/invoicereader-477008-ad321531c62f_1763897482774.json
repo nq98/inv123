@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "invoicereader-477008",
+  "private_key_id": "ad321531c62ffecb385a00d3db2e21a5d3f52956",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCqhAXyvWT3v7DM\nGW4ka5OQZTBGJiOaP2L++mfUXAobKPQayNzIutC1T9KRlkLfG2UyC3Y4dbHuvsC7\n7FpXI6cTGUfHb9xrh2O0Zs7oZJIabSWuMD/TP700BfGjkDk72HaaJUdhq2SA1At0\n3YgYYoqpn1emQusu5CHhiSSJIruvJGznIy2nqj3u2XbmqR2TWMk8S2zaS0HUdGTd\nodF393W7R07CaJxQ9wIFm2U07VXB0t5Yg6b57cMtXLUE9AtXcFVDF3xtad4NLqTc\nDIERNOWL7Kz2I4L+03y8tPfMKgTWPf2H51hIlgHP6rDd2o0SEWU4XSpWq6CNsiuW\nZgKjtKV7AgMBAAECggEAHyR8t6BKrAsJHcW5PZKeQV2RywYVM4tHJ92REBJ9UAeT\nSb8Mv+aKzsqU4T0p2ni060Z3oYkxZbLWHZxlxYt/7LeNygmOnt774Utzl7MikgwE\nOUObrJf0FOfPAboKEfmPc8jCOD7m3LadnwsE27tHqwIsrnODY62L2JbFIvzCfZKj\nUCKyXqzly10vgo5/inxcP8fwCowX8XHYvR06euccsJzFUN5MGGgqNz+NgdpNT7qj\nnLlSG0RzAv5ZvCTjm5ttV/Utvo2ggr8YMR9yIcRYrY/YYuegdboSNSHyQmkAHlcK\nW3fE5Ab8V9LGyuAaUFx0QpjYrenX7ukyePs8vGOuyQKBgQDnWmxYrKfRUVYzUJud\nOk5a/ixWuorI1GYl2XTDNXC0rSLQG7zwKE5ICdktzCMtpVRTXS7kFzyExlu/JX4l\nrm7npXk4RT8xkVqeuHBUK0z2jSuLSgsXi5kIl33dtha7EvQnWCH4muY09JQ6fmrI\nS6bI4weActb80Sz+bb2a+2G2WQKBgQC8rmkIuxNwV4LhuLjWCbdFL5sbVQ7Larh3\nhgAAIWfTVkCDnueJlMzmsj5QJW7nD1pF09yOLHUS/0w6w0TWy7pN8WdvP4ZZynfw\nyh76ITxlDqJgi/XJBj8mUmd2N3+uK7icKV+VAJlIIPv1OE9feRgdoaz70hbLhdQ/\ny1w3oPUn8wKBgAobUiZhjIdBZWGigNnShT/GYMt9JLj3Rmsa39XzTLQn6CBtRci8\nCgdtnrY4d8TztwZZSMYgGb23KKTmD2e4AhJOkUgbBlK1Bd9vMUEMDzWqHx/boTZr\nG8lbTN1VqhKMFmxtljZVFf90O9F+Wk3buDKIcHh1C91JigynYKQXnUIpAoGAOQb9\n+AWS+oF4rYCHXSnSmraoyroKnrDC0F1P4ro2B0oqdZ2xnYO76n41F0Q5IN0jC7fd\nEZueRv+iqqAaTlGFHcm42Yb5tGndlomAk1k4R9MEgOnMf9XDgHGnk7Nyg9HzGj/n\nA8IKkiJmBNfgJZsUDuCux+3XtevdGur8FFQxxMECgYEAt0Ketq5gj7VD4+f6vmfn\nUHQu0kPDgR7x4bSgDQXsHhliC9gaNPlYCb5GzRDFQ/T2SMifdzJSC5L2Xf9/7GQe\njWbrWRWe/jrvlNdGLecT5adx32hBR72U3x3Bl3PLdT4V/SVo8B8kjymDjcEPVu/S\nlCMgslqXcwhrai+iokaYLDI=\n-----END PRIVATE KEY-----\n",
+  "client_email": "vertex-runner@invoicereader-477008.iam.gserviceaccount.com",
+  "client_id": "103184256003410884250",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/vertex-runner%40invoicereader-477008.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
