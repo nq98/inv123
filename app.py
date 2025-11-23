@@ -1041,6 +1041,138 @@ def get_invoice_matches():
             'limit': limit
         }), 500
 
+@app.route('/api/invoices/<invoice_id>/download', methods=['GET'])
+def get_invoice_download_url(invoice_id):
+    """
+    Get a signed URL to download/view the original invoice file from GCS
+    
+    Args:
+        invoice_id: Invoice ID from BigQuery
+    
+    Query parameters:
+        - expiration: URL expiration time in seconds (default 3600, max 86400)
+    
+    Response:
+    {
+        "success": true,
+        "invoice_id": "INV-2025-001",
+        "download_url": "https://storage.googleapis.com/...",
+        "file_type": "pdf",
+        "file_size": 1024567,
+        "expires_in": 3600
+    }
+    """
+    try:
+        from google.cloud import storage
+        from google.oauth2 import service_account
+        import datetime
+        import os
+        import json
+        
+        # Get expiration parameter (default 1 hour, max 24 hours)
+        expiration_seconds = min(request.args.get('expiration', 3600, type=int), 86400)
+        
+        # Fetch invoice data from BigQuery to get GCS URI
+        bigquery_service = get_bigquery_service()
+        
+        query = f"""
+        SELECT invoice_id, gcs_uri, file_type, file_size, vendor_name
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        WHERE invoice_id = @invoice_id
+        LIMIT 1
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+            ]
+        )
+        
+        query_job = bigquery_service.client.query(query, job_config=job_config)
+        results = list(query_job.result())
+        
+        if not results:
+            return jsonify({
+                'success': False,
+                'error': f'Invoice {invoice_id} not found'
+            }), 404
+        
+        row = results[0]
+        gcs_uri = row.gcs_uri
+        file_type = row.file_type
+        file_size = row.file_size
+        vendor_name = row.vendor_name
+        
+        if not gcs_uri:
+            return jsonify({
+                'success': False,
+                'error': 'No file stored for this invoice'
+            }), 404
+        
+        # Parse GCS URI (format: gs://bucket/path/to/file)
+        if not gcs_uri.startswith('gs://'):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid GCS URI format'
+            }), 500
+        
+        uri_parts = gcs_uri[5:].split('/', 1)
+        bucket_name = uri_parts[0]
+        blob_name = uri_parts[1] if len(uri_parts) > 1 else ''
+        
+        # Initialize GCS client with credentials
+        credentials = None
+        sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+        if sa_json:
+            try:
+                sa_info = json.loads(sa_json)
+                credentials = service_account.Credentials.from_service_account_info(sa_info)
+            except json.JSONDecodeError:
+                print("Warning: Failed to parse GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON")
+        elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+            credentials = service_account.Credentials.from_service_account_file(
+                config.VERTEX_RUNNER_SA_PATH
+            )
+        
+        storage_client = storage.Client(
+            project=config.GOOGLE_CLOUD_PROJECT_ID,
+            credentials=credentials
+        )
+        
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        # Check if blob exists
+        if not blob.exists():
+            return jsonify({
+                'success': False,
+                'error': 'File not found in storage'
+            }), 404
+        
+        # Generate signed URL
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(seconds=expiration_seconds),
+            method="GET"
+        )
+        
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_id,
+            'vendor_name': vendor_name,
+            'download_url': signed_url,
+            'file_type': file_type,
+            'file_size': file_size,
+            'expires_in': expiration_seconds
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error generating download URL: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/ap-automation/gmail/auth', methods=['GET'])
 def gmail_auth():
     """Initiate Gmail OAuth flow"""
