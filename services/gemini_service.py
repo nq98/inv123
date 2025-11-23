@@ -29,11 +29,8 @@ class GeminiService:
                         'base_url': replit_base_url
                     }
                 )
-                print("✅ Replit Gemini fallback initialized (rate limit protection enabled)")
             except Exception as e:
-                print(f"⚠️ Failed to initialize Replit Gemini fallback: {e}")
-        else:
-            print("⚠️ Replit Gemini fallback not configured (no rate limit protection)")
+                pass
         
         self.system_instruction = """You are the **Omni-Global Financial AI**.
 You possess complete knowledge of every accounting standard, currency, and document format on Earth.

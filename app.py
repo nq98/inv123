@@ -712,50 +712,53 @@ def gmail_import_stream():
     Stream real-time progress of Gmail invoice import using Server-Sent Events
     """
     def generate():
+        def send_event(event_type, data_dict):
+            return f"event: {event_type}\ndata: {json.dumps(data_dict)}\n\n"
+        
         try:
             session_token = session.get('gmail_session_token')
             
             if not session_token:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail not connected'})}\n\n"
+                yield send_event('error', {'message': 'Gmail not connected'})
                 return
             
             token_storage = get_token_storage()
             credentials = token_storage.get_credentials(session_token)
             
             if not credentials:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail session expired'})}\n\n"
+                yield send_event('error', {'message': 'Gmail session expired'})
                 return
             
             days = request.args.get('days', 7, type=int)
             
             time_label = f'{days} days' if days < 9999 else 'all time'
             
-            yield f"data: {json.dumps({'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'⏰ Time range: Last {time_label}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Authenticating with Gmail API...'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})
+            yield send_event('progress', {'type': 'status', 'message': f'⏰ Time range: Last {time_label}'})
+            yield send_event('progress', {'type': 'status', 'message': 'Authenticating with Gmail API...'})
             
             gmail_service = get_gmail_service()
             service = gmail_service.build_service(credentials)
             
             email = credentials.get('email', 'Gmail account')
-            yield f"data: {json.dumps({'type': 'success', 'message': f'Connected to {email}'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': f'Connected to {email}'})
             
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
-            yield f"data: {json.dumps({'type': 'status', 'message': stage1_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': 'Casting wide net: English, Hebrew, French, German, Spanish keywords...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': 'Excluding: newsletters, webinars, invitations...'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': stage1_msg})
+            yield send_event('progress', {'type': 'status', 'message': 'Casting wide net: English, Hebrew, French, German, Spanish keywords...'})
+            yield send_event('progress', {'type': 'status', 'message': 'Excluding: newsletters, webinars, invitations...'})
             
             messages = gmail_service.search_invoice_emails(service, 500, days)  # Get up to 500 for filtering
             
             total_found = len(messages)
-            yield f"data: {json.dumps({'type': 'success', 'message': f'📧 Found {total_found} emails matching broad financial patterns'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': f'📧 Found {total_found} emails matching broad financial patterns'})
             
             # Stage 2: Elite Gatekeeper AI Filter
             stage2_msg = '\n🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)'
-            yield f"data: {json.dumps({'type': 'status', 'message': stage2_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'AI analyzing {total_found} emails for semantic context...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': 'Filtering: Marketing spam, newsletters, logistics, false positives...'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': stage2_msg})
+            yield send_event('progress', {'type': 'status', 'message': f'AI analyzing {total_found} emails for semantic context...'})
+            yield send_event('progress', {'type': 'status', 'message': 'Filtering: Marketing spam, newsletters, logistics, false positives...'})
             
             processor = get_processor()
             gemini_service = processor.gemini_service
@@ -779,15 +782,15 @@ def gmail_import_stream():
                     if is_invoice and confidence >= 0.3:
                         classified_invoices.append((message, metadata, confidence))
                         invoice_msg = f'  ✓ [{idx}/{total_found}] KEEP: "{subject[:50]}..." ({reasoning[:80]})'
-                        yield f"data: {json.dumps({'type': 'success', 'message': invoice_msg})}\n\n"
+                        yield send_event('progress', {'type': 'status', 'message': invoice_msg})
                     else:
                         non_invoices.append((subject, reasoning))
                         skip_msg = f'  ✗ [{idx}/{total_found}] KILL: "{subject[:50]}..." ({reasoning[:80]})'
-                        yield f"data: {json.dumps({'type': 'warning', 'message': skip_msg})}\n\n"
+                        yield send_event('progress', {'type': 'status', 'message': skip_msg})
                     
                 except Exception as e:
                     non_invoices.append((f'Error: {str(e)}', None))
-                    yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Error classifying email: {str(e)[:60]}'})}\n\n"
+                    yield send_event('progress', {'type': 'status', 'message': f'  ⚠️ Error classifying email: {str(e)[:60]}'})
             
             invoice_count = len(classified_invoices)
             non_invoice_count = len(non_invoices)
@@ -807,19 +810,19 @@ def gmail_import_stream():
                 'invoicesFound': 0,  # Will be updated after extraction
                 'invoicesPercent': 0.0
             }
-            yield f"data: {json.dumps({'type': 'funnel_stats', 'stats': funnel_stats})}\n\n"
+            yield send_event('funnel_stats', funnel_stats)
             
             filter_results_msg = '\n📊 FILTERING RESULTS:'
-            yield f"data: {json.dumps({'type': 'success', 'message': filter_results_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Total emails scanned: {total_found}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Relevant (potential invoices): {total_found}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'success', 'message': f'  • Clean invoices/receipts: {invoice_count} ✓'})}\n\n"
-            yield f"data: {json.dumps({'type': 'warning', 'message': f'  • Filtered out (not invoices): {non_invoice_count}'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': filter_results_msg})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Total emails scanned: {total_found}'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Relevant (potential invoices): {total_found}'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Clean invoices/receipts: {invoice_count} ✓'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Filtered out (not invoices): {non_invoice_count}'})
             
             # Stage 3: Extract invoice data through 3-layer AI
             stage3_msg = f'\n🤖 STAGE 3: Deep AI Extraction ({invoice_count} invoices)'
-            yield f"data: {json.dumps({'type': 'status', 'message': stage3_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': '3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic'})}\n\n"
+            yield send_event('progress', {'type': 'status', 'message': stage3_msg})
+            yield send_event('progress', {'type': 'info', 'message': '3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic'})
             
             imported_invoices = []
             extraction_failures = []
@@ -830,8 +833,8 @@ def gmail_import_stream():
                     sender = metadata.get('from', 'Unknown')
                     
                     processing_msg = f'\n[{idx}/{invoice_count}] Processing: "{subject[:50]}..."'
-                    yield f"data: {json.dumps({'type': 'analyzing', 'message': processing_msg})}\n\n"
-                    yield f"data: {json.dumps({'type': 'info', 'message': f'  From: {sender}'})}\n\n"
+                    yield send_event('progress', {'type': 'analyzing', 'message': processing_msg})
+                    yield send_event('progress', {'type': 'info', 'message': f'  From: {sender}'})
                     
                     # Extract attachments
                     attachments = gmail_service.extract_attachments(service, message)
@@ -840,13 +843,13 @@ def gmail_import_stream():
                     links = gmail_service.extract_links_from_body(message)
                     
                     if not attachments and not links:
-                        yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ No PDFs or download links found'})}\n\n"
+                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No PDFs or download links found'})
                         extraction_failures.append(subject)
                         continue
                     
                     # Process attachments
                     for filename, file_data in attachments:
-                        yield f"data: {json.dumps({'type': 'status', 'message': f'  📎 Attachment: {filename}'})}\n\n"
+                        yield send_event('progress', {'type': 'status', 'message': f'  📎 Attachment: {filename}'})
                         
                         secure_name = secure_filename(filename)
                         filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
@@ -854,16 +857,16 @@ def gmail_import_stream():
                         with open(filepath, 'wb') as f:
                             f.write(file_data)
                         
-                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})}\n\n"
-                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})}\n\n"
-                        yield f"data: {json.dumps({'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})}\n\n"
-                        yield f"data: {json.dumps({'type': 'keepalive', 'message': '⏳ Processing invoice (this may take 30-60 seconds)...'})}\n\n"
+                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
+                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
+                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                        yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing invoice (this may take 30-60 seconds)...'})
                         
                         try:
                             invoice_result = processor.process_local_file(filepath, 'application/pdf')
                         except Exception as proc_error:
                             os.remove(filepath)
-                            yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Processing failed: {str(proc_error)[:100]}'})}\n\n"
+                            yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(proc_error)[:100]}'})
                             extraction_failures.append(subject)
                             continue
                         
@@ -879,7 +882,7 @@ def gmail_import_stream():
                         invoice_num = validated.get('invoiceNumber', 'N/A')
                         
                         if vendor and vendor != 'Unknown' and total and total > 0:
-                            yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})}\n\n"
+                            yield send_event('progress', {'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                             
                             imported_invoices.append({
                                 'subject': subject,
@@ -893,18 +896,18 @@ def gmail_import_stream():
                                 'full_data': validated
                             })
                         else:
-                            yield f"data: {json.dumps({'type': 'warning', 'message': f'  ⚠️ Extraction incomplete: Vendor={vendor}, Total={total}'})}\n\n"
+                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Extraction incomplete: Vendor={vendor}, Total={total}'})
                             extraction_failures.append(subject)
                     
                     # Process links
                     for link_url in links[:2]:  # Limit to first 2 links per email
-                        yield f"data: {json.dumps({'type': 'status', 'message': f'  🔗 Downloading from link...'})}\n\n"
+                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Downloading from link...'})
                         
                         pdf_result = gmail_service.download_pdf_from_link(link_url)
                         
                         if pdf_result:
                             filename, file_data = pdf_result
-                            yield f"data: {json.dumps({'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})}\n\n"
+                            yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
                             
                             secure_name = secure_filename(filename)
                             filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
@@ -912,14 +915,14 @@ def gmail_import_stream():
                             with open(filepath, 'wb') as f:
                                 f.write(file_data)
                             
-                            yield f"data: {json.dumps({'type': 'status', 'message': '    → Processing through 3-layer AI...'})}\n\n"
-                            yield f"data: {json.dumps({'type': 'keepalive', 'message': '⏳ Processing downloaded file...'})}\n\n"
+                            yield send_event('progress', {'type': 'status', 'message': '    → Processing through 3-layer AI...'})
+                            yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing downloaded file...'})
                             
                             try:
                                 invoice_result = processor.process_local_file(filepath, 'application/pdf')
                             except Exception as link_proc_error:
                                 os.remove(filepath)
-                                yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Link processing failed: {str(link_proc_error)[:100]}'})}\n\n"
+                                yield send_event('progress', {'type': 'error', 'message': f'  ❌ Link processing failed: {str(link_proc_error)[:100]}'})
                                 continue
                             
                             os.remove(filepath)
@@ -932,7 +935,7 @@ def gmail_import_stream():
                             currency = validated.get('currency', 'USD')
                             
                             if vendor and vendor != 'Unknown' and total and total > 0:
-                                yield f"data: {json.dumps({'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | Invoice #{invoice_num} | {currency} {total}'})}\n\n"
+                                yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                 imported_invoices.append({
                                     'subject': subject,
                                     'sender': sender,
@@ -946,24 +949,24 @@ def gmail_import_stream():
                                 })
                     
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})}\n\n"
+                    yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
                     extraction_failures.append(subject)
             
             imported_count = len(imported_invoices)
             failed_extraction = len(extraction_failures)
             
             complete_msg = '\n✅ Import Complete!'
-            yield f"data: {json.dumps({'type': 'success', 'message': complete_msg})}\n\n"
+            yield send_event('progress', {'type': 'success', 'message': complete_msg})
             final_results_msg = '\n📈 FINAL RESULTS:'
-            yield f"data: {json.dumps({'type': 'info', 'message': final_results_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Emails scanned: {total_found}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'info', 'message': f'  • Clean invoices found: {invoice_count}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'success', 'message': f'  • Successfully extracted: {imported_count} ✓'})}\n\n"
-            yield f"data: {json.dumps({'type': 'warning', 'message': f'  • Extraction failed: {failed_extraction}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'complete', 'imported': imported_count, 'skipped': non_invoice_count, 'total': total_found, 'invoices': imported_invoices})}\n\n"
+            yield send_event('progress', {'type': 'info', 'message': final_results_msg})
+            yield send_event('progress', {'type': 'info', 'message': f'  • Emails scanned: {total_found}'})
+            yield send_event('progress', {'type': 'info', 'message': f'  • Clean invoices found: {invoice_count}'})
+            yield send_event('progress', {'type': 'success', 'message': f'  • Successfully extracted: {imported_count} ✓'})
+            yield send_event('progress', {'type': 'warning', 'message': f'  • Extraction failed: {failed_extraction}'})
+            yield send_event('complete', {'imported': imported_count, 'skipped': non_invoice_count, 'total': total_found, 'invoices': imported_invoices})
             
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Import failed: {str(e)}'})}\n\n"
+            yield send_event('error', {'message': f'Import failed: {str(e)}'})
     
     response = Response(stream_with_context(generate()), mimetype='text/event-stream')
     response.headers['Cache-Control'] = 'no-cache'
