@@ -920,6 +920,34 @@ function displayResults(data) {
         html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
     }
     
+    // Add Download Invoice Button
+    const invoiceId = validated.invoiceId || validated.invoiceNumber;
+    if (invoiceId) {
+        html += `
+            <div style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="color: white;">
+                        <div style="font-weight: bold; font-size: 16px; margin-bottom: 4px;">📄 Original Invoice File</div>
+                        <div style="font-size: 13px; opacity: 0.9;">Stored permanently in Google Cloud Storage</div>
+                    </div>
+                    <button 
+                        onclick="downloadInvoice('${escapeHtml(invoiceId)}')" 
+                        style="background: white; color: #667eea; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; transition: all 0.2s;"
+                        onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';"
+                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';"
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Invoice
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
     html += buildLayerStatusView(data.layers || {});
     
     const displayData = validated;
@@ -2479,3 +2507,62 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+/**
+ * Download invoice file from Google Cloud Storage
+ */
+async function downloadInvoice(invoiceId) {
+    try {
+        console.log(`📥 Downloading invoice: ${invoiceId}`);
+        
+        // Show loading indicator
+        const button = event.target.closest('button');
+        const originalHTML = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = `
+            <svg class="spinner" style="width: 18px; height: 18px; animation: spin 1s linear infinite;" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"></circle>
+                <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75"></path>
+            </svg>
+            Generating URL...
+        `;
+        
+        // Call the download API endpoint
+        const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/download`);
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to generate download URL');
+        }
+        
+        // Open the signed URL in a new tab
+        window.open(data.download_url, '_blank');
+        
+        // Show success message
+        button.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6L9 17l-5-5"></path>
+            </svg>
+            Downloaded!
+        `;
+        
+        // Reset button after 2 seconds
+        setTimeout(() => {
+            button.disabled = false;
+            button.innerHTML = originalHTML;
+        }, 2000);
+        
+        console.log(`✅ Download initiated for invoice: ${invoiceId}`);
+        
+    } catch (error) {
+        console.error('❌ Download error:', error);
+        
+        // Show error message
+        alert(`Failed to download invoice: ${error.message}`);
+        
+        // Reset button
+        const button = event.target.closest('button');
+        button.disabled = false;
+        button.innerHTML = originalHTML;
+    }
+}
