@@ -1179,7 +1179,7 @@ class BigQueryService:
         query = f"""
         SELECT 
             invoice_id,
-            invoice_id as number,  -- Using invoice_id as invoice number fallback
+            invoice_id as invoice_number,  -- Using invoice_id as invoice number fallback
             vendor_name,
             vendor_id,
             invoice_date,
