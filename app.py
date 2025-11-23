@@ -2767,6 +2767,246 @@ def sync_vendor_to_netsuite(vendor_id):
             'vendor_id': vendor_id
         }), 500
 
+# ===== NETSUITE DASHBOARD ENDPOINTS =====
+
+@app.route('/netsuite-dashboard')
+def netsuite_dashboard():
+    """Render NetSuite Integration Dashboard"""
+    return render_template('netsuite_dashboard.html')
+
+@app.route('/api/netsuite/status', methods=['GET'])
+def get_netsuite_status():
+    """
+    Get NetSuite connection status and configuration details
+    """
+    try:
+        netsuite = NetSuiteService()
+        bigquery_service = BigQueryService()
+        
+        # Test NetSuite connection
+        connection_test = netsuite.test_connection() if netsuite.enabled else {'connected': False, 'error': 'NetSuite not configured'}
+        
+        # Get recent activity count from BigQuery
+        recent_activities = bigquery_service.get_netsuite_sync_activities(limit=1)
+        
+        # Get statistics
+        stats = bigquery_service.get_netsuite_sync_statistics()
+        
+        return jsonify({
+            'success': True,
+            'connected': connection_test.get('connected', False),
+            'account_id': netsuite.account_id if netsuite.enabled else None,
+            'base_url': netsuite.base_url if netsuite.enabled else None,
+            'error': connection_test.get('error'),
+            'last_sync': stats.get('last_sync'),
+            'recent_activity_count': len(recent_activities),
+            'available_actions': [
+                'Sync Vendor to NetSuite',
+                'Sync Invoice to NetSuite',
+                'Test Connection',
+                'View Sync History',
+                'Bulk Sync Vendors',
+                'Bulk Sync Invoices'
+            ] if connection_test.get('connected') else []
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'connected': False
+        }), 500
+
+@app.route('/api/netsuite/activities', methods=['GET'])
+def get_netsuite_activities():
+    """
+    Get recent NetSuite sync activities from BigQuery
+    """
+    try:
+        bigquery_service = BigQueryService()
+        
+        # Get query parameters
+        limit = request.args.get('limit', 20, type=int)
+        entity_type = request.args.get('entity_type')  # Optional filter
+        
+        # Get activities from BigQuery
+        activities = bigquery_service.get_netsuite_sync_activities(
+            limit=limit,
+            entity_type=entity_type
+        )
+        
+        # Format activities for display
+        formatted_activities = []
+        for activity in activities:
+            formatted_activities.append({
+                'id': activity.get('id'),
+                'timestamp': activity.get('timestamp'),
+                'entity_type': activity.get('entity_type'),
+                'entity_id': activity.get('entity_id'),
+                'action': activity.get('action'),
+                'status': activity.get('status'),
+                'netsuite_id': activity.get('netsuite_id'),
+                'error_message': activity.get('error_message'),
+                'duration_ms': activity.get('duration_ms'),
+                'details': f"{activity.get('entity_type', 'Unknown')} - {activity.get('action', 'sync')}"
+            })
+        
+        return jsonify({
+            'success': True,
+            'activities': formatted_activities,
+            'count': len(formatted_activities)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'activities': []
+        }), 500
+
+@app.route('/api/netsuite/statistics', methods=['GET'])
+def get_netsuite_statistics():
+    """
+    Get NetSuite sync statistics from BigQuery
+    """
+    try:
+        bigquery_service = BigQueryService()
+        
+        # Get statistics from BigQuery
+        stats = bigquery_service.get_netsuite_sync_statistics()
+        
+        # Format for dashboard display
+        formatted_stats = {
+            'vendors': {
+                'total_synced': stats['vendors'].get('success', 0),
+                'failed': stats['vendors'].get('failed', 0),
+                'pending': stats['vendors'].get('pending', 0),
+                'avg_duration_ms': stats['vendors'].get('avg_duration_ms', 0)
+            },
+            'invoices': {
+                'total_synced': stats['invoices'].get('success', 0),
+                'failed': stats['invoices'].get('failed', 0),
+                'pending': stats['invoices'].get('pending', 0),
+                'avg_duration_ms': stats['invoices'].get('avg_duration_ms', 0)
+            },
+            'overall': {
+                'total_success': stats['total'].get('success', 0),
+                'total_failed': stats['total'].get('failed', 0),
+                'total_pending': stats['total'].get('pending', 0),
+                'success_rate': round(stats.get('success_rate', 0), 2),
+                'last_sync': stats.get('last_sync')
+            }
+        }
+        
+        return jsonify({
+            'success': True,
+            'statistics': formatted_stats
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'statistics': {}
+        }), 500
+
+@app.route('/api/netsuite/sync/bulk', methods=['POST'])
+def bulk_sync_to_netsuite():
+    """
+    Bulk sync pending vendors or invoices to NetSuite
+    """
+    try:
+        data = request.json
+        sync_type = data.get('type', 'vendors')  # 'vendors' or 'invoices'
+        limit = data.get('limit', 10)  # Max items to sync
+        
+        bigquery_service = BigQueryService()
+        netsuite = NetSuiteService()
+        
+        if not netsuite.enabled:
+            return jsonify({
+                'success': False,
+                'error': 'NetSuite service is not configured'
+            }), 400
+        
+        results = {
+            'success': True,
+            'synced_count': 0,
+            'failed_count': 0,
+            'synced_items': [],
+            'failed_items': [],
+            'type': sync_type
+        }
+        
+        if sync_type == 'vendors':
+            # Query vendors without NetSuite ID
+            query = f"""
+            SELECT vendor_id, global_name, emails, custom_attributes
+            FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{bigquery_service.dataset_id}.global_vendors`
+            WHERE netsuite_internal_id IS NULL
+            LIMIT @limit
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                ]
+            )
+            
+            query_results = bigquery_service.client.query(query, job_config=job_config).result()
+            
+            for row in query_results:
+                vendor_data = {
+                    'name': row.global_name,
+                    'external_id': row.vendor_id,
+                    'email': row.emails[0] if row.emails else None
+                }
+                
+                # Sync to NetSuite
+                sync_result = netsuite.sync_vendor_to_netsuite(vendor_data)
+                
+                if sync_result.get('success'):
+                    results['synced_count'] += 1
+                    results['synced_items'].append({
+                        'id': row.vendor_id,
+                        'name': row.global_name,
+                        'netsuite_id': sync_result.get('netsuite_id')
+                    })
+                else:
+                    results['failed_count'] += 1
+                    results['failed_items'].append({
+                        'id': row.vendor_id,
+                        'name': row.global_name,
+                        'error': sync_result.get('error')
+                    })
+        
+        elif sync_type == 'invoices':
+            # Query invoices without NetSuite bill ID
+            query = f"""
+            SELECT invoice_id, vendor_id, vendor_name, amount, currency, invoice_date
+            FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{bigquery_service.dataset_id}.invoices`
+            WHERE netsuite_bill_id IS NULL
+            LIMIT @limit
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                ]
+            )
+            
+            query_results = bigquery_service.client.query(query, job_config=job_config).result()
+            
+            for row in query_results:
+                # Implement invoice sync logic here
+                # This would be similar to the sync_invoice_to_netsuite endpoint
+                pass
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/netsuite/sync/invoice/<invoice_id>', methods=['POST'])
 def sync_invoice_to_netsuite(invoice_id):
     """

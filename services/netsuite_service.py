@@ -11,12 +11,14 @@ import hashlib
 import hmac
 import random
 import base64
+import uuid
 from urllib.parse import quote_plus, urlparse, parse_qs, urlencode
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from services.bigquery_service import BigQueryService
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -67,6 +69,7 @@ class NetSuiteService:
                    self.token_id, self.token_secret]):
             logger.warning("NetSuite credentials not fully configured. Service will be disabled.")
             self.enabled = False
+            self.bigquery = None
             return
         
         self.enabled = True
@@ -83,6 +86,15 @@ class NetSuiteService:
             'Accept': 'application/json',
             'prefer': 'transient'  # Don't persist failed requests
         }
+        
+        # Initialize BigQuery service for logging
+        try:
+            self.bigquery = BigQueryService()
+            # Ensure sync log table exists
+            self.bigquery.ensure_netsuite_sync_log_table()
+        except Exception as e:
+            logger.error(f"Failed to initialize BigQuery logging: {e}")
+            self.bigquery = None
         
         logger.info(f"NetSuite service initialized for account: {self.account_id}")
     
@@ -206,10 +218,51 @@ class NetSuiteService:
         logger.debug(f"Generated Authorization header: {auth_header[:100]}...")  # Log first 100 chars
         return auth_header
     
-    def _make_request(self, method: str, endpoint: str, data: Dict = None, 
-                     params: Dict = None, retries: int = 3) -> Optional[Dict]:
+    def _log_sync_to_bigquery(self, entity_type: str, entity_id: str, action: str, 
+                              status: str, request_data: Dict = None, response_data: Dict = None, 
+                              error_message: str = None, duration_ms: int = 0, 
+                              netsuite_id: str = None):
         """
-        Make an authenticated request to NetSuite API with retry logic
+        Helper method to log NetSuite API calls to BigQuery
+        
+        Args:
+            entity_type: Type of entity (vendor, invoice)
+            entity_id: ID of the entity
+            action: Action performed (create, update, sync, test)
+            status: Result status (success, failed, pending)
+            request_data: Request payload
+            response_data: Response payload
+            error_message: Error message if failed
+            duration_ms: Time taken in milliseconds
+            netsuite_id: NetSuite internal ID if available
+        """
+        if not self.bigquery:
+            return
+        
+        try:
+            sync_data = {
+                "id": str(uuid.uuid4()),
+                "timestamp": datetime.utcnow().isoformat(),
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "action": action,
+                "status": status,
+                "netsuite_id": netsuite_id,
+                "error_message": error_message,
+                "request_data": request_data or {},
+                "response_data": response_data or {},
+                "duration_ms": duration_ms
+            }
+            
+            self.bigquery.log_netsuite_sync(sync_data)
+        except Exception as e:
+            logger.error(f"Failed to log to BigQuery: {e}")
+    
+    def _make_request(self, method: str, endpoint: str, data: Dict = None, 
+                     params: Dict = None, retries: int = 3, entity_type: str = None,
+                     entity_id: str = None, action: str = None) -> Optional[Dict]:
+        """
+        Make an authenticated request to NetSuite API with retry logic and logging
         
         Args:
             method: HTTP method (GET, POST, PUT, DELETE)
@@ -217,6 +270,9 @@ class NetSuiteService:
             data: Request body data
             params: Query parameters
             retries: Number of retries for failed requests
+            entity_type: Type of entity for logging (vendor, invoice)
+            entity_id: Entity ID for logging
+            action: Action being performed for logging
             
         Returns:
             Response data or None if failed
@@ -226,6 +282,7 @@ class NetSuiteService:
             return None
         
         url = f"{self.base_url}{endpoint}"
+        start_time = time.time()
         
         # Build the full URL with query parameters if provided
         if params:
@@ -246,6 +303,11 @@ class NetSuiteService:
         logger.debug(f"NetSuite request URL: {full_url}")
         logger.debug(f"NetSuite request method: {method}")
         logger.debug(f"NetSuite request headers (excluding Auth): {headers}")
+        
+        response_data = None
+        error_msg = None
+        status = "failed"
+        netsuite_id = None
         
         for attempt in range(retries):
             try:
@@ -270,9 +332,31 @@ class NetSuiteService:
                 
                 # Check for success
                 if response.status_code in [200, 201, 204]:
+                    status = "success"
                     if response.status_code == 204:
-                        return {'success': True}
-                    return response.json() if response.text else {'success': True}
+                        response_data = {'success': True}
+                    else:
+                        response_data = response.json() if response.text else {'success': True}
+                    
+                    # Extract NetSuite ID if available
+                    if response_data and isinstance(response_data, dict):
+                        netsuite_id = response_data.get('id') or response_data.get('internalId')
+                    
+                    # Log success to BigQuery
+                    if entity_type and action:
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        self._log_sync_to_bigquery(
+                            entity_type=entity_type,
+                            entity_id=entity_id,
+                            action=action,
+                            status="success",
+                            request_data=data,
+                            response_data=response_data,
+                            duration_ms=duration_ms,
+                            netsuite_id=netsuite_id
+                        )
+                    
+                    return response_data
                 
                 # Log error details with headers for debugging
                 error_msg = f"NetSuite API error: {response.status_code}"
@@ -290,27 +374,45 @@ class NetSuiteService:
                     try:
                         error_data = response.json()
                         error_msg += f"\nResponse Body: {error_data}"
+                        response_data = error_data
                     except:
                         error_msg += f"\nResponse Text: {response.text[:500]}"  # Limit text length
+                        response_data = {'error': response.text[:500]}
                 
                 logger.error(error_msg)
                 
                 # Don't retry client errors (400-499) except 429
                 if 400 <= response.status_code < 500 and response.status_code != 429:
-                    return None
+                    break
                 
             except requests.exceptions.Timeout:
-                logger.error(f"Request timeout on attempt {attempt + 1}/{retries}")
+                error_msg = f"Request timeout on attempt {attempt + 1}/{retries}"
+                logger.error(error_msg)
                 if attempt == retries - 1:
-                    return None
+                    break
                 time.sleep(2 ** attempt)
                 
             except Exception as e:
-                logger.error(f"NetSuite request error: {str(e)}")
+                error_msg = f"NetSuite request error: {str(e)}"
+                logger.error(error_msg)
                 logger.error(f"Error type: {type(e).__name__}")
                 if attempt == retries - 1:
-                    return None
+                    break
                 time.sleep(2 ** attempt)
+        
+        # Log failure to BigQuery
+        if entity_type and action:
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_sync_to_bigquery(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                action=action,
+                status="failed",
+                request_data=data,
+                response_data=response_data,
+                error_message=error_msg,
+                duration_ms=duration_ms
+            )
         
         return None
     

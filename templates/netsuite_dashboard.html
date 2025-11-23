@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetSuite Integration Hub - Enterprise Dashboard</title>
+    <style>
+        /* Dashboard-specific styles */
+        :root {
+            --success: #28a745;
+            --warning: #ffc107;
+            --error: #dc3545;
+            --info: #17a2b8;
+            --dark: #2c3e50;
+            --light-gray: #ecf0f1;
+            --border-radius: 8px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        /* Header */
+        .dashboard-header {
+            background: rgba(44, 62, 80, 0.95);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-title h1 {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .connection-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .connection-indicator.connected {
+            background: var(--success);
+        }
+
+        .connection-indicator.disconnected {
+            background: var(--error);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            font-size: 14px;
+        }
+
+        .header-info .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .refresh-indicator {
+            padding: 5px 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        /* Dashboard Layout */
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            gap: 20px;
+        }
+
+        /* Cards */
+        .dashboard-card {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--light-gray);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        /* Status Card */
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .status-value.connected {
+            color: var(--success);
+        }
+
+        .status-value.disconnected {
+            color: var(--error);
+        }
+
+        /* Action Buttons */
+        .action-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .action-button {
+            padding: 10px 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .action-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Activity Table */
+        .activity-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .activity-table th {
+            background: #f8f9fa;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .activity-table td {
+            padding: 10px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+
+        .activity-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        /* Status Badges */
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .status-badge.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-badge.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Sync Tools */
+        .sync-tool {
+            margin-bottom: 20px;
+        }
+
+        .sync-input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .sync-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .sync-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .sync-button {
+            padding: 8px 20px;
+            background: var(--success);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .sync-button:hover:not(:disabled) {
+            background: #218838;
+        }
+
+        .sync-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Statistics */
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .stat-value.success {
+            color: var(--success);
+        }
+
+        .stat-value.error {
+            color: var(--error);
+        }
+
+        .success-rate {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .success-rate-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .success-rate-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Error Log */
+        .error-item {
+            padding: 12px;
+            background: #fff5f5;
+            border-left: 4px solid var(--error);
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .error-timestamp {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 5px;
+        }
+
+        .error-message {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .retry-button {
+            padding: 4px 12px;
+            background: var(--warning);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .retry-button:hover {
+            background: #e0a800;
+        }
+
+        /* Loading State */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            opacity: 0.3;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .header-info {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Dashboard Header -->
+    <header class="dashboard-header">
+        <div class="header-content">
+            <div class="header-title">
+                <h1>🔄 NetSuite Integration Hub</h1>
+                <span id="connectionIndicator" class="connection-indicator disconnected"></span>
+            </div>
+            <div class="header-info">
+                <div class="info-item">
+                    <span>Last Sync:</span>
+                    <span id="lastSync">Never</span>
+                </div>
+                <div class="info-item">
+                    <span>Account:</span>
+                    <span id="accountId">Not Connected</span>
+                </div>
+                <div class="refresh-indicator">
+                    <span>↻ Auto-refresh: 30s</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Dashboard Container -->
+    <div class="dashboard-container">
+        <!-- Left Column: Connection & Status -->
+        <div class="dashboard-column">
+            <!-- Connection Status Card -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Connection Status</h3>
+                </div>
+                <div class="card-content">
+                    <div class="status-item">
+                        <span class="status-label">Status:</span>
+                        <span id="connectionStatus" class="status-value disconnected">Disconnected</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Account ID:</span>
+                        <span id="statusAccountId" class="status-value">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Base URL:</span>
+                        <span id="baseUrl" class="status-value" style="font-size: 12px;">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Last API Call:</span>
+                        <span id="lastApiCall" class="status-value">-</span>
+                    </div>
+                    <button id="testConnectionBtn" class="action-button" style="width: 100%; margin-top: 15px;">
+                        Test Connection
+                    </button>
+                </div>
+            </div>
+
+            <!-- Available Actions Card -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Available Actions</h3>
+                </div>
+                <div class="card-content">
+                    <div id="actionList" class="action-list">
+                        <button class="action-button" disabled>Loading actions...</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Column: Data Flow Monitor -->
+        <div class="dashboard-column">
+            <!-- Recent Sync Activities -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Recent Sync Activities</h3>
+                    <button id="refreshActivitiesBtn" class="sync-button" style="padding: 4px 12px; font-size: 12px;">
+                        Refresh
+                    </button>
+                </div>
+                <div class="card-content">
+                    <div id="activityTableContainer" style="max-height: 400px; overflow-y: auto;">
+                        <table class="activity-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Type</th>
+                                    <th>Entity</th>
+                                    <th>Status</th>
+                                    <th>Duration</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activityTableBody">
+                                <tr>
+                                    <td colspan="6" class="empty-state">
+                                        <div class="empty-state-icon">📊</div>
+                                        <div>No sync activities yet</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Sync Tools -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Manual Sync Tools</h3>
+                </div>
+                <div class="card-content">
+                    <!-- Sync Vendor -->
+                    <div class="sync-tool">
+                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Sync Vendor</label>
+                        <div class="sync-input-group">
+                            <input type="text" id="vendorIdInput" class="sync-input" placeholder="Enter Vendor ID">
+                            <button id="syncVendorBtn" class="sync-button">Sync</button>
+                        </div>
+                    </div>
+
+                    <!-- Sync Invoice -->
+                    <div class="sync-tool">
+                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Sync Invoice</label>
+                        <div class="sync-input-group">
+                            <input type="text" id="invoiceIdInput" class="sync-input" placeholder="Enter Invoice ID">
+                            <button id="syncInvoiceBtn" class="sync-button">Sync</button>
+                        </div>
+                    </div>
+
+                    <!-- Bulk Sync -->
+                    <div class="sync-tool">
+                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">Bulk Sync</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <button id="bulkSyncVendorsBtn" class="action-button">
+                                Sync Pending Vendors
+                            </button>
+                            <button id="bulkSyncInvoicesBtn" class="action-button">
+                                Sync Pending Invoices
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sync Results -->
+                    <div id="syncResults" style="margin-top: 20px; display: none;">
+                        <div style="padding: 12px; border-radius: 6px;" id="syncResultContent">
+                            <!-- Results will appear here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Statistics & Logs -->
+        <div class="dashboard-column">
+            <!-- Sync Statistics -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Sync Statistics</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-item">
+                        <span class="stat-label">Total Vendors Synced:</span>
+                        <span id="totalVendorsSynced" class="stat-value success">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Invoices Synced:</span>
+                        <span id="totalInvoicesSynced" class="stat-value success">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Failed Syncs:</span>
+                        <span id="failedSyncs" class="stat-value error">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Pending Syncs:</span>
+                        <span id="pendingSyncs" class="stat-value">0</span>
+                    </div>
+                    
+                    <div class="success-rate">
+                        <div id="successRateValue" class="success-rate-value">0%</div>
+                        <div class="success-rate-label">Success Rate</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Log -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3 class="card-title">Recent Errors</h3>
+                </div>
+                <div class="card-content">
+                    <div id="errorLog" style="max-height: 300px; overflow-y: auto;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">✅</div>
+                            <div>No errors to display</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="/static/netsuite_dashboard.js"></script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 import os
 import json
+import uuid
+from datetime import datetime
 from typing import Optional
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -39,6 +41,10 @@ class BigQueryService:
         self.dataset_id = "vendors_ai"
         self.table_id = "global_vendors"
         self.full_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.{self.table_id}"
+        
+        # NetSuite sync log table
+        self.sync_log_table_id = "netsuite_sync_log"
+        self.full_sync_log_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.{self.sync_log_table_id}"
     
     def ensure_table_schema(self):
         """Ensure the global_vendors table has the correct schema with custom_attributes JSON column"""
@@ -449,6 +455,220 @@ class BigQueryService:
             return {
                 "vendors": [],
                 "total_count": 0
+            }
+    
+    def ensure_netsuite_sync_log_table(self):
+        """Create NetSuite sync log table if it doesn't exist"""
+        schema = [
+            bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("entity_type", "STRING", mode="NULLABLE"),  # vendor or invoice
+            bigquery.SchemaField("entity_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("action", "STRING", mode="NULLABLE"),  # create, update, sync
+            bigquery.SchemaField("status", "STRING", mode="NULLABLE"),  # success, failed, pending
+            bigquery.SchemaField("netsuite_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("request_data", "JSON", mode="NULLABLE"),  # JSON of request
+            bigquery.SchemaField("response_data", "JSON", mode="NULLABLE"),  # JSON of response
+            bigquery.SchemaField("duration_ms", "INT64", mode="NULLABLE"),
+        ]
+        
+        try:
+            # Try to get the table
+            table = self.client.get_table(self.full_sync_log_table_id)
+            print(f"✓ NetSuite sync log table {self.full_sync_log_table_id} already exists")
+            return True
+        except Exception as e:
+            if "Not found" in str(e):
+                print(f"⚠️ NetSuite sync log table not found. Creating...")
+                table = bigquery.Table(self.full_sync_log_table_id, schema=schema)
+                table = self.client.create_table(table)
+                print(f"✓ Created NetSuite sync log table {self.full_sync_log_table_id}")
+                return True
+            else:
+                print(f"❌ Error checking/creating sync log table: {e}")
+                return False
+    
+    def log_netsuite_sync(self, sync_data):
+        """
+        Log NetSuite API call to sync log table
+        
+        Args:
+            sync_data: Dict with sync log data
+                - id: Unique ID for this log entry
+                - timestamp: When the sync happened
+                - entity_type: 'vendor' or 'invoice'
+                - entity_id: ID of the entity being synced
+                - action: 'create', 'update', 'sync', 'test'
+                - status: 'success', 'failed', 'pending'
+                - netsuite_id: NetSuite internal ID if successful
+                - error_message: Error message if failed
+                - request_data: Dict of request data (will be stored as JSON)
+                - response_data: Dict of response data (will be stored as JSON)
+                - duration_ms: Time taken in milliseconds
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Ensure table exists
+            self.ensure_netsuite_sync_log_table()
+            
+            # Prepare the row
+            row = {
+                "id": sync_data.get("id", str(uuid.uuid4())),
+                "timestamp": sync_data.get("timestamp", datetime.utcnow().isoformat()),
+                "entity_type": sync_data.get("entity_type"),
+                "entity_id": sync_data.get("entity_id"),
+                "action": sync_data.get("action"),
+                "status": sync_data.get("status"),
+                "netsuite_id": sync_data.get("netsuite_id"),
+                "error_message": sync_data.get("error_message"),
+                "request_data": sync_data.get("request_data", {}),  # Store as dict for BigQuery JSON
+                "response_data": sync_data.get("response_data", {}),  # Store as dict for BigQuery JSON
+                "duration_ms": sync_data.get("duration_ms", 0)
+            }
+            
+            # Insert the row
+            errors = self.client.insert_rows_json(self.full_sync_log_table_id, [row])
+            
+            if errors:
+                print(f"❌ Error logging NetSuite sync: {errors}")
+                return False
+            
+            return True
+        except Exception as e:
+            print(f"❌ Error logging NetSuite sync: {e}")
+            return False
+    
+    def get_netsuite_sync_activities(self, limit=20, entity_type=None):
+        """
+        Get recent NetSuite sync activities
+        
+        Args:
+            limit: Number of activities to return
+            entity_type: Filter by entity type ('vendor', 'invoice')
+        
+        Returns:
+            List of sync activities
+        """
+        try:
+            # Build WHERE clause
+            where_clause = ""
+            params = []
+            if entity_type:
+                where_clause = "WHERE entity_type = @entity_type"
+                params.append(bigquery.ScalarQueryParameter("entity_type", "STRING", entity_type))
+            
+            query = f"""
+            SELECT 
+                id,
+                timestamp,
+                entity_type,
+                entity_id,
+                action,
+                status,
+                netsuite_id,
+                error_message,
+                request_data,
+                response_data,
+                duration_ms
+            FROM `{self.full_sync_log_table_id}`
+            {where_clause}
+            ORDER BY timestamp DESC
+            LIMIT @limit
+            """
+            
+            params.append(bigquery.ScalarQueryParameter("limit", "INT64", limit))
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
+            
+            results = self.client.query(query, job_config=job_config).result()
+            
+            activities = []
+            for row in results:
+                activities.append({
+                    "id": row.id,
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                    "entity_type": row.entity_type,
+                    "entity_id": row.entity_id,
+                    "action": row.action,
+                    "status": row.status,
+                    "netsuite_id": row.netsuite_id,
+                    "error_message": row.error_message,
+                    "request_data": row.request_data,
+                    "response_data": row.response_data,
+                    "duration_ms": row.duration_ms
+                })
+            
+            return activities
+        except Exception as e:
+            print(f"❌ Error fetching NetSuite sync activities: {e}")
+            return []
+    
+    def get_netsuite_sync_statistics(self):
+        """
+        Get NetSuite sync statistics
+        
+        Returns:
+            Dict with sync statistics
+        """
+        try:
+            query = f"""
+            SELECT 
+                entity_type,
+                status,
+                COUNT(*) as count,
+                AVG(duration_ms) as avg_duration_ms,
+                MAX(timestamp) as last_sync
+            FROM `{self.full_sync_log_table_id}`
+            WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+            GROUP BY entity_type, status
+            """
+            
+            results = self.client.query(query).result()
+            
+            stats = {
+                "vendors": {"success": 0, "failed": 0, "pending": 0, "avg_duration_ms": 0},
+                "invoices": {"success": 0, "failed": 0, "pending": 0, "avg_duration_ms": 0},
+                "total": {"success": 0, "failed": 0, "pending": 0},
+                "last_sync": None
+            }
+            
+            for row in results:
+                entity_type = row.entity_type or "unknown"
+                status = row.status or "unknown"
+                
+                if entity_type == "vendor":
+                    stats["vendors"][status] = row.count
+                    if status == "success":
+                        stats["vendors"]["avg_duration_ms"] = row.avg_duration_ms or 0
+                elif entity_type == "invoice":
+                    stats["invoices"][status] = row.count
+                    if status == "success":
+                        stats["invoices"]["avg_duration_ms"] = row.avg_duration_ms or 0
+                
+                # Update totals
+                if status in ["success", "failed", "pending"]:
+                    stats["total"][status] += row.count
+                
+                # Update last sync
+                if row.last_sync:
+                    if not stats["last_sync"] or row.last_sync > datetime.fromisoformat(stats["last_sync"]):
+                        stats["last_sync"] = row.last_sync.isoformat()
+            
+            # Calculate success rate
+            total = sum(stats["total"].values())
+            stats["success_rate"] = (stats["total"]["success"] / total * 100) if total > 0 else 0
+            
+            return stats
+        except Exception as e:
+            print(f"❌ Error fetching NetSuite sync statistics: {e}")
+            return {
+                "vendors": {"success": 0, "failed": 0, "pending": 0, "avg_duration_ms": 0},
+                "invoices": {"success": 0, "failed": 0, "pending": 0, "avg_duration_ms": 0},
+                "total": {"success": 0, "failed": 0, "pending": 0},
+                "success_rate": 0,
+                "last_sync": None
             }
     
     def query(self, sql_query, params=None):
