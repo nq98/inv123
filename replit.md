@@ -56,6 +56,40 @@ A 3-step AI-first semantic matching system to link invoices to vendor IDs:
 
 This matching system is automatically integrated into the invoice upload pipeline, providing `validated_data` and `vendor_match` results in the UI, with visual indicators and action buttons. The system handles freelancers/contractors as valid vendors (not rejected as INDIVIDUAL_PERSON).
 
+#### Permanent Invoice Storage System (Product 9)
+A comprehensive file storage and metadata tracking system for all processed invoices:
+
+**Storage Architecture**:
+- **Google Cloud Storage (GCS)**: Permanent storage of original invoice files (PDF, PNG, JPEG) in the `payouts-invoices` bucket under `uploads/` path
+- **BigQuery Metadata Tracking**: Extended `vendors_ai.invoices` table with GCS storage columns:
+  - `gcs_uri` (STRING): Full GCS URI (format: `gs://bucket/path/file.pdf`)
+  - `file_type` (STRING): File type (pdf, png, jpeg)
+  - `file_size` (INT64): File size in bytes
+
+**Integration Points**:
+1. **Invoice Upload Endpoint** (`/api/invoices/upload`): Automatically saves uploaded files to GCS and stores metadata in BigQuery with vendor matching results
+2. **Gmail Import** (both streaming and non-streaming): Downloads attachments/screenshots, processes them, stores permanently in GCS, and saves complete metadata to BigQuery
+3. **Download Endpoint** (`/api/invoices/<invoice_id>/download`): Generates time-limited signed URLs (default 1 hour, max 24 hours) for secure file access
+
+**Key Features**:
+- Files are NEVER deleted after processing - permanent retention in GCS
+- Complete metadata chain: GCS URI → BigQuery → Signed URL for downloads
+- Automatic schema migration with fallback handling for existing tables
+- Supports all file types processed by Document AI (PDF, PNG, JPEG)
+- Secure access via GCS signed URLs with configurable expiration
+
+**API Response Example**:
+```json
+{
+  "success": true,
+  "invoice_id": "INV-2025-001",
+  "download_url": "https://storage.googleapis.com/...",
+  "file_type": "pdf",
+  "file_size": 1024567,
+  "expires_in": 3600
+}
+```
+
 #### Real-Time Progress Tracking System
 A comprehensive system using Server-Sent Events (SSE) provides granular, step-by-step feedback for Invoice Processing (7 steps), CSV Import (7 steps), Vendor Matching (4 steps), and Gmail Filtering Funnel. This includes CSS infrastructure for progress bars and status displays, JavaScript helper functions for dynamic updates, and backend SSE endpoints for all major workflows. An automatic fallback system is implemented for Gemini service rate limits, switching between a user's API key and Replit AI Integrations to ensure zero-downtime.
 
