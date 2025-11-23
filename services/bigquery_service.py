@@ -131,15 +131,13 @@ class BigQueryService:
             staging_table = bigquery.Table(staging_table_id, schema=staging_schema)
             staging_table = self.client.create_table(staging_table)
             
-            # Convert custom_attributes dict to JSON string for BigQuery
+            # Prepare vendors for BigQuery (JSON type expects dict, not string)
             prepared_vendors = []
             for vendor in mapped_vendors:
                 vendor_copy = vendor.copy()
-                # Convert custom_attributes dict to JSON string
-                if 'custom_attributes' in vendor_copy and vendor_copy['custom_attributes']:
-                    vendor_copy['custom_attributes'] = json.dumps(vendor_copy['custom_attributes'])
-                else:
-                    vendor_copy['custom_attributes'] = json.dumps({})
+                # BigQuery JSON type expects dict/object, not JSON string
+                if 'custom_attributes' not in vendor_copy or not vendor_copy['custom_attributes']:
+                    vendor_copy['custom_attributes'] = {}
                 prepared_vendors.append(vendor_copy)
             
             # Insert data into staging table
