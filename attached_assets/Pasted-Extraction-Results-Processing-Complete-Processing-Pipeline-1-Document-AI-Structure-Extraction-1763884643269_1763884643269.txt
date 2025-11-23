@@ -1,0 +1,406 @@
+Extraction Results
+✓ Processing Complete
+🔍 Processing Pipeline
+1
+Document AI - Structure Extraction
+✓
+Text Extracted: 800 characters
+Entity Types Found: 15
+total_amount, invoice_id, net_amount, invoice_date, receiver_name, supplier_website, supplier_email, invoice_type, supplier_name, total_tax_amount, receiver_address, supplier_phone, currency, remit_to_name, line_item
+2
+Vertex Search (RAG) - Context Retrieval
+✓
+Vendor Query: "Fully-Booked.ca"
+3
+Gemini - Semantic Validation
+✓
+✓ All validations passed
+📄 Document Classification
+Document Type
+INVOICE
+Language
+EN
+Currency
+USD
+Confidence
+95.0%
+🏢 Vendor Information
+Vendor Name
+Fully Booked
+Email
+admin@fully-booked.ca
+Phone
++1 (514)-892-5225
+Match Confidence
+70.0%
+⚖️ Automatic Vendor Matching
+🆕 New Vendor Detected
+Matching Method
+🆕 Not in Database
+Confidence Score
+0.0%
+📄
+Invoice Says
+Name: Fully Booked
+Tax ID: Unknown
+Address: Unknown
+Country: Unknown
+Email: admin@fully-booked.ca
+Phone: +1 (514)-892-5225
+❓
+Database Says
+Not found in database
+⚖️
+Supreme Judge Reasoning
+No similar vendors found in database for 'Fully Booked'
+
+➕ Add Vendor to Database
+📋 Invoice Details
+Invoice Number
+0000212
+Issue Date
+2025-08-25
+Payment Terms
+Net90
+🛒 Buyer Information
+Name
+Jamx LTD
+Country
+Israel
+Address
+Biyalik 30, Yehud Monoson, Israel
+💰 Financial Summary
+Subtotal
+USD 300
+Grand Total
+USD 300
+📦 Line Items
+Description	Qty	Unit Price	Tax	Subtotal	✓
+Podcast Revenue Share Payment
+Advertising / Marketing	-	USD 300	-	300	✓
+💳 Payment Details
+Bank
+Royal Bank of Canada
+IBAN
+06301-5113238
+SWIFT/BIC
+ROYCCAT2
+Account Number
+5113238
+Instructions
+Payable to: Name: Artem Andreevitch Revva Address: Suite 302 4811 Av Eliot, Laval, Quebec, H7W0C3, Canada Bank address: 4851 Van Horne Ave, Montreal, Quebec, H3W1J2, Canada Institution number: 003 Routing value: 06301-003 Routing Type: Wire Transfer
+🧠 AI Reasoning
+Extracted all fields with high confidence. No currency conversion needed.
+
+🔍 View Complete JSON Response
+{
+  "gcs_uri": "gs://payouts-invoices/uploads/Fully-Booked_Invoice_JamX_-_212_-_July_2025.pdf",
+  "layers": {
+    "feedback_loop": {
+      "reason": "Storage failed but extraction succeeded",
+      "status": "warning",
+      "stored_to_knowledge_base": false
+    },
+    "layer1_5_multi_currency": {
+      "base_currency": "USD",
+      "currencies_found": [
+        "USD"
+      ],
+      "exchange_rates": {},
+      "is_multi_currency": false,
+      "settlement_currency": "USD",
+      "status": "success"
+    },
+    "layer1_document_ai": {
+      "entities": {
+        "currency": [
+          {
+            "confidence": 0.723351001739502,
+            "normalized_value": "USD",
+            "value": "USD"
+          }
+        ],
+        "invoice_date": [
+          {
+            "confidence": 0.9445210695266724,
+            "normalized_value": "2025-08-25",
+            "value": "25/08/2025"
+          }
+        ],
+        "invoice_id": [
+          {
+            "confidence": 0.9693338871002197,
+            "normalized_value": "",
+            "value": "0000212"
+          }
+        ],
+        "invoice_type": [
+          {
+            "confidence": 0.8326748609542847,
+            "normalized_value": "invoice_statement",
+            "value": ""
+          }
+        ],
+        "line_item": [
+          {
+            "confidence": 1,
+            "normalized_value": "",
+            "value": "300.00 Podcast\nRevenue Share"
+          }
+        ],
+        "net_amount": [
+          {
+            "confidence": 0.9557076692581177,
+            "normalized_value": "300",
+            "value": "300.00"
+          }
+        ],
+        "receiver_address": [
+          {
+            "confidence": 0.768610417842865,
+            "normalized_value": "",
+            "value": "Biyalik 30, Yehud Monoson,\nIsrael"
+          }
+        ],
+        "receiver_name": [
+          {
+            "confidence": 0.9173206090927124,
+            "normalized_value": "",
+            "value": "Jamx LTD"
+          }
+        ],
+        "remit_to_name": [
+          {
+            "confidence": 0.5597746968269348,
+            "normalized_value": "",
+            "value": "Artem Andreevitch Revva"
+          }
+        ],
+        "supplier_email": [
+          {
+            "confidence": 0.8606560826301575,
+            "normalized_value": "",
+            "value": "admin@fully-booked.ca"
+          }
+        ],
+        "supplier_name": [
+          {
+            "confidence": 0.8336161375045776,
+            "normalized_value": "Fully Booked",
+            "value": "Fully-Booked.ca"
+          }
+        ],
+        "supplier_phone": [
+          {
+            "confidence": 0.7483234405517578,
+            "normalized_value": "",
+            "value": "+1 (514)-892-5225"
+          }
+        ],
+        "supplier_website": [
+          {
+            "confidence": 0.8967195749282837,
+            "normalized_value": "",
+            "value": "www.fully-booked.ca"
+          }
+        ],
+        "total_amount": [
+          {
+            "confidence": 0.9952483177185059,
+            "normalized_value": "300",
+            "value": "300.00"
+          }
+        ],
+        "total_tax_amount": [
+          {
+            "confidence": 0.8070959448814392,
+            "normalized_value": "0",
+            "value": "00.00"
+          }
+        ]
+      },
+      "entity_types": [
+        "total_amount",
+        "invoice_id",
+        "net_amount",
+        "invoice_date",
+        "receiver_name",
+        "supplier_website",
+        "supplier_email",
+        "invoice_type",
+        "supplier_name",
+        "total_tax_amount",
+        "receiver_address",
+        "supplier_phone",
+        "currency",
+        "remit_to_name",
+        "line_item"
+      ],
+      "status": "success",
+      "text_length": 800
+    },
+    "layer2_vertex_search": {
+      "similar_invoices_found": 0,
+      "status": "success",
+      "vendor_matches_found": 0,
+      "vendor_query": "Fully-Booked.ca"
+    },
+    "layer3_gemini": {
+      "status": "success",
+      "validation_flags": []
+    }
+  },
+  "status": "completed",
+  "validated_data": {
+    "ai_auditor_notes": "Detected Invoice. Country inferred from receiver address: Israel. Document category: Tax Invoice. Single currency: USD. No tax. Dates normalized to YYYY-MM-DD. Service period extracted from description. No vendor history found.",
+    "auditReasoning": "Detected Invoice. Country inferred from receiver address: Israel. Document category: Tax Invoice. Single currency: USD. No tax. Dates normalized to YYYY-MM-DD. Service period extracted from description. No vendor history found.",
+    "buyer": {
+      "address": "Biyalik 30, Yehud Monoson, Israel",
+      "country": "Israel",
+      "email": null,
+      "name": "Jamx LTD",
+      "phone": null,
+      "registrationNumber": null,
+      "taxId": null
+    },
+    "classificationConfidence": 0.95,
+    "critical_dates": {
+      "due_date": null,
+      "issue_date": "2025-08-25",
+      "payment_date": null,
+      "period_end": "2025-07-31",
+      "period_start": "2025-07-01"
+    },
+    "currency": "USD",
+    "detectedCountry": "IL",
+    "documentDate": "2025-08-25",
+    "documentType": "INVOICE",
+    "dueDate": null,
+    "exchangeRate": null,
+    "extractionConfidence": 0.95,
+    "financial_data": {
+      "discount_total": 0,
+      "exchange_rate_applied": null,
+      "grand_total": 300,
+      "line_item_currency_code": "USD",
+      "primary_currency_code": "USD",
+      "subtotal": 300,
+      "tax_breakdown": [],
+      "tax_total": 0
+    },
+    "global_audit_metadata": {
+      "confidence_level": 0.95,
+      "detected_country": "IL",
+      "detected_language": "en",
+      "document_category": "Tax Invoice",
+      "is_multi_currency": false
+    },
+    "invoiceNumber": "0000212",
+    "isRTL": false,
+    "isSubscription": false,
+    "issueDate": "2025-08-25",
+    "language": "en",
+    "lineItems": [
+      {
+        "category": "Advertising / Marketing",
+        "currency": "USD",
+        "description": "Podcast Revenue Share Payment",
+        "exchangeRateApplied": null,
+        "lineSubtotal": 300,
+        "lineTotal": 300,
+        "lineTotalCurrency": "USD",
+        "mathVerified": true,
+        "productCode": null,
+        "quantity": null,
+        "taxAmount": 0,
+        "taxPercent": 0,
+        "unitPrice": 300,
+        "unitPriceCurrency": "USD"
+      }
+    ],
+    "multiCurrency": {
+      "baseCurrency": null,
+      "exchangeRate": null,
+      "exchangeRateSource": null,
+      "isMultiCurrency": false,
+      "mathVerification": null,
+      "settlementCurrency": null
+    },
+    "originalCurrency": "USD",
+    "paymentDate": null,
+    "paymentDetails": {
+      "accountNumber": "5113238",
+      "bankName": "Royal Bank of Canada",
+      "iban": "06301-5113238",
+      "paymentInstructions": "Payable to:\nName: Artem Andreevitch Revva\nAddress: Suite 302 4811 Av Eliot, Laval, Quebec, H7W0C3, Canada\nBank address: 4851 Van Horne Ave, Montreal, Quebec, H3W1J2, Canada\nInstitution number: 003\nRouting value: 06301-003\nRouting Type: Wire Transfer",
+      "swift": "ROYCCAT2"
+    },
+    "paymentTerms": "Net90",
+    "purchaseOrderNumbers": [],
+    "reasoning": "Extracted all fields with high confidence. No currency conversion needed.",
+    "servicePeriodEnd": "2025-07-31",
+    "servicePeriodStart": "2025-07-01",
+    "totals": {
+      "discountCurrency": "USD",
+      "discounts": 0,
+      "fees": 0,
+      "feesCurrency": "USD",
+      "shipping": 0,
+      "shippingCurrency": "USD",
+      "subtotal": 300,
+      "subtotalCurrency": "USD",
+      "tax": 0,
+      "taxCurrency": "USD",
+      "taxPercent": 0,
+      "total": 300,
+      "totalCurrency": "USD"
+    },
+    "vendor": {
+      "address": null,
+      "country": null,
+      "email": "admin@fully-booked.ca",
+      "name": "Fully Booked",
+      "phone": "+1 (514)-892-5225",
+      "registrationNumber": null,
+      "taxId": null,
+      "website": "www.fully-booked.ca"
+    },
+    "vendorMatch": {
+      "alternateNames": [],
+      "confidence": 0.7,
+      "matchedDbId": null,
+      "normalizedName": "Fully Booked",
+      "ragMatchReasoning": "No vendor history found in database."
+    },
+    "vendor_details": {
+      "address_full": null,
+      "matched_db_id": null,
+      "name_native": "Fully Booked",
+      "name_normalized": "Fully Booked",
+      "registration_id": null
+    },
+    "warnings": []
+  },
+  "vendor_match": {
+    "confidence": 0,
+    "database_updates": {},
+    "database_vendor": null,
+    "invoice_vendor": {
+      "address": "Unknown",
+      "country": "Unknown",
+      "email": "admin@fully-booked.ca",
+      "name": "Fully Booked",
+      "phone": "+1 (514)-892-5225",
+      "tax_id": "Unknown"
+    },
+    "method": "NEW_VENDOR",
+    "parent_child_logic": {
+      "is_subsidiary": false,
+      "parent_company_detected": null
+    },
+    "reasoning": "No similar vendors found in database for 'Fully Booked'",
+    "risk_analysis": "LOW",
+    "vendor_id": null,
+    "verdict": "NEW_VENDOR"
+  }
+}
