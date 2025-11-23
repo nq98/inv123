@@ -1,0 +1,394 @@
+Extraction Results
+✓ Processing Complete
+🔍 Processing Pipeline
+1
+Document AI - Structure Extraction
+✓
+Text Extracted: 783 characters
+Entity Types Found: 11
+invoice_date, total_amount, invoice_type, supplier_email, supplier_website, receiver_name, supplier_phone, currency, receiver_email, remit_to_name, supplier_name
+2
+Vertex Search (RAG) - Context Retrieval
+✓
+Vendor Query: "Go To Health!"
+3
+Gemini - Semantic Validation
+✓
+✓ All validations passed
+📄 Document Classification
+Document Type
+INVOICE
+Language
+EN
+Currency
+USD
+Confidence
+95.0%
+🏢 Vendor Information
+Vendor Name
+GoToHealth Media, LLC
+Country
+US
+Email
+jonathanmarx@gotohealthmedia.com
+Phone
+01-702-755-1041
+Match Confidence
+95.0%
+Address
+9209 Spruce Mountain Way Las Vegas, Nevada 89134
+⚖️ Automatic Vendor Matching
+🆕 New Vendor Detected
+Matching Method
+🆕 Not in Database
+Confidence Score
+0.0%
+📄
+Invoice Says
+Name: GoToHealth Media, LLC
+Tax ID: Unknown
+Address: 9209 Spruce Mountain Way Las Vegas, Nevada 89134
+Country: US
+Email: jonathanmarx@gotohealthmedia.com
+Phone: 01-702-755-1041
+❓
+Database Says
+Not found in database
+⚖️
+Supreme Judge Reasoning
+No similar vendors found in database for 'GoToHealth Media, LLC'
+
+➕ Add Vendor to Database
+📋 Invoice Details
+Issue Date
+2025-08-11
+🛒 Buyer Information
+Name
+Jamx.ai
+💰 Financial Summary
+Subtotal
+USD 751.7
+Grand Total
+USD 751.7
+📦 Line Items
+Description	Qty	Unit Price	Tax	Subtotal	✓
+July 2025 Revenue Share for GoToHealth Media
+Revenue Share	1	USD 751.7	-	751.7	✓
+💳 Payment Details
+Bank
+U.S Bank
+IBAN
+153759018507
+SWIFT/BIC
+USBKUS44IMT
+Instructions
+Direct Deposit
+🧠 AI Reasoning
+Extracted invoice details including vendor, buyer, date, and amount. Determined document type as invoice.
+
+🔍 View Complete JSON Response
+{
+  "gcs_uri": "gs://payouts-invoices/uploads/GoToHealth_Media_Invoice_-_Jamx_07-25.pdf",
+  "layers": {
+    "feedback_loop": {
+      "reason": "Storage failed but extraction succeeded",
+      "status": "warning",
+      "stored_to_knowledge_base": false
+    },
+    "layer1_5_multi_currency": {
+      "base_currency": "USD",
+      "currencies_found": [
+        "USD"
+      ],
+      "exchange_rates": {},
+      "is_multi_currency": false,
+      "settlement_currency": "USD",
+      "status": "success"
+    },
+    "layer1_document_ai": {
+      "entities": {
+        "currency": [
+          {
+            "confidence": 0.5716543197631836,
+            "normalized_value": "USD",
+            "value": "US Dollars"
+          }
+        ],
+        "invoice_date": [
+          {
+            "confidence": 0.8907409310340881,
+            "normalized_value": "2025-08-11",
+            "value": "August 11, 2025"
+          }
+        ],
+        "invoice_type": [
+          {
+            "confidence": 0.7926251292228699,
+            "normalized_value": "invoice_statement",
+            "value": ""
+          }
+        ],
+        "receiver_email": [
+          {
+            "confidence": 0.507942259311676,
+            "normalized_value": "",
+            "value": "finance@jamx.ai"
+          }
+        ],
+        "receiver_name": [
+          {
+            "confidence": 0.7075086236000061,
+            "normalized_value": "",
+            "value": "Rotem Gal"
+          }
+        ],
+        "remit_to_name": [
+          {
+            "confidence": 0.43467697501182556,
+            "normalized_value": "",
+            "value": "GoToHealth Media, LLC"
+          }
+        ],
+        "supplier_email": [
+          {
+            "confidence": 0.792508602142334,
+            "normalized_value": "",
+            "value": "jonathanmarx@gotohealthmedia.com"
+          }
+        ],
+        "supplier_name": [
+          {
+            "confidence": 0.30567577481269836,
+            "normalized_value": "",
+            "value": "Go To Health!"
+          }
+        ],
+        "supplier_phone": [
+          {
+            "confidence": 0.6315318942070007,
+            "normalized_value": "",
+            "value": "01-702-755-1041"
+          }
+        ],
+        "supplier_website": [
+          {
+            "confidence": 0.7135446071624756,
+            "normalized_value": "",
+            "value": "https://gotohealthmedia.com"
+          }
+        ],
+        "total_amount": [
+          {
+            "confidence": 0.8045877814292908,
+            "normalized_value": "751.7",
+            "value": "751.70"
+          }
+        ]
+      },
+      "entity_types": [
+        "invoice_date",
+        "total_amount",
+        "invoice_type",
+        "supplier_email",
+        "supplier_website",
+        "receiver_name",
+        "supplier_phone",
+        "currency",
+        "receiver_email",
+        "remit_to_name",
+        "supplier_name"
+      ],
+      "status": "success",
+      "text_length": 783
+    },
+    "layer2_vertex_search": {
+      "similar_invoices_found": 0,
+      "status": "success",
+      "vendor_matches_found": 0,
+      "vendor_query": "Go To Health!"
+    },
+    "layer3_5_vendor_resolution": {
+      "confidence": 0.95,
+      "is_intermediary": false,
+      "original_supplier": "GoToHealth Media, LLC",
+      "status": "success",
+      "true_vendor": "GoToHealth Media, LLC"
+    },
+    "layer3_gemini": {
+      "status": "success",
+      "validation_flags": []
+    }
+  },
+  "status": "completed",
+  "validated_data": {
+    "ai_auditor_notes": "Detected US from address. Document category: Tax Invoice. Single currency: USD. Period start and end inferred from 'July 2025 Revenue Share'. Grand total matches the amount payable.",
+    "auditReasoning": "Detected US from address. Document category: Tax Invoice. Single currency: USD. Period start and end inferred from 'July 2025 Revenue Share'. Grand total matches the amount payable.",
+    "buyer": {
+      "address": null,
+      "country": null,
+      "email": "finance@jamx.ai",
+      "name": "Jamx.ai",
+      "phone": null,
+      "registrationNumber": null,
+      "taxId": null
+    },
+    "classificationConfidence": 0.95,
+    "critical_dates": {
+      "due_date": null,
+      "issue_date": "2025-08-11",
+      "payment_date": null,
+      "period_end": "2025-07-31",
+      "period_start": "2025-07-01"
+    },
+    "currency": "USD",
+    "detectedCountry": "US",
+    "documentDate": "2025-08-11",
+    "documentType": "INVOICE",
+    "dueDate": null,
+    "exchangeRate": null,
+    "extractionConfidence": 0.9,
+    "financial_data": {
+      "discount_total": 0,
+      "exchange_rate_applied": null,
+      "grand_total": 751.7,
+      "line_item_currency_code": "USD",
+      "primary_currency_code": "USD",
+      "subtotal": 751.7,
+      "tax_breakdown": [],
+      "tax_total": 0
+    },
+    "global_audit_metadata": {
+      "confidence_level": 0.95,
+      "detected_country": "US",
+      "detected_language": "en",
+      "document_category": "Tax Invoice",
+      "is_multi_currency": false
+    },
+    "invoiceNumber": null,
+    "isRTL": false,
+    "isSubscription": false,
+    "issueDate": "2025-08-11",
+    "language": "en",
+    "lineItems": [
+      {
+        "category": "Revenue Share",
+        "currency": "USD",
+        "description": "July 2025 Revenue Share for GoToHealth Media",
+        "exchangeRateApplied": null,
+        "lineSubtotal": 751.7,
+        "lineTotal": 751.7,
+        "lineTotalCurrency": "USD",
+        "mathVerified": true,
+        "productCode": null,
+        "quantity": 1,
+        "taxAmount": 0,
+        "taxPercent": 0,
+        "unitPrice": 751.7,
+        "unitPriceCurrency": "USD"
+      }
+    ],
+    "multiCurrency": {
+      "baseCurrency": "USD",
+      "exchangeRate": null,
+      "exchangeRateSource": null,
+      "isMultiCurrency": false,
+      "mathVerification": {
+        "afterDiscount": null,
+        "afterTax": null,
+        "currencyConversion": null,
+        "lineItemCalculation": null,
+        "verified": false
+      },
+      "settlementCurrency": "USD"
+    },
+    "originalCurrency": "USD",
+    "paymentDate": null,
+    "paymentDetails": {
+      "accountNumber": null,
+      "bankName": "U.S Bank",
+      "iban": "153759018507",
+      "paymentInstructions": "Direct Deposit",
+      "swift": "USBKUS44IMT"
+    },
+    "paymentTerms": null,
+    "purchaseOrderNumbers": [],
+    "reasoning": "Extracted invoice details including vendor, buyer, date, and amount.  Determined document type as invoice.",
+    "servicePeriodEnd": "2025-07-31",
+    "servicePeriodStart": "2025-07-01",
+    "totals": {
+      "discountCurrency": "USD",
+      "discounts": 0,
+      "fees": 0,
+      "feesCurrency": "USD",
+      "shipping": 0,
+      "shippingCurrency": "USD",
+      "subtotal": 751.7,
+      "subtotalCurrency": "USD",
+      "tax": 0,
+      "taxCurrency": "USD",
+      "taxPercent": 0,
+      "total": 751.7,
+      "totalCurrency": "USD"
+    },
+    "vendor": {
+      "address": "9209 Spruce Mountain Way\nLas Vegas, Nevada 89134",
+      "country": "US",
+      "email": "jonathanmarx@gotohealthmedia.com",
+      "name": "GoToHealth Media, LLC",
+      "original_supplier_name": "GoToHealth Media, LLC",
+      "phone": "01-702-755-1041",
+      "registrationNumber": null,
+      "taxId": null,
+      "website": "https://gotohealthmedia.com"
+    },
+    "vendorMatch": {
+      "alternateNames": [],
+      "confidence": 0.95,
+      "matchedDbId": null,
+      "normalizedName": "GoToHealth Media, LLC",
+      "ragMatchReasoning": "No vendor history found in database. This is a new vendor or vendor name was not detected."
+    },
+    "vendor_details": {
+      "address_full": "9209 Spruce Mountain Way\nLas Vegas, Nevada 89134",
+      "matched_db_id": null,
+      "name_native": "Go To Health!",
+      "name_normalized": "GoToHealth Media, LLC",
+      "registration_id": null
+    },
+    "vendor_resolution": {
+      "alternate_names": [
+        "Go To Health!"
+      ],
+      "conflicts_detected": [
+        "The supplier name on the invoice is 'Go To Health!' while the remit-to name is 'GoToHealth Media, LLC'."
+      ],
+      "is_intermediary": false,
+      "reasoning": "The invoice is from 'Go To Health!', but the remit-to name is 'GoToHealth Media, LLC'. The email domain, validated vendor name, validated email, validated phone, and bank details all point to 'GoToHealth Media, LLC'. Therefore, 'GoToHealth Media, LLC' is the entity receiving the payment and is the true vendor. 'Go To Health!' is likely a DBA or brand name used by GoToHealth Media, LLC.",
+      "resolution_confidence": 0.95,
+      "supplier_relationship": null
+    },
+    "warnings": []
+  },
+  "vendor_match": {
+    "confidence": 0,
+    "database_updates": {},
+    "database_vendor": null,
+    "invoice_vendor": {
+      "address": "9209 Spruce Mountain Way\nLas Vegas, Nevada 89134",
+      "country": "US",
+      "email": "jonathanmarx@gotohealthmedia.com",
+      "name": "GoToHealth Media, LLC",
+      "phone": "01-702-755-1041",
+      "tax_id": "Unknown"
+    },
+    "method": "NEW_VENDOR",
+    "parent_child_logic": {
+      "is_subsidiary": false,
+      "parent_company_detected": null
+    },
+    "reasoning": "No similar vendors found in database for 'GoToHealth Media, LLC'",
+    "risk_analysis": "LOW",
+    "vendor_id": null,
+    "verdict": "NEW_VENDOR"
+  }
+}

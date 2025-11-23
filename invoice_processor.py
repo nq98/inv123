@@ -227,10 +227,33 @@ class InvoiceProcessor:
                         validated_data['vendor'] = {}
                     
                     # Store original vendor for audit trail
-                    validated_data['vendor']['original_supplier_name'] = validated_data.get('vendor', {}).get('name')
+                    original_brand_name = validated_data.get('vendor', {}).get('name')
+                    validated_data['vendor']['original_supplier_name'] = original_brand_name
+                    validated_data['vendor']['original_ocr_name'] = original_brand_name
                     
-                    # Replace with semantically resolved vendor
-                    validated_data['vendor']['name'] = true_vendor_name
+                    # CRITICAL FIX #1 & #2: Use resolved legal beneficiary or fallback to Gemini's legal_name
+                    if true_vendor_name and true_vendor_name != 'Unknown':
+                        print(f"🔄 UPDATING VENDOR: '{original_brand_name}' → '{true_vendor_name}'")
+                        validated_data['vendor']['name'] = true_vendor_name
+                        
+                        # CRITICAL FIX #2: Only update vendorMatch if we have a valid true vendor
+                        if 'vendorMatch' not in validated_data:
+                            validated_data['vendorMatch'] = {}
+                        validated_data['vendorMatch']['normalizedName'] = true_vendor_name
+                    else:
+                        # CRITICAL FIX #1: Resolver failed - fallback to legal_name if available
+                        print(f"⚠️ Resolver returned empty vendor name, applying fallback logic...")
+                        legal_name = validated_data.get('vendor', {}).get('legal_name') or validated_data.get('vendor', {}).get('legalName')
+                        if legal_name and legal_name != 'Unknown' and legal_name != original_brand_name:
+                            print(f"🔄 FALLBACK: Using Gemini's legal_name '{legal_name}' instead of brand name '{original_brand_name}'")
+                            validated_data['vendor']['name'] = legal_name
+                            
+                            # Update vendorMatch with legal name
+                            if 'vendorMatch' not in validated_data:
+                                validated_data['vendorMatch'] = {}
+                            validated_data['vendorMatch']['normalizedName'] = legal_name
+                        else:
+                            print(f"ℹ️ No legal_name fallback available, keeping original: '{original_brand_name}'")
                     
                     # Add resolution metadata
                     validated_data['vendor_resolution'] = {

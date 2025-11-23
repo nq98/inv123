@@ -205,6 +205,17 @@ class SemanticVendorResolver:
             signals["validated_email"] = vendor_data.get("email")
             signals["validated_phone"] = vendor_data.get("phone")
             signals["validated_address"] = vendor_data.get("address")
+            
+            # CRITICAL FIX #3: Check if Gemini extracted legal_name (new field)
+            if 'legal_name' in vendor_data:
+                signals['legal_beneficiary_gemini'] = vendor_data.get('legal_name')
+        
+        # CRITICAL FIX #3: Check if vendor_identity_analysis exists (new Gemini field)
+        if 'vendor_identity_analysis' in validated_data:
+            identity = validated_data['vendor_identity_analysis']
+            if identity:
+                signals['brand_name'] = identity.get('brand_name')
+                signals['legal_beneficiary'] = identity.get('legal_beneficiary')
         
         # Payment details
         payment_details = validated_data.get("paymentDetails", {})

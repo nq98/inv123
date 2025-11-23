@@ -119,31 +119,36 @@ class VendorMatcher:
                     "method": "TAX_ID_HARD_MATCH"
                 }
         
-        # STEP 1: Semantic Candidate Retrieval (Vertex AI Search RAG)
+        # STEP 1: Semantic Candidate Retrieval (Vertex AI Search RAG + alternative signals)
         vendor_name = invoice_data.get('vendor_name', '')
         country = invoice_data.get('country')
+        tax_id = invoice_data.get('tax_id', '')
+        email_domain = invoice_data.get('email_domain', '')
+        iban = invoice_data.get('iban', '')
         
-        if not vendor_name or vendor_name == 'Unknown':
-            print("⚠️ No vendor name provided, cannot perform semantic matching")
-            return {
-                "verdict": "NEW_VENDOR",
-                "vendor_id": None,
-                "confidence": 0.0,
-                "reasoning": "No vendor name provided for matching",
-                "risk_analysis": "HIGH",
-                "database_updates": {},
-                "parent_child_logic": {
-                    "is_subsidiary": False,
-                    "parent_company_detected": None
-                },
-                "method": "NEW_VENDOR"
-            }
+        # BUG FIX #2: Don't abort if name is missing - check other identity signals
+        candidates = []
         
-        print(f"🔎 Step 1: Semantic search for '{vendor_name}' (country: {country})...")
-        candidates = self._get_semantic_candidates(vendor_name, country, top_k=5)
+        # Try vendor name search first (if available)
+        if vendor_name and vendor_name != 'Unknown':
+            print(f"🔎 Step 1: Semantic search for '{vendor_name}' (country: {country})...")
+            candidates = self._get_semantic_candidates(vendor_name, country, top_k=5)
+        
+        # If name search failed or no name, try email domain (if valid corporate domain)
+        if not candidates and email_domain and email_domain not in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']:
+            print(f"🔎 Step 1B: Searching by email domain '{email_domain}'...")
+            domain_candidates = self._get_candidates_by_domain(email_domain)
+            if domain_candidates:
+                print(f"✅ Found {len(domain_candidates)} candidates by domain")
+                candidates.extend(domain_candidates)
+            else:
+                print(f"⚠️ No candidates found for domain '{email_domain}'")
+        
+        # If still no candidates and we have Tax ID or IBAN, could search by those
+        # (Tax ID already checked in Step 0 for hard match, but could do fuzzy search here)
         
         if not candidates:
-            print("⚠️ No semantic candidates found, likely a NEW_VENDOR")
+            print(f"⚠️ No candidates found via name ({vendor_name}), domain ({email_domain}), or other signals")
             return {
                 "verdict": "NEW_VENDOR",
                 "vendor_id": None,
@@ -420,6 +425,90 @@ class VendorMatcher:
             except Exception as bigquery_error:
                 print(f"❌ BigQuery fallback also failed: {bigquery_error}")
                 return []
+    
+    def _get_candidates_by_domain(self, email_domain):
+        """
+        Search BigQuery for vendors with matching email domain
+        
+        Args:
+            email_domain: Email domain to search for (e.g., 'aws.com', 'stripe.com')
+            
+        Returns:
+            List of candidate vendor dicts with metadata
+        """
+        if not email_domain or email_domain in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']:
+            return []
+        
+        # Clean domain (remove @ if present)
+        clean_domain = email_domain.lstrip('@').lower()
+        
+        # BigQuery query to search for vendors with matching domain
+        query = f"""
+        SELECT 
+            vendor_id,
+            global_name,
+            normalized_name,
+            emails,
+            domains,
+            countries,
+            custom_attributes
+        FROM `{self.bigquery.full_table_id}`
+        WHERE '{clean_domain}' IN UNNEST(domains)
+        LIMIT 5
+        """
+        
+        try:
+            results = list(self.bigquery.client.query(query).result())
+            
+            if not results:
+                return []
+            
+            print(f"✅ BigQuery domain search found {len(results)} vendors with domain '{clean_domain}'")
+            
+            # Convert BigQuery results to candidate format
+            candidates = []
+            for row in results:
+                # Extract custom attributes
+                custom_attrs = row.custom_attributes if hasattr(row, 'custom_attributes') else {}
+                if isinstance(custom_attrs, str):
+                    try:
+                        custom_attrs = json.loads(custom_attrs)
+                    except:
+                        custom_attrs = {}
+                
+                # Extract tax IDs from custom attributes
+                tax_ids = []
+                if custom_attrs.get('tax_id'):
+                    tax_ids.append(custom_attrs['tax_id'])
+                
+                # Extract addresses from custom attributes  
+                addresses = []
+                if custom_attrs.get('address'):
+                    addresses.append(custom_attrs['address'])
+                
+                # Extract arrays (handle both list and None cases)
+                emails = row.emails if hasattr(row, 'emails') and row.emails else []
+                domains = row.domains if hasattr(row, 'domains') and row.domains else []
+                countries = row.countries if hasattr(row, 'countries') and row.countries else []
+                
+                candidates.append({
+                    "candidate_id": row.vendor_id,
+                    "global_name": row.global_name if hasattr(row, 'global_name') else 'Unknown',
+                    "normalized_name": row.normalized_name if hasattr(row, 'normalized_name') else '',
+                    "aliases": [row.normalized_name] if hasattr(row, 'normalized_name') and row.normalized_name else [],
+                    "tax_ids": tax_ids,
+                    "domains": domains,
+                    "emails": emails,
+                    "addresses": addresses,
+                    "countries": countries,
+                    "custom_attributes": custom_attrs
+                })
+            
+            return candidates
+            
+        except Exception as e:
+            print(f"⚠️ Domain search failed (schema may be missing): {e}")
+            return []  # Graceful fallback
     
     def _supreme_judge_decision(self, invoice_data, candidates, classifier_verdict=None):
         """

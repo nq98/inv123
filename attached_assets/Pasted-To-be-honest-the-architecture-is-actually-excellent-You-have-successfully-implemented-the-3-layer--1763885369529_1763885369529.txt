@@ -1,0 +1,93 @@
+To be honest, the architecture is actually excellent. You have successfully implemented the 3-layer logic (DocAI → Vertex → Gemini) and the "Supreme Judge" concept.
+However, the reason it failed on the "Fully Booked vs. Artem" invoice is not because the architecture is wrong, but because of Data Flow & Prompt Blindness in specific files.
+Here are the 3 Critical Bugs preventing your system from being "True AI":
+1. The "Logo Bias" in gemini_service.py (Critical)
+The Problem: Your Gemini System Prompt (in gemini_service.py) asks for vendor.name. It does not explicitly ask Gemini to distinguish between the Brand Name (Header) and the Legal Beneficiary (Bank Account Name).
+Because of this, Gemini defaults to the biggest text on the page ("Fully Booked") and ignores the small text ("Payable to Artem").
+The Fix:
+You must update the OUTPUT SCHEMA inside gemini_service.py to force Gemini to look for the legal entity.
+Modify services/gemini_service.py inside self.system_instruction:
+code
+JSON
+// CHANGE THIS SECTION IN YOUR JSON SCHEMA:
+"vendor": {
+    "name": "The Brand Name/Logo Name (e.g., 'Fully Booked')",
+    "legal_name": "The Legal Entity Name found in Payment Instructions/Bank Details (e.g., 'Artem Revva'). CRITICAL: If different from Brand Name, prioritize this.",
+    "address": "Complete address",
+    // ... rest of fields
+},
+// ADD THIS NEW FIELD TO THE ROOT OF THE SCHEMA:
+"vendor_identity_analysis": {
+    "brand_name": "string",
+    "legal_beneficiary": "string",
+    "is_third_party_payment": boolean,
+    "reasoning": "Explain why legal_beneficiary differs from brand_name"
+}
+2. The VendorMatcher gives up too easily (Logic Error)
+The Problem: In services/vendor_matcher.py, look at this block:
+code
+Python
+# STEP 1: Semantic Candidate Retrieval
+if not vendor_name or vendor_name == 'Unknown':
+    print("⚠️ No vendor name provided, cannot perform semantic matching")
+    return { "verdict": "NEW_VENDOR", ... }
+Why it fails: If the invoice extraction returns vendor_name: "Unknown" (because the logo was weird), the system aborts.
+The Reality: Even if the Name is unknown, you might have a Tax ID or IBAN. You should never abort just because the name is missing.
+The Fix in services/vendor_matcher.py:
+code
+Python
+def match_vendor(self, invoice_data, classifier_verdict=None):
+    # ... [Keep existing code] ...
+
+    # --- CHANGE START ---
+    # DON'T RETURN EARLY just because name is missing. Check other signals.
+    vendor_name = invoice_data.get('vendor_name', 'Unknown')
+    
+    # Try to find candidates via Tax ID or Email Domain even if Name is Unknown
+    candidates = []
+    
+    # 1. Search by Name (if exists)
+    if vendor_name and vendor_name != 'Unknown':
+        candidates.extend(self._get_semantic_candidates(vendor_name, country, top_k=3))
+        
+    # 2. Search by Domain (if valid corporate domain)
+    email_domain = invoice_data.get('email_domain')
+    if email_domain and email_domain not in ['@gmail.com', '@yahoo.com']:
+        # Add logic to search DB by domain
+        pass 
+
+    if not candidates and (not vendor_name or vendor_name == 'Unknown'):
+         # NOW you can give up
+         return { "verdict": "NEW_VENDOR", ... }
+    # --- CHANGE END ---
+3. The InvoiceProcessor wiring is "One-Way"
+The Problem: In invoice_processor.py, you run layer3_gemini (Extraction) and then layer3_5_vendor_resolution (Resolver).
+But... you don't update the main data with the resolution result!
+You calculate the "True Vendor" in Layer 3.5, but the final JSON response might still show the old validated_data.vendor.name unless you explicitly overwrite it.
+The Fix in invoice_processor.py:
+code
+Python
+# Inside process_invoice method...
+
+# LAYER 3.5: Semantic Vendor Identity Resolution
+vendor_resolution = self.vendor_resolver.resolve_vendor_identity(...)
+
+if vendor_resolution and 'true_vendor' in vendor_resolution:
+    true_name = vendor_resolution['true_vendor']['name']
+    
+    # --- CRITICAL FIX: OVERWRITE THE MAIN DATA ---
+    print(f"🔄 UPDATING VENDOR: '{validated_data['vendor']['name']}' -> '{true_name}'")
+    
+    # Save original for reference
+    validated_data['vendor']['original_ocr_name'] = validated_data['vendor']['name']
+    
+    # Update the main field so the rest of the system uses the CORRECT name
+    validated_data['vendor']['name'] = true_name
+    
+    # Also update the match object to help the Matcher
+    validated_data['vendorMatch']['normalizedName'] = true_name
+Summary of Action Plan for Your Developer
+Update GeminiService Prompt: Add legal_name and vendor_identity_analysis to the JSON schema.
+Update VendorMatcher Logic: Do not fail immediately if vendor_name is Unknown; check Tax IDs/Domains.
+Update InvoiceProcessor: Explicitly overwrite validated_data['vendor']['name'] with the result from the SemanticVendorResolver.
+If you make these 3 changes, the "Fully Booked" invoice will be correctly identified as "Artem Revva" because the Resolver will catch it, and the

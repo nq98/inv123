@@ -284,7 +284,8 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
   "paymentTerms": "Net 30|Due on receipt|etc or null",
 
   "vendor": {{
-    "name": "Full legal name (corrected using RAG context if available)",
+    "name": "The Brand Name / Logo Name (visible on invoice header)",
+    "legal_name": "CRITICAL: The Legal Entity Name found in Payment Instructions / Bank Beneficiary / Remit-To field. This is WHO RECEIVES THE MONEY. If different from Brand Name, PRIORITIZE THIS for matching.",
     "address": "Complete address",
     "country": "Country name",
     "email": "email@domain.com or null",
@@ -292,6 +293,13 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
     "taxId": "VAT/Tax ID or null",
     "registrationNumber": "Business reg number or null",
     "website": "url or null"
+  }},
+  
+  "vendor_identity_analysis": {{
+    "brand_name": "Name/logo visible on invoice header (e.g., 'Fully Booked', 'Go To Health!')",
+    "legal_beneficiary": "Legal entity receiving payment from bank/remit-to instructions (e.g., 'Artem Andreevitch Revva', 'GoToHealth Media, LLC')",
+    "is_third_party_payment": true|false,
+    "reasoning": "REQUIRED: Explain if brand_name differs from legal_beneficiary and why. Example: 'Invoice header shows Fully Booked but payment instructions say Payable to Artem Andreevitch Revva, indicating Artem is a freelancer using Fully Booked as a brand name.'"
   }},
 
   "buyer": {{
