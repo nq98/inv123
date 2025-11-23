@@ -334,12 +334,23 @@ class NetSuiteService:
                 if response.status_code in [200, 201, 204]:
                     status = "success"
                     if response.status_code == 204:
-                        response_data = {'success': True}
+                        # Extract ID from Location header for 204 responses
+                        location = response.headers.get('Location', '')
+                        new_id = None
+                        if location:
+                            # Expected format: https://.../record/v1/vendor/12345
+                            try:
+                                new_id = location.split('/')[-1]
+                                logger.info(f"Extracted NetSuite ID from Location header: {new_id}")
+                            except:
+                                logger.warning(f"Could not extract ID from Location header: {location}")
+                        response_data = {'success': True, 'id': new_id}
+                        netsuite_id = new_id  # Set the ID for logging
                     else:
                         response_data = response.json() if response.text else {'success': True}
                     
-                    # Extract NetSuite ID if available
-                    if response_data and isinstance(response_data, dict):
+                    # Extract NetSuite ID if available (for non-204 responses)
+                    if response_data and isinstance(response_data, dict) and not netsuite_id:
                         netsuite_id = response_data.get('id') or response_data.get('internalId')
                     
                     # Log success to BigQuery
