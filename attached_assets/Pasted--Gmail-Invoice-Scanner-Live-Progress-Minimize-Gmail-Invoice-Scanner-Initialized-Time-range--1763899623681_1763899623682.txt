@@ -1,0 +1,61 @@
+📧 Gmail Invoice Scanner - Live Progress
+Minimize
+🚀 Gmail Invoice Scanner Initialized
+⏰ Time range: Last 90 days
+Authenticating with Gmail API...
+Connected to Gmail account
+
+📬 Total emails in inbox: 201 emails
+
+🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)
+Casting wide net: English, Hebrew, French, German, Spanish keywords...
+Excluding: newsletters, webinars, invitations...
+📧 Found 6 emails matching broad financial patterns (2.99% of inbox)
+
+🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)
+AI analyzing 6 emails for semantic context...
+Filtering: Marketing spam, newsletters, logistics, false positives...
+  ✓ [1/6] KEEP: "Re: didn't recive payment..." ([AI Gatekeeper] RECEIPT - The email body explicitly states 'Payment has been rec)
+  ✓ [2/6] KEEP: "Re: didn't recive payment..." ([AI Gatekeeper] OTHER - The email is from a financial service (payouts.com) and )
+  ✓ [3/6] KEEP: "didn't recive payment..." ([AI Gatekeeper] OTHER - The subject and body explicitly discuss a payment transf)
+  ✗ [4/6] KILL: "OOO Re: Order form draft..." ([AI Gatekeeper] JUNK - The email is an Out of Office (OOO) reply, clearly indica)
+  ✓ [5/6] KEEP: "Order form draft..." ([AI Gatekeeper] OTHER - The subject 'Order form draft' and the attachment name ')
+  ✓ [6/6] KEEP: "Re: payment to Embeddables..." ([AI Gatekeeper] OTHER - The subject 'payment to Embeddables' and body content 'p)
+📊 FILTERING FUNNEL:
+Total Emails (90 days):
+201 emails
+After Multi-Language Filter:
+6 emails (2.99%)
+After AI Semantic Filter:
+5 emails (83.3%)
+Invoices/Receipts Found:
+0 documents (0%)
+
+📊 FILTERING RESULTS:
+  • Total inbox emails: 201
+  • After Stage 1 filter: 6 (2.99%)
+  • After Stage 2 AI filter: 5 (83.3% of 6)
+  • Rejected: 1 emails
+
+🤖 STAGE 3: Deep AI Extraction (5 invoices)
+3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic
+
+[1/5] Processing: "Re: didn't recive payment..."
+  From: Saleem Khaja <payments@locknpay.com>
+  ⚠️ No PDFs or download links found
+
+[2/5] Processing: "Re: didn't recive payment..."
+  From: Lilach Sachs <lilach.s@payouts.com>
+  ⚠️ No PDFs or download links found
+
+[3/5] Processing: "didn't recive payment..."
+  From: Saleem Khaja <payments@locknpay.com>
+  ⚠️ No PDFs or download links found
+
+[4/5] Processing: "Order form draft..."
+  From: Yadin Gal <yadin.g@payouts.com>
+  📎 Attachment: vCommission Sales Order Form .docx.pdf
+    → Layer 1: Document AI OCR...
+    → Layer 2: Vertex Search RAG...
+    → Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...

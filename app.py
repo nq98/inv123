@@ -1145,14 +1145,20 @@ def gmail_import_stream():
             email = credentials.get('email', 'Gmail account')
             yield send_event('progress', {'type': 'status', 'message': f'Connected to {email}'})
             
-            # Get total inbox count BEFORE filtering
+            # Get total inbox count within selected time range
+            from datetime import datetime, timedelta
+            after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
             try:
-                inbox_total_result = service.users().messages().list(userId='me', maxResults=1).execute()
+                inbox_total_result = service.users().messages().list(
+                    userId='me',
+                    q=f'after:{after_date}',
+                    maxResults=1
+                ).execute()
                 total_inbox_count = inbox_total_result.get('resultSizeEstimate', 0)
             except:
                 total_inbox_count = 0
             
-            yield send_event('progress', {'type': 'status', 'message': f'\n📬 Total emails in inbox: {total_inbox_count:,} emails'})
+            yield send_event('progress', {'type': 'status', 'message': f'\n📬 Total emails in selected time range ({time_label}): {total_inbox_count:,} emails'})
             
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
