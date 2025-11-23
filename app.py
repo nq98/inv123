@@ -743,6 +743,15 @@ def gmail_import_stream():
             email = credentials.get('email', 'Gmail account')
             yield send_event('progress', {'type': 'status', 'message': f'Connected to {email}'})
             
+            # Get total inbox count BEFORE filtering
+            try:
+                inbox_total_result = service.users().messages().list(userId='me', maxResults=1).execute()
+                total_inbox_count = inbox_total_result.get('resultSizeEstimate', 0)
+            except:
+                total_inbox_count = 0
+            
+            yield send_event('progress', {'type': 'status', 'message': f'\n📬 Total emails in inbox: {total_inbox_count:,} emails'})
+            
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
             yield send_event('progress', {'type': 'status', 'message': stage1_msg})
@@ -752,7 +761,8 @@ def gmail_import_stream():
             messages = gmail_service.search_invoice_emails(service, 500, days)  # Get up to 500 for filtering
             
             total_found = len(messages)
-            yield send_event('progress', {'type': 'status', 'message': f'📧 Found {total_found} emails matching broad financial patterns'})
+            stage1_percent = round((total_found / max(total_inbox_count, 1)) * 100, 2)
+            yield send_event('progress', {'type': 'status', 'message': f'📧 Found {total_found} emails matching broad financial patterns ({stage1_percent}% of inbox)'})
             
             # Stage 2: Elite Gatekeeper AI Filter
             stage2_msg = '\n🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)'
@@ -802,9 +812,10 @@ def gmail_import_stream():
             # Send structured filtering funnel event
             funnel_stats = {
                 'timeRange': time_label,
+                'totalInboxCount': total_inbox_count,
                 'totalEmails': total_found,
                 'afterLanguageFilter': total_found,
-                'languageFilterPercent': after_language_filter_percent,
+                'languageFilterPercent': round((total_found / max(total_inbox_count, 1)) * 100, 2),
                 'afterAIFilter': invoice_count,
                 'aiFilterPercent': after_ai_filter_percent,
                 'invoicesFound': 0,  # Will be updated after extraction
@@ -814,10 +825,10 @@ def gmail_import_stream():
             
             filter_results_msg = '\n📊 FILTERING RESULTS:'
             yield send_event('progress', {'type': 'status', 'message': filter_results_msg})
-            yield send_event('progress', {'type': 'status', 'message': f'  • Total emails scanned: {total_found}'})
-            yield send_event('progress', {'type': 'status', 'message': f'  • Relevant (potential invoices): {total_found}'})
-            yield send_event('progress', {'type': 'status', 'message': f'  • Clean invoices/receipts: {invoice_count} ✓'})
-            yield send_event('progress', {'type': 'status', 'message': f'  • Filtered out (not invoices): {non_invoice_count}'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Total inbox emails: {total_inbox_count:,}'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • After Stage 1 filter: {total_found} ({stage1_percent}%)'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • After Stage 2 AI filter: {invoice_count} ({after_ai_filter_percent}% of {total_found})'})
+            yield send_event('progress', {'type': 'status', 'message': f'  • Rejected: {non_invoice_count} emails'})
             
             # Stage 3: Extract invoice data through 3-layer AI
             stage3_msg = f'\n🤖 STAGE 3: Deep AI Extraction ({invoice_count} invoices)'
