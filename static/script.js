@@ -257,7 +257,53 @@ minimizeTerminal.addEventListener('click', () => {
     gmailProgressTerminal.classList.add('hidden');
 });
 
-function addTerminalLine(message, type = 'info') {
+/**
+ * Detect message type based on content for color-coded terminal display
+ * @param {string} message - The message to analyze
+ * @returns {string} The detected type (stage-header, success, info, warning, error, progress)
+ */
+function detectMessageType(message) {
+    // Stage headers (STAGE 1, STAGE 2, FILTERING RESULTS) - Yellow/Orange
+    if (message.includes('STAGE 1') || message.includes('STAGE 2') || message.includes('FILTERING RESULTS')) {
+        return 'stage-header';
+    }
+    
+    // Error messages (✗, KILL, Error) - Red
+    if (message.includes('✗') || message.includes('KILL') || message.includes('Error') || message.includes('❌')) {
+        return 'error';
+    }
+    
+    // Warning messages (⚠️) - Orange
+    if (message.includes('⚠️')) {
+        return 'warning';
+    }
+    
+    // Success messages (✓, ✅, SUCCESS) - Green
+    if (message.startsWith('✓') || message.startsWith('✅') || message.includes('SUCCESS') || message.includes('Import session completed')) {
+        return 'success';
+    }
+    
+    // Progress messages ([1/19] pattern) - Gray/White
+    if (/\[\d+\/\d+\]/.test(message)) {
+        return 'progress';
+    }
+    
+    // Info messages (📧, 📬, 🔍, Found, Total) - Blue/Cyan
+    if (message.includes('📧') || message.includes('📬') || message.includes('🔍') || 
+        message.includes('Found') || message.includes('Total') || message.includes('emails')) {
+        return 'info';
+    }
+    
+    // Default to info
+    return 'info';
+}
+
+function addTerminalLine(message, type = null) {
+    // Auto-detect type if not explicitly provided
+    if (type === null || type === 'info') {
+        type = detectMessageType(message);
+    }
+    
     const line = document.createElement('div');
     line.className = `terminal-line ${type}`;
     line.textContent = message;

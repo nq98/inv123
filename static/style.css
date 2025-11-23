@@ -596,11 +596,34 @@ body {
     word-break: break-word;
 }
 
+/* Terminal line color-coding for better readability */
+.terminal-line.stage-header { 
+    color: #FFA500; 
+    font-weight: bold; 
+}
+
+.terminal-line.success { 
+    color: #00FF00; 
+}
+
+.terminal-line.info { 
+    color: #00BFFF; 
+}
+
+.terminal-line.warning { 
+    color: #FFA500; 
+}
+
+.terminal-line.error { 
+    color: #FF4444; 
+}
+
+.terminal-line.progress { 
+    color: #AAAAAA; 
+}
+
+/* Legacy terminal line classes (kept for backwards compatibility) */
 .terminal-line.status { color: #4fc3f7; }
-.terminal-line.success { color: #81c784; }
-.terminal-line.warning { color: #ffb74d; }
-.terminal-line.error { color: #e57373; }
-.terminal-line.info { color: #9575cd; }
 .terminal-line.analyzing { color: #64b5f6; }
 
 .terminal-spinner {
