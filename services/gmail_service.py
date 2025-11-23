@@ -437,3 +437,150 @@ class GmailService:
         except Exception as e:
             print(f"❌ Error sending email: {e}")
             return False
+    
+    def process_link_intelligently(self, url, email_context, gemini_service=None):
+        """
+        AI-semantic intelligent link processor with fallback chain
+        
+        Workflow:
+        1. AI classifies link type (direct_pdf | web_receipt | auth_required)
+        2. direct_pdf → Try direct download
+        3. web_receipt → Capture screenshot
+        4. auth_required → Return None with reason
+        5. If no Gemini → Fallback to basic PDF download
+        
+        Args:
+            url: URL to process
+            email_context: Email subject/snippet for context
+            gemini_service: GeminiService for AI classification (optional)
+        
+        Returns:
+            dict: {
+                'success': bool,
+                'type': 'pdf' | 'screenshot' | 'failed',
+                'filename': str,
+                'data': bytes,
+                'link_classification': str,
+                'reasoning': str
+            }
+        """
+        
+        try:
+            # DEFENSIVE: If Gemini unavailable, fallback to basic PDF download
+            if not gemini_service:
+                print(f"⚠️ Gemini service unavailable, trying basic PDF download...")
+                pdf_result = self.download_pdf_from_link(url)
+                
+                if pdf_result:
+                    filename, pdf_data = pdf_result
+                    return {
+                        'success': True,
+                        'type': 'pdf',
+                        'filename': filename,
+                        'data': pdf_data,
+                        'link_classification': 'fallback',
+                        'reasoning': 'Gemini unavailable - used basic download'
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'type': 'failed',
+                        'filename': None,
+                        'data': None,
+                        'link_classification': 'fallback',
+                        'reasoning': 'Gemini unavailable and basic download failed'
+                    }
+            
+            # Step 1: AI Link Classification
+            link_type, confidence, classification_reasoning = gemini_service.classify_link_type(
+                url, 
+                email_context
+            )
+            
+            print(f"🧠 AI Link Classification: {link_type} (confidence: {confidence:.2f})")
+            print(f"   Reasoning: {classification_reasoning}")
+            
+            # Step 2: Process based on classification
+            if link_type == 'direct_pdf':
+                # Try direct PDF download
+                print(f"📥 Attempting direct PDF download...")
+                pdf_result = self.download_pdf_from_link(url)
+                
+                if pdf_result:
+                    filename, pdf_data = pdf_result
+                    return {
+                        'success': True,
+                        'type': 'pdf',
+                        'filename': filename,
+                        'data': pdf_data,
+                        'link_classification': link_type,
+                        'reasoning': classification_reasoning
+                    }
+                else:
+                    # Direct download failed, fallback to screenshot
+                    print(f"⚠️ Direct PDF download failed, trying screenshot fallback...")
+                    link_type = 'web_receipt'  # Force screenshot attempt
+            
+            if link_type == 'web_receipt':
+                # Capture screenshot
+                print(f"📸 Capturing web receipt screenshot...")
+                from services.screenshot_service import ScreenshotService
+                screenshot_service = ScreenshotService()
+                
+                screenshot_data = screenshot_service.capture_receipt_screenshot(url)
+                
+                if screenshot_data:
+                    # Generate filename from URL
+                    from urllib.parse import urlparse
+                    parsed_url = urlparse(url)
+                    filename = f"receipt_screenshot_{parsed_url.netloc.replace('.', '_')}.png"
+                    
+                    return {
+                        'success': True,
+                        'type': 'screenshot',
+                        'filename': filename,
+                        'data': screenshot_data,
+                        'link_classification': link_type,
+                        'reasoning': classification_reasoning
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'type': 'failed',
+                        'filename': None,
+                        'data': None,
+                        'link_classification': link_type,
+                        'reasoning': 'Screenshot capture failed'
+                    }
+            
+            if link_type == 'auth_required':
+                # Cannot process - requires authentication
+                return {
+                    'success': False,
+                    'type': 'failed',
+                    'filename': None,
+                    'data': None,
+                    'link_classification': link_type,
+                    'reasoning': f'Requires authentication: {classification_reasoning}'
+                }
+            
+            # Unknown link type
+            return {
+                'success': False,
+                'type': 'failed',
+                'filename': None,
+                'data': None,
+                'link_classification': link_type,
+                'reasoning': f'Unknown link type: {link_type}'
+            }
+            
+        except Exception as e:
+            print(f"❌ Intelligent link processing error: {e}")
+            return {
+                'success': False,
+                'type': 'failed',
+                'filename': None,
+                'data': None,
+                'link_classification': 'error',
+                'reasoning': str(e)
+            }

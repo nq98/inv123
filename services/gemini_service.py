@@ -729,3 +729,68 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
             response['raw_response'] = raw_response
         
         return response
+    
+    def classify_link_type(self, url, email_context=""):
+        """
+        AI-semantic link classifier - determines how to process a URL
+        
+        Args:
+            url: The URL to classify
+            email_context: Optional email subject/body for context
+        
+        Returns:
+            tuple: (link_type, confidence, reasoning)
+                link_type: 'direct_pdf', 'web_receipt', or 'auth_required'
+                confidence: float 0-1
+                reasoning: str explanation
+        """
+        
+        prompt = f"""Analyze this URL and classify what type of link it is for invoice/receipt extraction.
+
+URL: {url}
+Email Context: {email_context}
+
+Classify as ONE of:
+1. **direct_pdf**: Direct PDF download link (file.pdf, download endpoint, direct file)
+2. **web_receipt**: Web-based receipt page that can be viewed in browser (Stripe receipts, PayPal invoices, AWS bills, etc.)
+3. **auth_required**: Requires login/authentication to access (dashboard, account portal, authenticated API)
+
+Use SEMANTIC INTELLIGENCE:
+- Analyze the domain, path structure, and parameters
+- Consider what the link ACTUALLY does, not just keywords
+- Think about whether a headless browser can access it
+- Stripe receipt URLs (pay.stripe.com/receipts/*, dashboard.stripe.com/receipts/*) are 'web_receipt' - they render in browser
+- PayPal invoice URLs are 'web_receipt'
+- AWS billing PDFs with pre-signed URLs are 'direct_pdf'
+- Dashboard/portal links requiring login are 'auth_required'
+
+Return ONLY valid JSON:
+{{
+  "linkType": "direct_pdf" | "web_receipt" | "auth_required",
+  "confidence": 0.0-1.0,
+  "reasoning": "Brief explanation of classification"
+}}"""
+
+        try:
+            config = {
+                'response_mime_type': 'application/json'
+            }
+            
+            response = self._generate_content_with_fallback(
+                self.model_name,
+                prompt,
+                config
+            )
+            
+            result = json.loads(response.text)
+            
+            return (
+                result.get('linkType', 'auth_required'),
+                result.get('confidence', 0.0),
+                result.get('reasoning', 'No reasoning provided')
+            )
+            
+        except Exception as e:
+            print(f"Link classification error: {e}")
+            # Safe fallback: assume auth required if classification fails
+            return ('auth_required', 0.0, f'Classification failed: {str(e)}')

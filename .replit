@@ -8,6 +8,10 @@ externalPort = 80
 localPort = 34335
 externalPort = 3000
 
+[[ports]]
+localPort = 39613
+externalPort = 3001
+
 [agent]
 expertMode = true
 integrations = ["python_gemini_ai_integrations:1.0.0"]
@@ -38,7 +42,7 @@ waitForPort = 5000
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "freetype", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]
+packages = ["cargo", "freetype", "gitFull", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "playwright-driver", "rustc", "tcl", "tk", "zlib", "chromium"]
 
 [deployment]
 deploymentTarget = "autoscale"

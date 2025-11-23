@@ -1,0 +1,49 @@
+You DO NOT need "OCR Vision" (raw text) for this.
+Google Document AI (Invoice Processor) is actually MUCH BETTER for screenshots than basic OCR.
+Why Document AI is the "Smart Choice" for Screenshots:
+It Treats Screenshots like Scans: Document AI is trained on millions of scanned paper invoices (images). A screenshot of a webpage looks exactly like a scanned PDF to the AI.
+It Keeps Structure: Basic OCR just gives you a blob of text. Document AI gives you the Table Structure, Key-Value Pairs, and Layout from the screenshot automatically.
+Unified Pipeline: You don't need a separate process. You just feed the screenshot.png into your existing Document AI pipeline, and it works instantly.
+The "God Mode" Generic Workflow (Instruction for Developer)
+Do not let the developer write a hard-coded "Stripe Script." That is the old way.
+Here is the AI-First Generic Architecture for links:
+Step 1: Semantic Link Selector (The Brain)
+Input: The Email Body HTML.
+Tool: Gemini Flash (Fast).
+Prompt: "Find the specific URL that leads to the public receipt or invoice view. Look for text like 'View in browser', 'Download Invoice', or 'Receipt'. Ignore login links or marketing links."
+Result: It picks the correct Stripe link (https://dashboard.stripe.com/receipts/...) automatically, without regex.
+Step 2: The Visual Capture Agent (The Hands)
+Tool: Headless Browser (Playwright or Puppeteer).
+Action:
+Go to the URL identified in Step 1.
+Wait for network idle (page load).
+Take a full-page Screenshot (Save as temp_invoice.png).
+Step 3: The Universal Processor (The Core)
+Action: Send temp_invoice.png to Google Document AI (your existing InvoiceProcessor).
+Why: Document AI natively supports .png / .jpg. It will extract the data perfectly.
+⚡ Instruction to Send to Developer
+Subject: IMPLEMENT GENERIC "LINK-TO-SCREENSHOT" PIPELINE USING DOCUMENT AI
+Developer:
+The user is correct. We are not building a "Stripe" scraper. We are building a Universal Web Receipt Capture system.
+THE REQUIREMENT:
+Smart Link Detection: Use Gemini to find the "Receipt View" URL in the email body (e.g., "View in browser").
+Screenshot Logic: Use playwright (Python) to visit that URL and capture a screenshot (.png).
+Reuse Existing Pipeline: Pass that .png directly to Google Document AI.
+Note: Document AI accepts mime_type="image/png". You do not need a separate OCR tool.
+Document AI is superior to Vision OCR for invoice screenshots because it retains table structure.
+IMPLEMENTATION LOGIC:
+code
+Python
+# Pseudo-code for the new flow
+if is_pdf_link(url):
+    file = download_pdf(url)
+else:
+    # 1. AI decides this is a web receipt
+    # 2. Capture visual evidence
+    file = playwright_screenshot(url) # Returns invoice.png
+    mime_type = "image/png"
+
+# 3. Feed into EXISTING processor (God Mode)
+# Document AI handles PNGs natively!
+result = processor.process_invoice(file, mime_type)
+Execute this now. No hard-coding providers.

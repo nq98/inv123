@@ -1341,15 +1341,26 @@ def gmail_import_stream():
                             yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Extraction incomplete: Vendor={vendor}, Total={total}'})
                             extraction_failures.append(subject)
                     
-                    # Process links
+                    # Process links with AI-semantic intelligent processing
                     for link_url in links[:2]:  # Limit to first 2 links per email
-                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Downloading from link: {link_url[:80]}...'})
+                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
                         
-                        pdf_result = gmail_service.download_pdf_from_link(link_url)
+                        # AI-semantic intelligent link processing
+                        email_context = f"{subject} - {metadata.get('snippet', '')[:100]}"
+                        link_result = gmail_service.process_link_intelligently(link_url, email_context, gemini_service)
                         
-                        if pdf_result:
-                            filename, file_data = pdf_result
-                            yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
+                        if link_result['success']:
+                            filename = link_result['filename']
+                            file_data = link_result['data']
+                            link_type = link_result['type']  # 'pdf' or 'screenshot'
+                            classification = link_result['link_classification']
+                            
+                            # Show appropriate message based on processing type
+                            if link_type == 'screenshot':
+                                yield send_event('progress', {'type': 'success', 'message': f'  📸 Screenshot captured: {filename}'})
+                                yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Source: Web receipt (screenshot)'})
+                            else:
+                                yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
                             
                             secure_name = secure_filename(filename)
                             filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
@@ -1357,14 +1368,23 @@ def gmail_import_stream():
                             with open(filepath, 'wb') as f:
                                 f.write(file_data)
                             
-                            yield send_event('progress', {'type': 'status', 'message': '    → Processing through 3-layer AI...'})
-                            yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing downloaded file...'})
+                            # Determine file type for processing
+                            if link_type == 'screenshot':
+                                file_mimetype = 'image/png'
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Image)...'})
+                            else:
+                                file_mimetype = 'application/pdf'
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
+                            
+                            yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
+                            yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                            yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing file...'})
                             
                             try:
-                                invoice_result = processor.process_local_file(filepath, 'application/pdf')
+                                invoice_result = processor.process_local_file(filepath, file_mimetype)
                             except Exception as link_proc_error:
                                 os.remove(filepath)
-                                yield send_event('progress', {'type': 'error', 'message': f'  ❌ Link processing failed: {str(link_proc_error)[:100]}'})
+                                yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(link_proc_error)[:100]}'})
                                 continue
                             
                             os.remove(filepath)
@@ -1377,7 +1397,8 @@ def gmail_import_stream():
                             currency = validated.get('currency', 'USD')
                             
                             if vendor and vendor != 'Unknown' and total and total > 0:
-                                yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from link: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                source_label = '📸 Screenshot' if link_type == 'screenshot' else '🔗 Link'
+                                yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                 imported_invoices.append({
                                     'subject': subject,
                                     'sender': sender,
@@ -1387,11 +1408,13 @@ def gmail_import_stream():
                                     'total': total,
                                     'currency': currency,
                                     'line_items': validated.get('lineItems', []),
-                                    'full_data': validated
+                                    'full_data': validated,
+                                    'source_type': link_type  # Track if from screenshot or PDF
                                 })
                         else:
-                            # Download failed - show why
-                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Download failed: Link not a direct PDF or requires authentication'})
+                            # Processing failed - show why
+                            reasoning = link_result['reasoning']
+                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
                     
                 except Exception as e:
                     yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
