@@ -862,8 +862,8 @@ def upload_invoice():
     if result.get('status') == 'completed' and 'validated_data' in result:
         validated_data = result.get('validated_data', {})
         
-        # Extract invoice data
-        invoice_id = validated_data.get('invoiceId', 'Unknown')
+        # Extract invoice data (try multiple possible keys for invoice_id)
+        invoice_id = validated_data.get('invoiceId') or validated_data.get('invoiceNumber') or 'Unknown'
         total_amount = validated_data.get('totalAmount', 0)
         currency_code = validated_data.get('currencyCode', 'USD')
         invoice_date = validated_data.get('invoiceDate', None)
