@@ -139,7 +139,7 @@ function generateGmailFunnelHTML(stats) {
             <h4>📊 FILTERING FUNNEL:</h4>
             <div class="funnel-step">
                 <span class="funnel-label">Total Emails (${stats.timeRange}):</span>
-                <span class="funnel-value">${stats.totalEmails.toLocaleString()} emails</span>
+                <span class="funnel-value">${stats.totalInboxCount ? stats.totalInboxCount.toLocaleString() : stats.totalEmails.toLocaleString()} emails</span>
             </div>
             <div class="funnel-step">
                 <span class="funnel-label">After Multi-Language Filter:</span>
