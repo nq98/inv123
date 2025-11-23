@@ -185,7 +185,16 @@ class BigQueryService:
             return {"inserted": 0, "updated": 0, "errors": [str(e)]}
     
     def search_vendor_by_name(self, vendor_name, limit=5):
-        """Search for vendors by name using fuzzy matching"""
+        """Search for vendors by name using fuzzy matching with punctuation normalization"""
+        
+        # CRITICAL FIX: Normalize punctuation to fix the "comma bug"
+        # "Software Oasis, LLC" should match "Software Oasis LLC" in database
+        clean_name = vendor_name
+        for remove_str in [',', '.', ' Inc', ' LLC', ' Ltd', ' Corp', ' Corporation']:
+            clean_name = clean_name.replace(remove_str, '')
+        clean_name = ' '.join(clean_name.split())  # Normalize whitespace
+        
+        print(f"🔍 BigQuery search: '{vendor_name}' → normalized: '{clean_name}'")
         
         query = f"""
         SELECT 
@@ -201,6 +210,7 @@ class BigQueryService:
         FROM `{self.full_table_id}`
         WHERE LOWER(global_name) LIKE LOWER(@vendor_name)
            OR LOWER(normalized_name) LIKE LOWER(@vendor_name)
+           OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(global_name, ',', ''), '.', ''), ' Inc', ''), ' LLC', ''), ' Ltd', '')) LIKE LOWER(@clean_name)
         ORDER BY last_updated DESC
         LIMIT @limit
         """
@@ -208,6 +218,7 @@ class BigQueryService:
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("vendor_name", "STRING", f"%{vendor_name}%"),
+                bigquery.ScalarQueryParameter("clean_name", "STRING", f"%{clean_name}%"),
                 bigquery.ScalarQueryParameter("limit", "INT64", limit),
             ]
         )

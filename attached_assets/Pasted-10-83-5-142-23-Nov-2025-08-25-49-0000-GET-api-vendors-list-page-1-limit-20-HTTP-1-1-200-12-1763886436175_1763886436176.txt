@@ -1,0 +1,80 @@
+10.83.5.142 - - [23/Nov/2025:08:25:49 +0000] "GET /api/vendors/list?page=1&limit=20 HTTP/1.1" 200 12649 "https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+127.0.0.1 - - [23/Nov/2025:08:25:53 +0000] "GET /static/style.css?v=9 HTTP/1.1" 200 0 "http://127.0.0.1:5000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+127.0.0.1 - - [23/Nov/2025:08:25:53 +0000] "GET /static/script.js?v=9 HTTP/1.1" 200 0 "http://127.0.0.1:5000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+127.0.0.1 - - [23/Nov/2025:08:25:53 +0000] "GET /api/ap-automation/gmail/status HTTP/1.1" 200 20 "http://127.0.0.1:5000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+127.0.0.1 - - [23/Nov/2025:08:25:53 +0000] "GET /favicon.ico HTTP/1.1" 404 207 "http://127.0.0.1:5000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+127.0.0.1 - - [23/Nov/2025:08:25:54 +0000] "GET /api/vendors/list?page=1&limit=20 HTTP/1.1" 200 12649 "http://127.0.0.1:5000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+✅ Replit Gemini fallback initialized (rate limit protection enabled)
+Uploading PROFORMA_INVOICE_SO25041815.pdf to GCS...
+✓ Uploaded to: gs://payouts-invoices/uploads/PROFORMA_INVOICE_SO25041815.pdf
+
+============================================================
+PROCESSING INVOICE: gs://payouts-invoices/uploads/PROFORMA_INVOICE_SO25041815.pdf
+============================================================
+
+LAYER 1: Document AI - Structure Extraction
+------------------------------------------------------------
+✓ Extracted 758 characters of text
+✓ Found 15 entity types
+
+LAYER 1.5: Multi-Currency Detection & Analysis
+------------------------------------------------------------
+⚠ Multi-currency detection error (non-critical): could not convert string to float: 'VAT'
+
+LAYER 2: Vertex AI Search (RAG) - Context Retrieval
+------------------------------------------------------------
+✓ Extracted vendor name: Software Oasis, LLC
+⚠️ Error checking rejected entities: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+Error searching vendor: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+✓ Found 0 vendor matches in RAG datastore
+🧠 Searching for similar past invoice extractions...
+Error searching similar invoices: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+ℹ️ No similar past extractions found - this is a new pattern
+
+LAYER 3: Gemini - Semantic Validation & Math Checking
+------------------------------------------------------------
+✓ Semantic validation complete
+✓ Invoice Number: SO25041815
+✓ Vendor: Software Oasis, LLC
+✓ Grand Total: 81.3 USD
+
+🧠 LAYER 3.5: Semantic Vendor Identity Resolution
+------------------------------------------------------------
+🧠 Semantic Vendor Resolution:
+   TRUE Vendor: Software Oasis, LLC
+   Confidence: 0.95
+   Type: COMPANY
+   Reasoning: All identity signals point to Software Oasis, LLC as the true vendor. The supplier name, validated vendor name, legal beneficiary (as determined by Gemini), brand name, and legal beneficiary all match. The validated phone number and address also corroborate this. Payment instructions indicate payment should be made to an account on file, further solidifying Software Oasis, LLC as the recipient.
+🔄 UPDATING VENDOR: 'Software Oasis, LLC' → 'Software Oasis, LLC'
+✓ Vendor resolution complete
+
+🧠 FEEDBACK LOOP: Storing extraction to knowledge base...
+⚠ Error storing invoice extraction: 404 Data store projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+
+============================================================
+PROCESSING COMPLETE
+============================================================
+
+
+============================================================
+AUTOMATIC VENDOR MATCHING: Software Oasis, LLC
+============================================================
+
+⚡ Starting automatic vendor matching for vendor: Software Oasis, LLC
+
+🤖 Step 0: Semantic Entity Classification
+------------------------------------------------------------
+🤖 Entity Classification: VENDOR (HIGH)
+   Reasoning: The entity "Software Oasis, LLC" is a Limited Liability Company, which typically provides goods or services for payment. The name suggests a software-related business, further indicating its role as a vendor.
+✓ Entity is valid vendor, proceeding with matching...
+🔍 Starting vendor matching for: Software Oasis, LLC
+🔎 Step 1: Semantic search for 'Software Oasis, LLC' (country: United States)...
+⚠️ Error checking rejected entities: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+Error searching vendor: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+⚠️ Vertex Search returned no results (may have failed silently)
+🔄 Triggering BigQuery fallback for 'Software Oasis, LLC'...
+⚠️ BigQuery fallback also returned no results
+⚠️ No candidates found via name (Software Oasis, LLC), domain (), or other signals
+✓ Vendor matching complete: NEW_VENDOR
+❌ Error inserting invoice: 404 POST https://bigquery.googleapis.com/bigquery/v2/projects/invoicereader-477008/datasets/vendors_ai/tables/invoices/insertAll?prettyPrint=false: Not found: Table invoicereader-477008:vendors_ai.invoices
+10.83.5.142 - - [23/Nov/2025:08:26:58 +0000] "POST /upload HTTP/1.1" 200 7700 "https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"

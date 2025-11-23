@@ -1,0 +1,424 @@
+Extraction Results
+✓ Processing Complete
+🔍 Processing Pipeline
+1
+Document AI - Structure Extraction
+✓
+Text Extracted: 758 characters
+Entity Types Found: 15
+invoice_date, invoice_id, net_amount, receiver_name, currency, invoice_type, receiver_address, supplier_address, receiver_tax_id, payment_terms, receiver_email, supplier_phone, total_amount, supplier_name, line_item
+2
+Vertex Search (RAG) - Context Retrieval
+✓
+Vendor Query: "Software Oasis, LLC"
+3
+Gemini - Semantic Validation
+✓
+✓ All validations passed
+📄 Document Classification
+Document Type
+PROFORMA
+Language
+EN
+Currency
+USD
+Confidence
+95.0%
+🏢 Vendor Information
+Vendor Name
+Software Oasis, LLC
+Country
+United States
+Phone
++1 (508) 986-8503
+Match Confidence
+95.0%
+Address
+18 Lyman St Suite 100A #1039, Westborough, MA 01581, United States
+⚖️ Automatic Vendor Matching
+🆕 New Vendor Detected
+Matching Method
+🆕 Not in Database
+Confidence Score
+0.0%
+📄
+Invoice Says
+Name: Software Oasis, LLC
+Tax ID: Unknown
+Address: 18 Lyman St Suite 100A #1039, Westborough, MA 01581, United States
+Country: United States
+Phone: +1 (508) 986-8503
+❓
+Database Says
+Not found in database
+⚖️
+Supreme Judge Reasoning
+No similar vendors found in database for 'Software Oasis, LLC'
+
+➕ Add Vendor to Database
+📋 Invoice Details
+Invoice Number
+SO25041815
+Issue Date
+2025-09-03
+Payment Terms
+Due on receipt
+🛒 Buyer Information
+Name
+JAM-X Ltd
+Country
+Israel
+Tax ID
+516604287
+Address
+Bialik 30, Yehud, Israel
+💰 Financial Summary
+Subtotal
+USD 81.3
+Grand Total
+USD 81.3
+📦 Line Items
+Description	Qty	Unit Price	Tax	Subtotal	✓
+Podcast Advertising Services
+Advertising Services	1	USD 81.3	-	-	✓
+🧠 AI Reasoning
+Pro-Forma Invoice from US vendor to Israeli buyer. Single currency (USD).
+
+🔍 View Complete JSON Response
+{
+  "gcs_uri": "gs://payouts-invoices/uploads/PROFORMA_INVOICE_SO25041815.pdf",
+  "layers": {
+    "feedback_loop": {
+      "reason": "Storage failed but extraction succeeded",
+      "status": "warning",
+      "stored_to_knowledge_base": false
+    },
+    "layer1_5_multi_currency": {
+      "error": "could not convert string to float: 'VAT'",
+      "status": "warning"
+    },
+    "layer1_document_ai": {
+      "entities": {
+        "currency": [
+          {
+            "confidence": 0.8101023435592651,
+            "normalized_value": "USD",
+            "value": "USD"
+          }
+        ],
+        "invoice_date": [
+          {
+            "confidence": 0.9856775999069214,
+            "normalized_value": "2025-09-03",
+            "value": "September 3, 2025"
+          }
+        ],
+        "invoice_id": [
+          {
+            "confidence": 0.9600760340690613,
+            "normalized_value": "",
+            "value": "SO25041815"
+          }
+        ],
+        "invoice_type": [
+          {
+            "confidence": 0.7796038389205933,
+            "normalized_value": "invoice_statement",
+            "value": ""
+          }
+        ],
+        "line_item": [
+          {
+            "confidence": 1,
+            "normalized_value": "",
+            "value": "Podcast Advertising Services 81.30 81.30"
+          }
+        ],
+        "net_amount": [
+          {
+            "confidence": 0.9553178548812866,
+            "normalized_value": "81.3",
+            "value": "81.30"
+          }
+        ],
+        "payment_terms": [
+          {
+            "confidence": 0.6903905272483826,
+            "normalized_value": "",
+            "value": "Upon Receipt"
+          }
+        ],
+        "receiver_address": [
+          {
+            "confidence": 0.7565897107124329,
+            "normalized_value": "",
+            "value": "Bialik 30\nYehud, Israel"
+          }
+        ],
+        "receiver_email": [
+          {
+            "confidence": 0.6334484219551086,
+            "normalized_value": "",
+            "value": "guy@jamx.ai"
+          }
+        ],
+        "receiver_name": [
+          {
+            "confidence": 0.9098056554794312,
+            "normalized_value": "",
+            "value": "JAM-X Ltd"
+          }
+        ],
+        "receiver_tax_id": [
+          {
+            "confidence": 0.6931548118591309,
+            "normalized_value": "",
+            "value": "516604287"
+          }
+        ],
+        "supplier_address": [
+          {
+            "confidence": 0.7084303498268127,
+            "normalized_value": "",
+            "value": "18 Lyman St Suite 100A #1039\nWestborough, MA 01581\nUnited States"
+          }
+        ],
+        "supplier_name": [
+          {
+            "confidence": 0.33455395698547363,
+            "normalized_value": "",
+            "value": "Software Oasis, LLC"
+          }
+        ],
+        "supplier_phone": [
+          {
+            "confidence": 0.6176032423973083,
+            "normalized_value": "",
+            "value": "+1 (508) 986-8503"
+          }
+        ],
+        "total_amount": [
+          {
+            "confidence": 0.5969221591949463,
+            "normalized_value": "81.3",
+            "value": "81.30"
+          }
+        ]
+      },
+      "entity_types": [
+        "invoice_date",
+        "invoice_id",
+        "net_amount",
+        "receiver_name",
+        "currency",
+        "invoice_type",
+        "receiver_address",
+        "supplier_address",
+        "receiver_tax_id",
+        "payment_terms",
+        "receiver_email",
+        "supplier_phone",
+        "total_amount",
+        "supplier_name",
+        "line_item"
+      ],
+      "status": "success",
+      "text_length": 758
+    },
+    "layer2_vertex_search": {
+      "similar_invoices_found": 0,
+      "status": "success",
+      "vendor_matches_found": 0,
+      "vendor_query": "Software Oasis, LLC"
+    },
+    "layer3_5_vendor_resolution": {
+      "confidence": 0.95,
+      "is_intermediary": false,
+      "original_supplier": "Software Oasis, LLC",
+      "status": "success",
+      "true_vendor": "Software Oasis, LLC"
+    },
+    "layer3_gemini": {
+      "status": "success",
+      "validation_flags": []
+    }
+  },
+  "status": "completed",
+  "validated_data": {
+    "ai_auditor_notes": "Document identified as a Pro-Forma Invoice from the image. The document is in English and originates from the United States, as indicated by the address. The total amount due is $81.30 USD. No tax is listed. The vendor is Software Oasis, LLC, and the buyer is JAM-X Ltd in Israel. No multi-currency conversion is needed. The document date is September 3, 2025.",
+    "auditReasoning": "Document identified as a Pro-Forma Invoice from the image. The document is in English and originates from the United States, as indicated by the address. The total amount due is $81.30 USD. No tax is listed. The vendor is Software Oasis, LLC, and the buyer is JAM-X Ltd in Israel. No multi-currency conversion is needed. The document date is September 3, 2025.",
+    "buyer": {
+      "address": "Bialik 30, Yehud, Israel",
+      "country": "Israel",
+      "email": "guy@jamx.ai",
+      "name": "JAM-X Ltd",
+      "phone": null,
+      "registrationNumber": null,
+      "taxId": "516604287"
+    },
+    "classificationConfidence": 0.95,
+    "critical_dates": {
+      "due_date": null,
+      "issue_date": "2025-09-03",
+      "payment_date": null,
+      "period_end": null,
+      "period_start": null
+    },
+    "currency": "USD",
+    "detectedCountry": "US",
+    "documentDate": "2025-09-03",
+    "documentType": "PROFORMA",
+    "dueDate": null,
+    "exchangeRate": null,
+    "extractionConfidence": 0.95,
+    "financial_data": {
+      "discount_total": 0,
+      "exchange_rate_applied": null,
+      "grand_total": 81.3,
+      "line_item_currency_code": "USD",
+      "primary_currency_code": "USD",
+      "subtotal": 81.3,
+      "tax_breakdown": [],
+      "tax_total": 0
+    },
+    "global_audit_metadata": {
+      "confidence_level": 0.95,
+      "detected_country": "US",
+      "detected_language": "en",
+      "document_category": "Pro-Forma Invoice",
+      "is_multi_currency": false
+    },
+    "invoiceNumber": "SO25041815",
+    "isRTL": false,
+    "isSubscription": false,
+    "issueDate": "2025-09-03",
+    "language": "en",
+    "lineItems": [
+      {
+        "category": "Advertising Services",
+        "currency": "USD",
+        "description": "Podcast Advertising Services",
+        "exchangeRateApplied": null,
+        "lineSubtotal": null,
+        "lineTotal": 81.3,
+        "lineTotalCurrency": "USD",
+        "mathVerified": true,
+        "productCode": null,
+        "quantity": 1,
+        "taxAmount": null,
+        "taxPercent": null,
+        "unitPrice": 81.3,
+        "unitPriceCurrency": "USD"
+      }
+    ],
+    "multiCurrency": {
+      "baseCurrency": null,
+      "exchangeRate": null,
+      "exchangeRateSource": null,
+      "isMultiCurrency": false,
+      "mathVerification": {
+        "afterDiscount": null,
+        "afterTax": null,
+        "currencyConversion": null,
+        "lineItemCalculation": null,
+        "verified": null
+      },
+      "settlementCurrency": null
+    },
+    "originalCurrency": "USD",
+    "paymentDate": null,
+    "paymentDetails": {
+      "accountNumber": null,
+      "bankName": null,
+      "iban": null,
+      "paymentInstructions": "Due on receipt by bank wire to account on file.",
+      "swift": null
+    },
+    "paymentTerms": "Due on receipt",
+    "purchaseOrderNumbers": [],
+    "reasoning": "Pro-Forma Invoice from US vendor to Israeli buyer. Single currency (USD).",
+    "servicePeriodEnd": null,
+    "servicePeriodStart": null,
+    "totals": {
+      "discountCurrency": "USD",
+      "discounts": 0,
+      "fees": 0,
+      "feesCurrency": "USD",
+      "shipping": 0,
+      "shippingCurrency": "USD",
+      "subtotal": 81.3,
+      "subtotalCurrency": "USD",
+      "tax": 0,
+      "taxCurrency": "USD",
+      "taxPercent": null,
+      "total": 81.3,
+      "totalCurrency": "USD"
+    },
+    "vendor": {
+      "address": "18 Lyman St Suite 100A #1039, Westborough, MA 01581, United States",
+      "country": "United States",
+      "email": null,
+      "legal_name": "Software Oasis, LLC",
+      "name": "Software Oasis, LLC",
+      "original_ocr_name": "Software Oasis, LLC",
+      "original_supplier_name": "Software Oasis, LLC",
+      "phone": "+1 (508) 986-8503",
+      "registrationNumber": null,
+      "taxId": null,
+      "website": null
+    },
+    "vendorMatch": {
+      "alternateNames": [],
+      "confidence": 0.95,
+      "matchedDbId": null,
+      "normalizedName": "Software Oasis, LLC",
+      "ragMatchReasoning": "No vendor history found in database. This is a new vendor or vendor name was not detected."
+    },
+    "vendor_details": {
+      "address_full": "18 Lyman St Suite 100A #1039, Westborough, MA 01581, United States",
+      "matched_db_id": null,
+      "name_native": "Software Oasis, LLC",
+      "name_normalized": "Software Oasis, LLC",
+      "registration_id": null
+    },
+    "vendor_identity_analysis": {
+      "brand_name": "Software Oasis, LLC",
+      "is_third_party_payment": false,
+      "legal_beneficiary": "Software Oasis, LLC",
+      "reasoning": "The brand name and legal beneficiary are the same, indicating a direct payment to the vendor."
+    },
+    "vendor_resolution": {
+      "alternate_names": [
+        "Software Oasis, LLC"
+      ],
+      "conflicts_detected": [],
+      "is_intermediary": false,
+      "reasoning": "All identity signals point to Software Oasis, LLC as the true vendor. The supplier name, validated vendor name, legal beneficiary (as determined by Gemini), brand name, and legal beneficiary all match. The validated phone number and address also corroborate this. Payment instructions indicate payment should be made to an account on file, further solidifying Software Oasis, LLC as the recipient.",
+      "resolution_confidence": 0.95,
+      "supplier_relationship": null
+    },
+    "warnings": []
+  },
+  "vendor_match": {
+    "confidence": 0,
+    "database_updates": {},
+    "database_vendor": null,
+    "invoice_vendor": {
+      "address": "18 Lyman St Suite 100A #1039, Westborough, MA 01581, United States",
+      "country": "United States",
+      "email": "Unknown",
+      "name": "Software Oasis, LLC",
+      "phone": "+1 (508) 986-8503",
+      "tax_id": "Unknown"
+    },
+    "method": "NEW_VENDOR",
+    "parent_child_logic": {
+      "is_subsidiary": false,
+      "parent_company_detected": null
+    },
+    "reasoning": "No similar vendors found in database for 'Software Oasis, LLC'",
+    "risk_analysis": "LOW",
+    "vendor_id": null,
+    "verdict": "NEW_VENDOR"
+  }
+}
