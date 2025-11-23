@@ -923,18 +923,25 @@ function displayResults(data) {
     if (invoiceId && gcsUri) {
         const filename = gcsUri.split('/').pop();
         html += `
-            <div style="margin: 20px 0; padding: 25px; background: #2196F3; color: white; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);">
-                <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">📥 DOWNLOAD YOUR INVOICE</div>
-                <div style="margin-bottom: 20px; font-size: 14px; opacity: 0.9;">Invoice ID: ${escapeHtml(invoiceId)}</div>
-                <button 
-                    onclick="downloadInvoice('${escapeHtml(invoiceId)}', event)" 
-                    style="background: white; color: #2196F3; border: none; padding: 16px 40px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s;"
-                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)';"
-                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)';"
-                >
-                    ⬇️ CLICK HERE TO DOWNLOAD
-                </button>
-                <div style="margin-top: 15px; font-size: 12px; opacity: 0.85;">File: ${escapeHtml(filename)}</div>
+            <div style="margin: 20px 0; padding: 25px; background: #4CAF50; color: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);">
+                <div style="font-size: 22px; font-weight: bold; margin-bottom: 20px;">🔗 GOOGLE CLOUD STORAGE LINK</div>
+                <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px; word-break: break-all;">
+                    <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px;">GCS URI (Copy this link):</div>
+                    <div style="font-family: monospace; font-size: 14px; font-weight: bold; user-select: all; cursor: text;">
+                        ${escapeHtml(gcsUri)}
+                    </div>
+                </div>
+                <div style="background: #2196F3; padding: 15px; border-radius: 8px;">
+                    <div style="font-size: 14px; margin-bottom: 10px;">📥 Download Invoice (ID: ${escapeHtml(invoiceId)})</div>
+                    <button 
+                        onclick="downloadInvoice('${escapeHtml(invoiceId)}', event)" 
+                        style="background: white; color: #2196F3; border: none; padding: 12px 30px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s;"
+                        onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)';"
+                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)';"
+                    >
+                        Download File
+                    </button>
+                </div>
             </div>
         `;
     }
