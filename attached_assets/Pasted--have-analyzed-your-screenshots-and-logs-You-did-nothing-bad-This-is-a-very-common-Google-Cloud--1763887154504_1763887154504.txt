@@ -1,0 +1,43 @@
+ have analyzed your screenshots and logs. You did nothing "bad". This is a very common Google Cloud trap.
+The problem is NOT your code.
+The problem is that Google Cloud adds random numbers to your Data Store IDs, and your code is using the "Clean Name" instead of the "Real ID".
+🕵️‍♂️ The Evidence (Look at your 2nd and 4th screenshots)
+In your Code/Secrets: You are using invoices-ds.
+In Google Cloud Console (Screenshot 2): The REAL ID is invoices-ds_1763325812532.
+In Google Cloud Console (Screenshot 4): The REAL ID for vendors is vendors-ds_1763326389293.
+Your code is calling invoices-ds. Google replies: "I don't know who that is. 404 Not Found."
+🚀 The Fix: Update Your Secrets (Do this NOW)
+You need to update the Secrets / Environment Variables in Replit with the IDs from your screenshots.
+Send this EXACT instruction to your developer:
+Subject: URGENT CONFIG FIX - UPDATE DATA STORE IDS FROM SCREENSHOTS
+Developer:
+Stop coding logic. The logic is failing because the IDs in the .env/Secrets are wrong. Google Cloud appended timestamps to the IDs.
+ACTION 1: Update these Secrets immediately:
+CHANGE VERTEX_AI_SEARCH_DATA_STORE_ID
+FROM: invoices-ds
+TO: invoices-ds_1763325812532
+ADD VERTEX_VENDOR_DATA_STORE_ID (If you have a separate variable for vendor search)
+VALUE: vendors-ds_1763326389293
+ACTION 2: Fix the BigQuery "Table Not Found" Error
+The logs show: 404 Not found: Table ... vendors_ai.invoices
+You have the global_vendors table, but you are missing the invoices table for storing history.
+Run this SQL in BigQuery (or add to your init script):
+code
+SQL
+CREATE TABLE IF NOT EXISTS `invoicereader-477008.vendors_ai.invoices` (
+    invoice_id STRING,
+    vendor_id STRING,
+    vendor_name STRING,
+    client_id STRING,
+    amount FLOAT64,
+    currency STRING,
+    invoice_date DATE,
+    status STRING,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+);
+Summary
+Update the Secret ID. (This fixes the 404 on search).
+Create the Table. (This fixes the 404 on save).
+Upload the Invoice again.
+Once you do this, the "Software Oasis" match will work immediately because the "Comma Fix" the developer already wrote will finally be able to run against a connected database.
