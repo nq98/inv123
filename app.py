@@ -21,6 +21,7 @@ from services.issue_detector import IssueDetector
 from services.action_manager import ActionManager
 from services.pdf_generator import PDFInvoiceGenerator
 from services.invoice_composer import InvoiceComposer
+from services.netsuite_service import NetSuiteService
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -2638,6 +2639,323 @@ def view_generated_invoice(filename):
     except Exception as e:
         print(f"View error: {e}")
         return jsonify({'error': str(e)}), 500
+
+# NetSuite API Endpoints
+@app.route('/api/netsuite/test', methods=['GET'])
+def test_netsuite_connection():
+    """
+    Test NetSuite connection and authentication
+    Returns connection status and available metadata
+    """
+    try:
+        netsuite = NetSuiteService()
+        result = netsuite.test_connection()
+        
+        # Also ensure BigQuery tables have NetSuite fields
+        bigquery_service = BigQueryService()
+        bigquery_service.ensure_table_schema()
+        bigquery_service.ensure_invoices_table_with_netsuite()
+        
+        return jsonify({
+            'success': result.get('connected', False),
+            'connection_details': result,
+            'message': 'NetSuite connection successful' if result.get('connected') else 'NetSuite connection failed',
+            'bigquery_status': 'NetSuite tracking fields ensured in BigQuery tables'
+        })
+    except Exception as e:
+        print(f"NetSuite test error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to test NetSuite connection'
+        }), 500
+
+@app.route('/api/netsuite/sync/vendor/<vendor_id>', methods=['POST'])
+def sync_vendor_to_netsuite(vendor_id):
+    """
+    Manually sync a specific vendor to NetSuite
+    Creates vendor in NetSuite if not exists, updates BigQuery with NetSuite ID
+    """
+    try:
+        # Get vendor from BigQuery
+        bigquery_service = BigQueryService()
+        vendors = bigquery_service.search_vendor_by_id(vendor_id)
+        
+        if not vendors:
+            return jsonify({
+                'success': False,
+                'error': 'Vendor not found in database',
+                'vendor_id': vendor_id
+            }), 404
+        
+        vendor = vendors[0]
+        
+        # Check if vendor already has NetSuite ID
+        if vendor.get('netsuite_internal_id'):
+            return jsonify({
+                'success': True,
+                'message': 'Vendor already synced to NetSuite',
+                'vendor_id': vendor_id,
+                'netsuite_id': vendor['netsuite_internal_id'],
+                'action': 'already_synced'
+            })
+        
+        # Sync to NetSuite
+        netsuite = NetSuiteService()
+        
+        # Prepare vendor data for NetSuite
+        vendor_data = {
+            'name': vendor.get('global_name', ''),
+            'external_id': vendor_id,
+            'email': vendor.get('emails', [''])[0] if vendor.get('emails') else None
+        }
+        
+        # Extract tax ID from custom attributes if available
+        custom_attrs = vendor.get('custom_attributes', {})
+        if custom_attrs:
+            vendor_data['tax_id'] = custom_attrs.get('tax_id') or custom_attrs.get('vat_number')
+            vendor_data['phone'] = custom_attrs.get('phone')
+            
+            # Extract address if available
+            if custom_attrs.get('address'):
+                vendor_data['address'] = {
+                    'line1': custom_attrs.get('address'),
+                    'city': custom_attrs.get('city', ''),
+                    'state': custom_attrs.get('state', ''),
+                    'postal_code': custom_attrs.get('postal_code', ''),
+                    'country': custom_attrs.get('country', 'US')
+                }
+        
+        # Sync to NetSuite
+        sync_result = netsuite.sync_vendor_to_netsuite(vendor_data)
+        
+        if sync_result.get('success'):
+            # Update BigQuery with NetSuite ID
+            netsuite_id = sync_result.get('netsuite_id')
+            if netsuite_id:
+                bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_id)
+            
+            return jsonify({
+                'success': True,
+                'message': f"Vendor successfully synced to NetSuite",
+                'vendor_id': vendor_id,
+                'netsuite_id': netsuite_id,
+                'action': sync_result.get('action', 'synced'),
+                'vendor_name': vendor.get('global_name')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': sync_result.get('error', 'Failed to sync vendor to NetSuite'),
+                'vendor_id': vendor_id
+            }), 500
+            
+    except Exception as e:
+        print(f"NetSuite vendor sync error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'vendor_id': vendor_id
+        }), 500
+
+@app.route('/api/netsuite/sync/invoice/<invoice_id>', methods=['POST'])
+def sync_invoice_to_netsuite(invoice_id):
+    """
+    Manually sync a specific invoice to NetSuite as a vendor bill
+    Creates vendor in NetSuite if needed, then creates vendor bill
+    """
+    try:
+        # Get invoice from BigQuery
+        bigquery_service = BigQueryService()
+        
+        # Query invoice details
+        query = f"""
+        SELECT 
+            invoice_id,
+            vendor_id,
+            vendor_name,
+            amount,
+            currency,
+            invoice_date,
+            metadata,
+            netsuite_bill_id,
+            netsuite_sync_status
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{bigquery_service.dataset_id}.invoices`
+        WHERE invoice_id = @invoice_id
+        LIMIT 1
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+            ]
+        )
+        
+        results = bigquery_service.client.query(query, job_config=job_config).result()
+        invoice = None
+        
+        for row in results:
+            # Parse metadata JSON
+            metadata = {}
+            if row.metadata:
+                if isinstance(row.metadata, str):
+                    try:
+                        metadata = json.loads(row.metadata)
+                    except:
+                        metadata = {}
+                elif isinstance(row.metadata, dict):
+                    metadata = row.metadata
+            
+            invoice = {
+                'invoice_id': row.invoice_id,
+                'vendor_id': row.vendor_id,
+                'vendor_name': row.vendor_name,
+                'amount': float(row.amount) if row.amount else 0,
+                'currency': row.currency or 'USD',
+                'invoice_date': row.invoice_date.isoformat() if row.invoice_date else datetime.now().strftime('%Y-%m-%d'),
+                'metadata': metadata,
+                'netsuite_bill_id': row.netsuite_bill_id,
+                'netsuite_sync_status': row.netsuite_sync_status
+            }
+            break
+        
+        if not invoice:
+            return jsonify({
+                'success': False,
+                'error': 'Invoice not found in database',
+                'invoice_id': invoice_id
+            }), 404
+        
+        # Check if already synced
+        if invoice.get('netsuite_bill_id'):
+            return jsonify({
+                'success': True,
+                'message': 'Invoice already synced to NetSuite',
+                'invoice_id': invoice_id,
+                'netsuite_bill_id': invoice['netsuite_bill_id'],
+                'action': 'already_synced'
+            })
+        
+        netsuite = NetSuiteService()
+        
+        # First, ensure vendor is synced to NetSuite
+        vendor_netsuite_id = None
+        
+        if invoice.get('vendor_id'):
+            # Get vendor NetSuite ID
+            vendor_netsuite_id = bigquery_service.get_vendor_netsuite_id(invoice['vendor_id'])
+            
+            if not vendor_netsuite_id:
+                # Vendor not synced, sync it first
+                print(f"Vendor {invoice['vendor_id']} not synced to NetSuite, syncing now...")
+                
+                # Get vendor details
+                vendors = bigquery_service.search_vendor_by_id(invoice['vendor_id'])
+                if vendors:
+                    vendor = vendors[0]
+                    vendor_data = {
+                        'name': vendor.get('global_name', invoice.get('vendor_name', '')),
+                        'external_id': invoice['vendor_id'],
+                        'email': vendor.get('emails', [''])[0] if vendor.get('emails') else None
+                    }
+                    
+                    # Extract additional fields from custom attributes
+                    custom_attrs = vendor.get('custom_attributes', {})
+                    if custom_attrs:
+                        vendor_data['tax_id'] = custom_attrs.get('tax_id') or custom_attrs.get('vat_number')
+                        vendor_data['phone'] = custom_attrs.get('phone')
+                    
+                    # Sync vendor to NetSuite
+                    vendor_sync_result = netsuite.sync_vendor_to_netsuite(vendor_data)
+                    
+                    if vendor_sync_result.get('success'):
+                        vendor_netsuite_id = vendor_sync_result.get('netsuite_id')
+                        # Update vendor NetSuite ID in BigQuery
+                        bigquery_service.update_vendor_netsuite_id(invoice['vendor_id'], vendor_netsuite_id)
+                    else:
+                        return jsonify({
+                            'success': False,
+                            'error': f"Failed to sync vendor to NetSuite: {vendor_sync_result.get('error')}",
+                            'invoice_id': invoice_id
+                        }), 500
+        
+        if not vendor_netsuite_id:
+            # Try to find vendor by name if no ID
+            if invoice.get('vendor_name'):
+                search_results = netsuite.search_vendors(name=invoice['vendor_name'])
+                if search_results:
+                    vendor_netsuite_id = search_results[0].get('id')
+        
+        if not vendor_netsuite_id:
+            return jsonify({
+                'success': False,
+                'error': 'Could not find or create vendor in NetSuite',
+                'invoice_id': invoice_id
+            }), 400
+        
+        # Prepare invoice data for NetSuite
+        invoice_data = {
+            'invoice_id': invoice_id,
+            'invoiceNumber': metadata.get('invoice_number', invoice_id),
+            'invoiceDate': invoice.get('invoice_date'),
+            'currency': invoice.get('currency', 'USD'),
+            'totals': {
+                'total': invoice.get('amount', 0)
+            }
+        }
+        
+        # Add line items if available in metadata
+        if metadata.get('line_items'):
+            invoice_data['lineItems'] = metadata['line_items']
+        
+        # Sync invoice to NetSuite
+        sync_result = netsuite.sync_invoice_to_netsuite(invoice_data, vendor_netsuite_id)
+        
+        if sync_result.get('success'):
+            # Update BigQuery with NetSuite bill ID
+            netsuite_bill_id = sync_result.get('netsuite_bill_id')
+            if netsuite_bill_id:
+                bigquery_service.update_invoice_netsuite_sync(
+                    invoice_id, 
+                    netsuite_bill_id,
+                    'synced'
+                )
+            
+            return jsonify({
+                'success': True,
+                'message': f"Invoice successfully synced to NetSuite as vendor bill",
+                'invoice_id': invoice_id,
+                'netsuite_bill_id': netsuite_bill_id,
+                'vendor_netsuite_id': vendor_netsuite_id,
+                'action': sync_result.get('action', 'synced'),
+                'amount': invoice.get('amount'),
+                'currency': invoice.get('currency')
+            })
+        else:
+            # Update sync status as failed
+            bigquery_service.update_invoice_netsuite_sync(
+                invoice_id, 
+                '',
+                'failed'
+            )
+            
+            return jsonify({
+                'success': False,
+                'error': sync_result.get('error', 'Failed to sync invoice to NetSuite'),
+                'invoice_id': invoice_id
+            }), 500
+            
+    except Exception as e:
+        print(f"NetSuite invoice sync error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'invoice_id': invoice_id
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Optional
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from config import config
@@ -51,6 +52,7 @@ class BigQueryService:
             bigquery.SchemaField("countries", "STRING", mode="REPEATED"),
             bigquery.SchemaField("custom_attributes", "JSON", mode="NULLABLE"),
             bigquery.SchemaField("source_system", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("netsuite_internal_id", "STRING", mode="NULLABLE"),  # NetSuite tracking
             bigquery.SchemaField("last_updated", "TIMESTAMP", mode="NULLABLE"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
         ]
@@ -86,6 +88,7 @@ class BigQueryService:
         ALTER TABLE `{self.full_table_id}`
         ADD COLUMN IF NOT EXISTS custom_attributes JSON,
         ADD COLUMN IF NOT EXISTS source_system STRING,
+        ADD COLUMN IF NOT EXISTS netsuite_internal_id STRING,
         ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;
         """
@@ -193,6 +196,68 @@ class BigQueryService:
                 pass
             
             return {"inserted": 0, "updated": 0, "errors": [str(e)]}
+    
+    def search_vendor_by_id(self, vendor_id):
+        """Search for a vendor by ID"""
+        
+        query = f"""
+        SELECT 
+            vendor_id,
+            global_name,
+            normalized_name,
+            emails,
+            domains,
+            countries,
+            custom_attributes,
+            source_system,
+            netsuite_internal_id,
+            last_updated
+        FROM `{self.full_table_id}`
+        WHERE vendor_id = @vendor_id
+        LIMIT 1
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            vendors = []
+            
+            for row in results:
+                # Handle custom_attributes
+                custom_attrs = row.custom_attributes
+                if custom_attrs:
+                    if isinstance(custom_attrs, str):
+                        custom_attrs = json.loads(custom_attrs)
+                    elif isinstance(custom_attrs, dict):
+                        custom_attrs = custom_attrs
+                    else:
+                        custom_attrs = {}
+                else:
+                    custom_attrs = {}
+                
+                vendors.append({
+                    "vendor_id": row.vendor_id,
+                    "global_name": row.global_name,
+                    "normalized_name": row.normalized_name,
+                    "emails": list(row.emails) if row.emails else [],
+                    "domains": list(row.domains) if row.domains else [],
+                    "countries": list(row.countries) if row.countries else [],
+                    "custom_attributes": custom_attrs,
+                    "source_system": row.source_system,
+                    "netsuite_internal_id": row.netsuite_internal_id,
+                    "last_updated": row.last_updated.isoformat() if row.last_updated else None
+                })
+            
+            return vendors
+            
+        except Exception as e:
+            print(f"❌ Error searching vendor by ID: {e}")
+            return []
     
     def search_vendor_by_name(self, vendor_name, limit=5):
         """Search for vendors by name using fuzzy matching with punctuation normalization"""
@@ -668,3 +733,176 @@ class BigQueryService:
                 "invoices": [],
                 "total_count": 0
             }
+    
+    def ensure_invoices_table_with_netsuite(self):
+        """Ensure the invoices table has NetSuite tracking fields"""
+        
+        invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
+        
+        # Check if we need to add NetSuite columns to existing invoices table
+        try:
+            table = self.client.get_table(invoices_table_id)
+            existing_fields = {field.name for field in table.schema}
+            
+            # Check if NetSuite fields exist
+            netsuite_fields = {'netsuite_bill_id', 'netsuite_sync_status', 'netsuite_sync_date'}
+            missing_fields = netsuite_fields - existing_fields
+            
+            if missing_fields:
+                print(f"⚠️ Adding NetSuite tracking fields to invoices table...")
+                query = f"""
+                ALTER TABLE `{invoices_table_id}`
+                ADD COLUMN IF NOT EXISTS netsuite_bill_id STRING,
+                ADD COLUMN IF NOT EXISTS netsuite_sync_status STRING,
+                ADD COLUMN IF NOT EXISTS netsuite_sync_date TIMESTAMP;
+                """
+                
+                try:
+                    self.client.query(query).result()
+                    print("✓ Added NetSuite tracking fields to invoices table")
+                except Exception as e:
+                    print(f"⚠️ Could not add NetSuite fields (they may already exist): {e}")
+            else:
+                print("✓ NetSuite tracking fields already exist in invoices table")
+            
+            return True
+            
+        except Exception as e:
+            if "Not found" in str(e):
+                print(f"⚠️ Invoices table not found. Creating with NetSuite fields...")
+                
+                # Create invoices table with NetSuite fields
+                schema = [
+                    bigquery.SchemaField("invoice_id", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("vendor_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("vendor_name", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("client_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("amount", "FLOAT64", mode="NULLABLE"),
+                    bigquery.SchemaField("currency", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("invoice_date", "DATE", mode="NULLABLE"),
+                    bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("netsuite_bill_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("netsuite_sync_status", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("netsuite_sync_date", "TIMESTAMP", mode="NULLABLE"),
+                    bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
+                    bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
+                    bigquery.SchemaField("last_updated", "TIMESTAMP", mode="NULLABLE"),
+                ]
+                
+                table = bigquery.Table(invoices_table_id, schema=schema)
+                table = self.client.create_table(table)
+                print(f"✓ Created invoices table with NetSuite tracking fields")
+                return True
+            else:
+                print(f"❌ Error checking/creating invoices table: {e}")
+                raise
+    
+    def update_vendor_netsuite_id(self, vendor_id: str, netsuite_id: str) -> bool:
+        """
+        Update vendor's NetSuite internal ID in BigQuery
+        
+        Args:
+            vendor_id: Our vendor ID
+            netsuite_id: NetSuite internal ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            query = f"""
+            UPDATE `{self.full_table_id}`
+            SET netsuite_internal_id = @netsuite_id,
+                last_updated = CURRENT_TIMESTAMP()
+            WHERE vendor_id = @vendor_id
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id),
+                    bigquery.ScalarQueryParameter("netsuite_id", "STRING", netsuite_id),
+                ]
+            )
+            
+            self.client.query(query, job_config=job_config).result()
+            print(f"✓ Updated NetSuite ID for vendor {vendor_id}: {netsuite_id}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error updating vendor NetSuite ID: {e}")
+            return False
+    
+    def update_invoice_netsuite_sync(self, invoice_id: str, netsuite_bill_id: str, 
+                                    sync_status: str = "synced") -> bool:
+        """
+        Update invoice's NetSuite sync information in BigQuery
+        
+        Args:
+            invoice_id: Our invoice ID
+            netsuite_bill_id: NetSuite vendor bill ID
+            sync_status: Sync status (synced, pending, failed)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
+        
+        try:
+            query = f"""
+            UPDATE `{invoices_table_id}`
+            SET netsuite_bill_id = @netsuite_bill_id,
+                netsuite_sync_status = @sync_status,
+                netsuite_sync_date = CURRENT_TIMESTAMP(),
+                last_updated = CURRENT_TIMESTAMP()
+            WHERE invoice_id = @invoice_id
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                    bigquery.ScalarQueryParameter("netsuite_bill_id", "STRING", netsuite_bill_id),
+                    bigquery.ScalarQueryParameter("sync_status", "STRING", sync_status),
+                ]
+            )
+            
+            self.client.query(query, job_config=job_config).result()
+            print(f"✓ Updated NetSuite sync for invoice {invoice_id}: {netsuite_bill_id}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error updating invoice NetSuite sync: {e}")
+            return False
+    
+    def get_vendor_netsuite_id(self, vendor_id: str) -> Optional[str]:
+        """
+        Get vendor's NetSuite internal ID from BigQuery
+        
+        Args:
+            vendor_id: Our vendor ID
+            
+        Returns:
+            NetSuite internal ID or None
+        """
+        try:
+            query = f"""
+            SELECT netsuite_internal_id
+            FROM `{self.full_table_id}`
+            WHERE vendor_id = @vendor_id
+            LIMIT 1
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id),
+                ]
+            )
+            
+            results = self.client.query(query, job_config=job_config).result()
+            
+            for row in results:
+                return row.netsuite_internal_id
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error getting vendor NetSuite ID: {e}")
+            return None
