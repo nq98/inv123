@@ -51,27 +51,30 @@ Classify this entity into ONE category based on SEMANTIC UNDERSTANDING (not keyw
 
 CATEGORIES:
 1. VENDOR - A business or organization that provides goods/services for payment
-   Examples: Software companies, consulting firms, suppliers, service providers
+   Examples: Software companies, consulting firms, suppliers, service providers, LLCs, corporations
+   IMPORTANT: Individual freelancers/contractors who provide services ARE vendors (classify as VENDOR, not INDIVIDUAL_PERSON)
    
 2. BANK - A financial institution that handles money/banking services
    Examples: Commercial banks, credit unions, investment banks, financial services
    
 3. PAYMENT_PROCESSOR - A company that facilitates payment transactions
-   Examples: Payment gateways, merchant services, payment platforms
+   Examples: Payment gateways (Stripe, PayPal), merchant services, payment platforms
    
 4. GOVERNMENT_ENTITY - Government agency, tax authority, or regulatory body
-   Examples: Tax departments, regulatory agencies, government offices
+   Examples: IRS, tax departments, regulatory agencies, government offices
    
-5. INDIVIDUAL_PERSON - A natural person, not a business entity
-   Examples: Freelancers listed by personal name only, individual contractors
+5. INDIVIDUAL_PERSON - A natural person who is NOT providing vendor services
+   Examples: Employees receiving salary, personal reimbursements, non-business individuals
+   IMPORTANT: If the person provides goods/services for payment (freelancer/contractor), classify as VENDOR
 
 CLASSIFICATION RULES:
 - Use SEMANTIC understanding, NOT keyword matching
 - Consider the entity's PRIMARY business purpose
-- Banks provide financial services, NOT goods/services for invoicing
+- Banks provide financial services, NOT goods/services for invoicing → NOT vendors
 - Payment processors facilitate transactions, they're NOT vendors
 - Government entities collect taxes/fees, they're NOT vendors
-- Only classify as VENDOR if the entity genuinely provides billable goods/services
+- Freelancers/contractors who invoice for services → classify as VENDOR (not INDIVIDUAL_PERSON)
+- Only classify as INDIVIDUAL_PERSON if the person is NOT a service provider (e.g., employee, personal transaction)
 
 OUTPUT FORMAT (STRICT JSON):
 {{
@@ -81,6 +84,7 @@ OUTPUT FORMAT (STRICT JSON):
     "is_valid_vendor": true_or_false
 }}
 
+CRITICAL: If someone is sending an invoice for goods/services, they are a VENDOR (even if using personal name).
 DO NOT use keyword matching. Rely on semantic understanding of the entity's business purpose."""
 
         try:

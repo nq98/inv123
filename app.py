@@ -413,8 +413,12 @@ def upload_invoice():
                         except Exception as e:
                             print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
                             vendor_match_result['database_vendor_error'] = str(e)
+                    
+                    print(f"✓ Vendor matching complete: {match_result.get('verdict')}")
                 
-                print(f"✓ Vendor matching complete: {match_result.get('verdict')}")
+                # Log completion for rejected entities
+                if vendor_match_result and vendor_match_result.get('verdict') == 'INVALID_VENDOR':
+                    print(f"✓ Entity classification complete: INVALID_VENDOR ({vendor_match_result.get('entity_type')})")
                 
             except Exception as e:
                 # FIX ISSUE 3: Add explicit error logging
