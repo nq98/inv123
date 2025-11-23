@@ -35,6 +35,13 @@ env/
 *credentials*.json
 vertex-runner.json
 documentai-access.json
+attached_assets/*.json
+attached_assets/client_secret*.json
+attached_assets/invoicereader*.json
+attached_assets/*service-account*.txt
+attached_assets/*project-id*.txt
+attached_assets/*private-key*.txt
+attached_assets/Pasted*.txt
 
 # IDE
 .vscode/
