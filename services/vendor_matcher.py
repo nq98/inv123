@@ -613,9 +613,10 @@ Use these principles to think like a human accountant:
 """
         
         try:
-            # Call Gemini 1.5 Pro with automatic fallback (rate limit protection)
+            # Call Gemini with automatic fallback (rate limit protection)
+            # Use the gemini service's configured model (gemini-2.0-flash-exp)
             response = self.gemini._generate_content_with_fallback(
-                model='gemini-1.5-pro',
+                model=self.gemini.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
