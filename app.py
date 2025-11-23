@@ -2956,9 +2956,68 @@ def create_invoice_in_netsuite(invoice_id):
         # Initialize NetSuite
         netsuite = NetSuiteService()
         
-        # Prepare invoice data for NetSuite
+        # CRITICAL: Ensure vendor exists in NetSuite first
+        vendor_id = invoice.get('vendor_id')
+        netsuite_vendor_id = None
+        
+        if vendor_id:
+            # Get the vendor from BigQuery
+            vendor = bigquery_service.get_vendor_by_id(vendor_id)
+            
+            if vendor:
+                # Check if vendor has a NetSuite ID
+                netsuite_vendor_id = vendor.get('netsuite_id')
+                
+                if not netsuite_vendor_id:
+                    # AUTO-SYNC VENDOR if missing
+                    print(f"⚠️ Vendor {vendor.get('global_name')} not in NetSuite. Syncing first...")
+                    
+                    # Prepare vendor data for sync
+                    # Handle both List and String formats for emails/phones
+                    email_val = vendor.get('emails')
+                    primary_email = None
+                    if isinstance(email_val, list) and len(email_val) > 0:
+                        primary_email = email_val[0]
+                    elif isinstance(email_val, str) and email_val:
+                        primary_email = email_val.split(',')[0]
+                    
+                    phone_val = vendor.get('phone_numbers')
+                    primary_phone = None
+                    if isinstance(phone_val, list) and len(phone_val) > 0:
+                        primary_phone = phone_val[0]
+                    elif isinstance(phone_val, str) and phone_val:
+                        primary_phone = phone_val.split(',')[0]
+                    
+                    vendor_sync_data = {
+                        'externalId': f"{vendor_id}_auto_{int(datetime.now().timestamp())}",
+                        'companyName': vendor.get('global_name', ''),
+                        'email': primary_email,
+                        'phone': primary_phone,
+                        'taxId': vendor.get('tax_id'),
+                        'isPerson': False,
+                        'subsidiary': {'id': '2'}
+                    }
+                    
+                    sync_result = netsuite.create_vendor_only(vendor_sync_data)
+                    if sync_result and sync_result.get('id'):
+                        netsuite_vendor_id = sync_result.get('id')
+                        # Update BigQuery with the new ID immediately
+                        bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+                        print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
+        
+        # Fail safely if still missing
+        if not netsuite_vendor_id:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to resolve NetSuite Vendor ID. Please sync the vendor first.',
+                'invoice_id': invoice_id,
+                'vendor_id': vendor_id
+            }), 400
+        
+        # Prepare invoice data for NetSuite with vendor ID
         invoice_data = {
             'vendor_name': invoice.get('vendor_name', ''),
+            'vendor_netsuite_id': netsuite_vendor_id,  # ADD THIS CRITICAL FIELD
             'invoice_number': invoice.get('invoice_number', ''),
             'invoice_date': invoice.get('invoice_date', ''),
             'due_date': invoice.get('due_date', ''),
@@ -3027,9 +3086,68 @@ def update_invoice_in_netsuite(invoice_id):
         # Initialize NetSuite
         netsuite = NetSuiteService()
         
-        # Prepare invoice data for update
+        # CRITICAL: Ensure vendor exists in NetSuite first (same as create)
+        vendor_id = invoice.get('vendor_id')
+        netsuite_vendor_id = None
+        
+        if vendor_id:
+            # Get the vendor from BigQuery
+            vendor = bigquery_service.get_vendor_by_id(vendor_id)
+            
+            if vendor:
+                # Check if vendor has a NetSuite ID
+                netsuite_vendor_id = vendor.get('netsuite_id')
+                
+                if not netsuite_vendor_id:
+                    # AUTO-SYNC VENDOR if missing
+                    print(f"⚠️ Vendor {vendor.get('global_name')} not in NetSuite. Syncing first...")
+                    
+                    # Prepare vendor data for sync
+                    # Handle both List and String formats for emails/phones
+                    email_val = vendor.get('emails')
+                    primary_email = None
+                    if isinstance(email_val, list) and len(email_val) > 0:
+                        primary_email = email_val[0]
+                    elif isinstance(email_val, str) and email_val:
+                        primary_email = email_val.split(',')[0]
+                    
+                    phone_val = vendor.get('phone_numbers')
+                    primary_phone = None
+                    if isinstance(phone_val, list) and len(phone_val) > 0:
+                        primary_phone = phone_val[0]
+                    elif isinstance(phone_val, str) and phone_val:
+                        primary_phone = phone_val.split(',')[0]
+                    
+                    vendor_sync_data = {
+                        'externalId': f"{vendor_id}_auto_{int(datetime.now().timestamp())}",
+                        'companyName': vendor.get('global_name', ''),
+                        'email': primary_email,
+                        'phone': primary_phone,
+                        'taxId': vendor.get('tax_id'),
+                        'isPerson': False,
+                        'subsidiary': {'id': '2'}
+                    }
+                    
+                    sync_result = netsuite.create_vendor_only(vendor_sync_data)
+                    if sync_result and sync_result.get('id'):
+                        netsuite_vendor_id = sync_result.get('id')
+                        # Update BigQuery with the new ID immediately
+                        bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+                        print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
+        
+        # Fail safely if still missing
+        if not netsuite_vendor_id:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to resolve NetSuite Vendor ID. Please sync the vendor first.',
+                'invoice_id': invoice_id,
+                'vendor_id': vendor_id
+            }), 400
+        
+        # Prepare invoice data for update with vendor ID
         invoice_data = {
             'vendor_name': invoice.get('vendor_name', ''),
+            'vendor_netsuite_id': netsuite_vendor_id,  # ADD THIS CRITICAL FIELD
             'invoice_number': invoice.get('invoice_number', ''),
             'invoice_date': invoice.get('invoice_date', ''),
             'due_date': invoice.get('due_date', ''),
