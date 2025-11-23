@@ -920,59 +920,48 @@ function displayResults(data) {
         html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
     }
     
-    // Add Download Invoice Button and GCS Public URL
+    // Add Download Invoice Button (using Signed URLs only - bucket is private)
     const invoiceId = validated.invoiceId || validated.invoiceNumber;
     const gcsUri = data.gcs_uri; // Format: gs://payouts-invoices/uploads/filename.pdf
     
     if (invoiceId && gcsUri) {
-        // Extract filename from GCS URI and construct public URL
+        // Extract filename from GCS URI for display purposes
         const filename = gcsUri.split('/').pop();
-        const publicUrl = `https://storage.googleapis.com/payouts-invoices/uploads/${filename}`;
         
         html += `
             <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
-                <div style="color: white; margin-bottom: 15px;">
-                    <div style="font-weight: bold; font-size: 17px; margin-bottom: 6px;">📄 Original Invoice File</div>
-                    <div style="font-size: 13px; opacity: 0.9;">Stored permanently in Google Cloud Storage</div>
-                </div>
-                
-                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
+                    <div style="color: white; flex: 1; min-width: 200px;">
+                        <div style="font-weight: bold; font-size: 17px; margin-bottom: 6px;">📄 Original Invoice File</div>
+                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 4px;">Stored securely in Google Cloud Storage</div>
+                        <code style="font-size: 11px; opacity: 0.8; word-break: break-all; display: block; margin-top: 8px;">${escapeHtml(filename)}</code>
+                    </div>
+                    
                     <!-- Download Button (Signed URL) -->
                     <button 
                         onclick="downloadInvoice('${escapeHtml(invoiceId)}', event)" 
-                        style="background: white; color: #667eea; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; transition: all 0.2s; flex: 1; min-width: 200px; justify-content: center;"
-                        onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';"
+                        style="background: white; color: #667eea; border: none; padding: 14px 28px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; display: flex; align-items: center; gap: 10px; transition: all 0.2s; white-space: nowrap;"
+                        onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.2)';"
                         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';"
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        Download (Secure)
+                        Download Invoice
                     </button>
-                    
-                    <!-- Direct GCS Link -->
-                    <a 
-                        href="${publicUrl}" 
-                        target="_blank"
-                        style="background: rgba(255,255,255,0.2); color: white; border: 2px solid white; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; transition: all 0.2s; flex: 1; min-width: 200px; text-decoration: none; justify-content: center;"
-                        onmouseover="this.style.background='rgba(255,255,255,0.3)'; this.style.transform='scale(1.05)';"
-                        onmouseout="this.style.background='rgba(255,255,255,0.2)'; this.style.transform='scale(1)';"
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                            <polyline points="15 3 21 3 21 9"></polyline>
-                            <line x1="10" y1="14" x2="21" y2="3"></line>
-                        </svg>
-                        Open in GCS
-                    </a>
                 </div>
                 
-                <!-- GCS URL Display -->
-                <div style="margin-top: 12px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
-                    <div style="font-size: 11px; color: rgba(255,255,255,0.7); margin-bottom: 4px;">Direct GCS URL:</div>
-                    <code style="color: white; font-size: 12px; word-break: break-all; font-family: monospace;">${publicUrl}</code>
+                <!-- Security Notice -->
+                <div style="margin-top: 12px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 4px; border-left: 3px solid rgba(255,255,255,0.5);">
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 8px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        <span>Secure download via time-limited signed URL (valid for 1 hour)</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -2542,12 +2531,17 @@ document.addEventListener('DOMContentLoaded', function() {
  * Download invoice file from Google Cloud Storage
  */
 async function downloadInvoice(invoiceId, event) {
+    let button = null;
+    let originalHTML = '';
+    
     try {
         console.log(`📥 Downloading invoice: ${invoiceId}`);
         
+        // Get button and save original HTML
+        button = event.target.closest('button');
+        originalHTML = button.innerHTML;
+        
         // Show loading indicator
-        const button = event.target.closest('button');
-        const originalHTML = button.innerHTML;
         button.disabled = true;
         button.innerHTML = `
             <svg class="spinner" style="width: 18px; height: 18px; animation: spin 1s linear infinite;" viewBox="0 0 24 24">
@@ -2590,13 +2584,17 @@ async function downloadInvoice(invoiceId, event) {
         // Show error message
         alert(`Failed to download invoice: ${error.message}`);
         
-        // Reset button
-        if (event && event.target) {
-            const button = event.target.closest('button');
-            if (button) {
-                button.disabled = false;
-                button.innerHTML = originalHTML;
-            }
+        // Reset button if available
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalHTML || `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Invoice
+            `;
         }
     }
 }
