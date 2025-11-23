@@ -255,10 +255,19 @@ class BigQueryService:
                     
                 tax_id = custom_attrs.get('tax_id', custom_attrs.get('taxId', ''))
                 
+                # Handle emails - convert list to comma-separated string for consistency
+                emails = row.emails if row.emails else []
+                if isinstance(emails, list) and emails:
+                    emails_str = ', '.join(emails)
+                elif isinstance(emails, str):
+                    emails_str = emails
+                else:
+                    emails_str = ''
+                
                 vendors.append({
                     "vendor_id": row.vendor_id,
                     "global_name": row.global_name,
-                    "emails": row.emails if row.emails else '',
+                    "emails": emails_str,  # Now always returns a string
                     "countries": row.countries if row.countries else '',
                     "addresses": addresses,
                     "phone_numbers": phone_numbers,
