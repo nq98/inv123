@@ -1055,7 +1055,7 @@ class BigQueryService:
         try:
             query = f"""
             UPDATE `{self.full_table_id}`
-            SET netsuite_internal_id = @netsuite_id,
+            SET netsuite_id = @netsuite_id,
                 last_updated = CURRENT_TIMESTAMP()
             WHERE vendor_id = @vendor_id
             """
