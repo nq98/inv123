@@ -93,10 +93,22 @@ def create_agent_tables():
               currency STRING,
               invoice_date DATE,
               status STRING,
+              gcs_uri STRING,
+              file_type STRING,
+              file_size INT64,
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
               metadata JSON
             )
             PARTITION BY DATE(invoice_date)
+            """
+        },
+        {
+            'name': 'invoices_add_gcs_columns',
+            'sql': """
+            ALTER TABLE vendors_ai.invoices
+            ADD COLUMN IF NOT EXISTS gcs_uri STRING,
+            ADD COLUMN IF NOT EXISTS file_type STRING,
+            ADD COLUMN IF NOT EXISTS file_size INT64
             """
         }
     ]

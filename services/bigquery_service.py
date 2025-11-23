@@ -491,6 +491,9 @@ class BigQueryService:
                 - currency: str
                 - invoice_date: str (YYYY-MM-DD format)
                 - status: str (matched/unmatched/ambiguous)
+                - gcs_uri: str (Google Cloud Storage URI)
+                - file_type: str (pdf, png, jpeg)
+                - file_size: int (bytes)
                 - metadata: dict (will be converted to JSON)
         
         Returns:
@@ -499,6 +502,18 @@ class BigQueryService:
         invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
         
         try:
+            # First, ensure the new columns exist
+            try:
+                alter_sql = """
+                ALTER TABLE vendors_ai.invoices
+                ADD COLUMN IF NOT EXISTS gcs_uri STRING,
+                ADD COLUMN IF NOT EXISTS file_type STRING,
+                ADD COLUMN IF NOT EXISTS file_size INT64
+                """
+                self.client.query(alter_sql).result()
+            except:
+                pass  # Columns may already exist
+            
             # Prepare the row data
             row = {
                 "invoice_id": invoice_data.get("invoice_id"),
@@ -509,7 +524,10 @@ class BigQueryService:
                 "currency": invoice_data.get("currency"),
                 "invoice_date": invoice_data.get("invoice_date"),
                 "status": invoice_data.get("status"),
-                "metadata": json.dumps(invoice_data.get("metadata", {}))
+                "gcs_uri": invoice_data.get("gcs_uri"),
+                "file_type": invoice_data.get("file_type"),
+                "file_size": invoice_data.get("file_size"),
+                "metadata": invoice_data.get("metadata", {})  # Direct dict, not JSON string
             }
             
             # Insert the row

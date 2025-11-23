@@ -894,7 +894,14 @@ def upload_invoice():
             'currency': currency_code,
             'invoice_date': invoice_date,
             'status': status,
-            'metadata': vendor_match_result if vendor_match_result else {}
+            'gcs_uri': result.get('gcs_uri'),
+            'file_type': result.get('file_type'),
+            'file_size': result.get('file_size'),
+            'metadata': {
+                'vendor_match': vendor_match_result if vendor_match_result else {},
+                'file_name': result.get('file_name'),
+                'validated_data': validated_data
+            }
         }
         
         # Insert into BigQuery

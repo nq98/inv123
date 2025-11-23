@@ -396,7 +396,20 @@ class InvoiceProcessor:
             gcs_uri = f"gs://{config.GCS_INPUT_BUCKET}/uploads/{filename}"
             print(f"✓ Uploaded to: {gcs_uri}")
             
-            return self.process_invoice(gcs_uri, mime_type)
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            file_type = mime_type.split('/')[-1] if '/' in mime_type else mime_type
+            
+            # Process the invoice
+            result = self.process_invoice(gcs_uri, mime_type)
+            
+            # Add GCS metadata to result
+            result['gcs_uri'] = gcs_uri
+            result['file_type'] = file_type
+            result['file_size'] = file_size
+            result['file_name'] = filename
+            
+            return result
         except Exception as e:
             print(f"✗ Error uploading file to GCS: {str(e)}")
             return {

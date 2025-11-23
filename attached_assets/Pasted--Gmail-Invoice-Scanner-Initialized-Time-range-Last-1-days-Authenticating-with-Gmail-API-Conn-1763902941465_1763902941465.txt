@@ -1,0 +1,344 @@
+🚀 Gmail Invoice Scanner Initialized
+⏰ Time range: Last 1 days
+Authenticating with Gmail API...
+Connected to Gmail account
+
+📊 Counting total emails in last 1 days...
+Counted 1,000 emails so far...
+📬 Total emails in selected time range (1 days): 1,126 emails
+
+🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)
+Casting wide net: English, Hebrew, French, German, Spanish keywords...
+Excluding: newsletters, webinars, invitations...
+📧 Found 24 emails matching broad financial patterns (2.13% of inbox)
+
+🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)
+AI analyzing 24 emails for semantic context...
+Filtering: Marketing spam, newsletters, logistics, false positives...
+✗ [1/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [2/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [3/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [4/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✓ [5/24] KEEP: "Event name: payment.in_review..." ([AI Gatekeeper] OTHER - The subject and body explicitly mention 'payment.in_revi)
+✓ [6/24] KEEP: "Event name: payment.dispatched..." ([AI Gatekeeper] OTHER - The subject and body explicitly state 'payment.dispatche)
+✓ [7/24] KEEP: "Event name: payment.in_review..." ([AI Gatekeeper] OTHER - The subject 'payment.in_review' and the body snippet con)
+✓ [8/24] KEEP: "Event name: payment.in_review..." ([AI Gatekeeper] OTHER - The subject and body snippet clearly indicate a 'payment)
+✓ [9/24] KEEP: "Your Replit receipt [#1244-5940]..." ([AI Gatekeeper] RECEIPT - The subject line explicitly states 'Your Replit receip)
+✗ [10/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] OTHER - The email is a technical notification from Replit about )
+✗ [11/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] OTHER - The email is a technical notification from Replit about )
+✗ [12/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [13/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] OTHER - The email is a technical notification from Replit about )
+✓ [14/24] KEEP: "Your Replit receipt [#1483-6023]..." ([AI Gatekeeper] RECEIPT - The subject line explicitly states 'Your Replit receip)
+✗ [15/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [16/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The sender 'Replit' and the subject/body content 'Success)
+✓ [17/24] KEEP: "Your receipt from Airparser (Restful OÜ) #2990-147..." ([AI Gatekeeper] RECEIPT - The sender's email address contains 'invoice' and 'sta)
+✗ [18/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] OTHER - The email is a technical notification from Replit about )
+✓ [19/24] KEEP: "Your Airparser invoice..." ([AI Gatekeeper] RECEIPT - The subject explicitly mentions 'Your Airparser invoic)
+✗ [20/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [21/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [22/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [23/24] KILL: "Successfully deployed to the following URLs: https..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+✗ [24/24] KILL: "Failed to deploy to the following URLs: https://se..." ([AI Gatekeeper] JUNK - The email is a technical notification from Replit about a)
+📊 FILTERING FUNNEL:
+Total Emails (1 days):
+1,126 emails
+After Multi-Language Filter:
+24 emails (2.13%)
+After AI Semantic Filter:
+8 emails (33.3%)
+Invoices/Receipts Found:
+0 documents (0%)
+
+📊 FILTERING RESULTS:
+• Total inbox emails: 1,126
+• After Stage 1 filter: 24 (2.13%)
+• After Stage 2 AI filter: 8 (33.3% of 24)
+• Rejected: 16 emails
+
+🤖 STAGE 3: Deep AI Extraction (8 invoices)
+3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic
+
+[1/8] Processing: "Event name: payment.in_review..."
+From: PBA Transactions support@mrkter.io
+⚠️ No PDFs or download links found
+
+[2/8] Processing: "Event name: payment.dispatched..."
+From: PBA Transactions support@mrkter.io
+⚠️ No PDFs or download links found
+
+[3/8] Processing: "Event name: payment.in_review..."
+From: PBA Transactions support@mrkter.io
+⚠️ No PDFs or download links found
+
+[4/8] Processing: "Event name: payment.in_review..."
+From: PBA Transactions support@mrkter.io
+⚠️ No PDFs or download links found
+
+[5/8] Processing: "Your Replit receipt [#1244-5940]..."
+From: Replit receipts+acct_15YpNsJAmnYVOvfn@stripe.com
+🔗 Analyzing link: https://dashboard.stripe.com/receipts/payment/CAcQARoXChVhY2N0XzE1WXBOc0pBbW5ZVk...
+⚠️ Failed: Requires authentication: The URL uses the 'dashboard.stripe.com' subdomain, which semantically indicates an authenticate
+🔗 Analyzing link: https://stripe-images.s3.amazonaws.com/notifications/icons/document--16--regular...
+📸 Screenshot captured: receipt_screenshot_stripe-images_s3_amazonaws_com.png
+ℹ️ Source: Web receipt (screenshot)
+→ Layer 1: Document AI OCR (Image)...
+→ Layer 2: Vertex Search RAG...
+→ Layer 3: Gemini Semantic Extraction...
+⏳ Processing file...
+✅ Extracted from 📸 Screenshot: Stripe | Invoice #12345 | USD 10.0
+
+[6/8] Processing: "Your Replit receipt [#1483-6023]..."
+From: Replit receipts+acct_15YpNsJAmnYVOvfn@stripe.com
+🔗 Analyzing link: https://dashboard.stripe.com/receipts/payment/CAcQARoXChVhY2N0XzE1WXBOc0pBbW5ZVk...
+⚠️ Failed: Requires authentication: The URL is hosted on 'dashboard.stripe.com'. The 'dashboard' subdomain strongly indicates an au
+🔗 Analyzing link: https://stripe-images.s3.amazonaws.com/notifications/icons/document--16--regular...
+📸 Screenshot captured: receipt_screenshot_stripe-images_s3_amazonaws_com.png
+ℹ️ Source: Web receipt (screenshot)
+→ Layer 1: Document AI OCR (Image)...
+→ Layer 2: Vertex Search RAG...
+→ Layer 3: Gemini Semantic Extraction...
+⏳ Processing file...
+✅ Extracted from 📸 Screenshot: Stripe | Invoice #1234-5678 | USD 10.0
+
+[7/8] Processing: "Your receipt from Airparser (Restful OÜ) #2990-147..."
+From: "Airparser (Restful OÜ)" invoice+statements+acct_1NGkNHKN6qT9HzDH@stripe.com
+📎 Attachment: Invoice-A6E8497E-0014.pdf
+→ Layer 1: Document AI OCR...
+→ Layer 2: Vertex Search RAG...
+→ Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+✅ SUCCESS: Restful OÜ | Invoice #A6E8497E-0014 | USD 39.0
+📎 Attachment: Receipt-2990-1476.pdf
+→ Layer 1: Document AI OCR...
+→ Layer 2: Vertex Search RAG...
+→ Layer 3: Gemini Semantic Extraction...
+⏳ Processing invoice (this may take 30-60 seconds)...
+✅ SUCCESS: Airparser (Restful OÜ) | Invoice #A6E8497E-0014 | USD 39.0
+🔗 Analyzing link: https://stripe-images.s3.amazonaws.com/emails/invoices_invoice_illustration.png...
+📸 Screenshot captured: receipt_screenshot_stripe-images_s3_amazonaws_com.png
+ℹ️ Source: Web receipt (screenshot)
+→ Layer 1: Document AI OCR (Image)...
+→ Layer 2: Vertex Search RAG...
+→ Layer 3: Gemini Semantic Extraction...
+⏳ Processing file...
+✅ Extracted from 📸 Screenshot: Stripe | Invoice #1234-5678 | USD 10.0
+🔗 Analyzing link: https://pay.stripe.com/invoice/acct_1NGkNHKN6qT9HzDH/live_YWNjdF8xTkdrTkhLTjZxVD...
+⚠️ Failed: Screenshot capture failed
+
+[8/8] Processing: "Your Airparser invoice..."
+From: Airparser support@airparser.com
+⚠️ No PDFs or download links found
+
+✅ Import Complete!
+
+📈 FINAL RESULTS:
+• Emails scanned: 24
+• Clean invoices found: 8
+• Successfully extracted: 5 ✓
+• Extraction failed: 5
+
+────────────────────────────────────────────────────────────
+✅ Import session completed successfully!
+
+📋 Extracted Invoice Data (5 invoices)
+Stripe
+📄 Type: RECEIPT | 🌐 Language: en
+📧 From: Replit
+📅 Email Date: Sun, 23 Nov 2025 08:20:18 +0000
+USD 10
+Invoice #12345
+Issued: 2023-11-16
+📧 Email Subject:
+Your Replit receipt [#1244-5940]
+
+🏢 Vendor Information
+Name: Stripe
+👤 Buyer Information
+Name: Test Company
+Email: test@example.com
+💰 Financial Breakdown
+Subtotal:
+USD 10
+Tax :
+USD N/A
+Total:
+USD 10
+📝 Line Items (1)
+Description	Qty	Unit Price	Tax	Total	✓
+Payment for Invoice #12345
+Category: Payment
+1	USD 10	-	USD 10	✅
+🧠 AI Reasoning:
+Document identified as a Simplified Invoice / Receipt from Stripe. Language is English, currency is USD. All financial figures (subtotal, tax, total) are clearly visible and mathematically consistent ($10.00 subtotal + $0.00 tax = $10.00 total). No tax applied. Vendor identified as Stripe, buyer as Test Company. Payment date extracted as November 16, 2023. No multi-currency detected. High confidence extraction.
+
+Classification Confidence: 99%
+Extraction Confidence: 98%
+📄 View Complete JSON Schema
+Stripe
+📄 Type: SUBSCRIPTION | 🌐 Language: en
+📧 From: Replit
+📅 Email Date: Sat, 22 Nov 2025 17:50:23 +0000
+USD 10
+Invoice #1234-5678
+Issued: 2023-07-20
+📧 Email Subject:
+Your Replit receipt [#1483-6023]
+
+🏢 Vendor Information
+Name: Stripe
+👤 Buyer Information
+Not available
+💰 Financial Breakdown
+Subtotal:
+USD 10
+Tax :
+USD N/A
+Total:
+USD 10
+📝 Line Items (1)
+Description	Qty	Unit Price	Tax	Total	✓
+Subscription
+Category: Software Subscription
+1	USD 10	-	USD 10	✅
+🧠 AI Reasoning:
+Detected document as a Stripe payment receipt for a subscription. Language is English, country is US based on USD currency and MM/DD/YYYY date format. Document category is Subscription/SaaS. Single currency (USD). Math verified: Subtotal (
+10.00
+)
++
+𝑇
+𝑎
+𝑥
+(
+10.00)+Tax(
+0.00) = Total ($10.00). All extractions are high confidence.
+
+Classification Confidence: 100%
+Extraction Confidence: 100%
+📄 View Complete JSON Schema
+Restful OÜ
+📄 Type: INVOICE | 🌐 Language: en
+📧 From: "Airparser (Restful OÜ)"
+📅 Email Date: Sat, 22 Nov 2025 16:12:36 +0000
+USD 39
+Invoice #A6E8497E-0014
+Issued: 2025-11-22
+Due: 2025-11-22
+📧 Email Subject:
+Your receipt from Airparser (Restful OÜ) #2990-1476
+
+🏢 Vendor Information
+Name: Restful OÜ
+Address: Sepapaja 6 15551 Tallinn Estonia
+Country: Estonia
+Email: support@airparser.com
+Tax ID: EE102501591
+👤 Buyer Information
+Name: Barak Hirchson
+Address: hasdnaout 10 herzelia 69497 Israel
+Country: Israel
+Email: barak@mrkter.io
+💰 Financial Breakdown
+Subtotal:
+USD 39
+Tax :
+USD N/A
+Total:
+USD 39
+💳 Payment Information
+Terms: Due on receipt
+Due Date: 2025-11-22
+📝 Line Items (1)
+Description	Qty	Unit Price	Tax	Total	✓
+Starter plan
+Category: Software Subscription
+1	USD 39	-	USD 39	✅
+🧠 AI Reasoning:
+Invoice from Airparser (Estonia) to Barak Hirchson (Israel). Document category: Tax Invoice. Single currency: USD. All financial calculations verified: Subtotal $39.00, Total $39.00. No tax or discounts detected. Service period extracted from line item description.
+
+Classification Confidence: 98%
+Extraction Confidence: 95%
+📄 View Complete JSON Schema
+Airparser (Restful OÜ)
+📄 Type: RECEIPT | 🌐 Language: en
+📧 From: "Airparser (Restful OÜ)"
+📅 Email Date: Sat, 22 Nov 2025 16:12:36 +0000
+USD 39
+Invoice #A6E8497E-0014
+Issued: 2025-11-22
+📧 Email Subject:
+Your receipt from Airparser (Restful OÜ) #2990-1476
+
+🏢 Vendor Information
+Name: Airparser (Restful OÜ)
+Address: Sepapaja 6, 15551 Tallinn, Estonia
+Country: Estonia
+Email: support@airparser.com
+Tax ID: EE102501591
+👤 Buyer Information
+Name: mrkter tech
+Address: hasdnaout 10, herzelia 69497, Israel
+Country: Israel
+Email: barak@mrkter.io
+💰 Financial Breakdown
+Subtotal:
+USD 39
+Tax :
+USD N/A
+Total:
+USD 39
+📝 Line Items (1)
+Description	Qty	Unit Price	Tax	Total	✓
+Starter plan Nov 22 - Dec 22, 2025
+Category: Software Subscription
+1	USD 39	-	USD 39	✅
+🧠 AI Reasoning:
+Detected document as a Simplified Invoice / Receipt. Supplier is 'Airparser (Restful OÜ)' from Estonia (EE102501591). Buyer is 'mrkter tech' from Israel. Language is English. All amounts are in USD, which is common for SaaS services. Dates normalized to YYYY-MM-DD. Payment date and issue date are the same. Subscription period 'Nov 22 - Dec 22, 2025' extracted. Math verified: 1 x $39.00 = $39.00. No tax or discounts applied. Total amount of $39.00 confirmed visually despite low OCR confidence.
+
+Classification Confidence: 100%
+Extraction Confidence: 95%
+📄 View Complete JSON Schema
+Stripe
+📄 Type: RECEIPT | 🌐 Language: en
+📧 From: "Airparser (Restful OÜ)"
+📅 Email Date: Sat, 22 Nov 2025 16:12:36 +0000
+USD 10
+Invoice #1234-5678
+Issued: 2024-05-01
+📧 Email Subject:
+Your receipt from Airparser (Restful OÜ) #2990-1476
+
+🏢 Vendor Information
+Name: Stripe
+Country: US
+👤 Buyer Information
+Name: Test Customer
+Email: test@example.com
+💰 Financial Breakdown
+Subtotal:
+USD 10
+Tax :
+USD N/A
+Total:
+USD 10
+📝 Line Items (1)
+Description	Qty	Unit Price	Tax	Total	✓
+Test Product
+Category: Product
+1	USD 10	-	USD 10	✅
+🧠 AI Reasoning:
+Detected a Stripe receipt in English. Country inferred as US based on date format (MM/DD/YYYY) and common Stripe usage. Document category is 'Simplified Invoice / Receipt'. All amounts are in USD, so it is not multi-currency. Math verified: Subtotal (
+10.00
+)
++
+𝑇
+𝑎
+𝑥
+(
+10.00)+Tax(
+0.00) = Grand Total ($10.00). Vendor 'Stripe' and customer 'Test Customer' clearly identified. Receipt number '1234-5678' and issue/payment date 'May 1, 2024' extracted.
+
+Classification Confidence: 100%
+Extraction Confidence: 100%
+📄 View Complete JSON Schema
+
+what do you think he did ok?
