@@ -403,8 +403,13 @@ def upload_invoice():
         validated_data = result.get('validated_data', {})
         vendor_data = validated_data.get('vendor', {})
         
-        # Extract vendor information from invoice
-        vendor_name = vendor_data.get('name', '')
+        # FIX: Use ORIGINAL OCR data (before Layer 3.5 resolution) for vendor matching
+        # Layer 3.5 saves original data in 'original_ocr_name' before resolving legal beneficiary
+        original_vendor_name = vendor_data.get('original_ocr_name') or vendor_data.get('original_supplier_name') or vendor_data.get('name', '')
+        resolved_vendor_name = vendor_data.get('name', '')  # This is the Layer 3.5 resolved name
+        
+        # Extract vendor information from invoice (use original OCR data)
+        vendor_name = original_vendor_name
         tax_id = vendor_data.get('taxId', '') or vendor_data.get('tax_id', '')
         address = vendor_data.get('address', '')
         country = vendor_data.get('country', '')
@@ -470,13 +475,14 @@ def upload_invoice():
                             'parent_company_detected': None
                         },
                         'invoice_vendor': {
-                            'name': vendor_name,
+                            'name': vendor_name,  # Original OCR name
                             'tax_id': tax_id or 'Unknown',
                             'address': address or 'Unknown',
                             'country': country or 'Unknown',
                             'email': email or 'Unknown',
                             'phone': phone or 'Unknown'
                         },
+                        'resolved_vendor_name': resolved_vendor_name if resolved_vendor_name != original_vendor_name else None,
                         'database_vendor': None
                     }
                 else:
@@ -523,13 +529,14 @@ def upload_invoice():
                             'parent_company_detected': None
                         }),
                         'invoice_vendor': {
-                            'name': vendor_name,
+                            'name': vendor_name,  # Original OCR name (e.g., "Fully-Booked")
                             'tax_id': tax_id or 'Unknown',
                             'address': address or 'Unknown',
                             'country': country or 'Unknown',
                             'email': email or 'Unknown',
                             'phone': phone or 'Unknown'
                         },
+                        'resolved_vendor_name': resolved_vendor_name if resolved_vendor_name != original_vendor_name else None,  # Layer 3.5 resolution (e.g., "Artem Andreevitch Revva")
                         'database_vendor': None  # FIX ISSUE 1: Always initialize, will be populated if MATCH
                     }
                     
@@ -633,13 +640,14 @@ def upload_invoice():
                         'parent_company_detected': None
                     },
                     'invoice_vendor': {
-                        'name': vendor_name,
+                        'name': vendor_name,  # Original OCR name
                         'tax_id': tax_id or 'Unknown',
                         'address': address or 'Unknown',
                         'country': country or 'Unknown',
                         'email': email or 'Unknown',
                         'phone': phone or 'Unknown'
                     },
+                    'resolved_vendor_name': resolved_vendor_name if resolved_vendor_name != original_vendor_name else None,
                     'database_vendor': None,
                     'error': str(e)
                 }

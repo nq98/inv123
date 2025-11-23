@@ -1032,10 +1032,16 @@ function displayResults(data) {
                     <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px solid #dee2e6;">
                         <div style="display: flex; align-items: center; margin-bottom: 12px;">
                             <span style="font-size: 18px; margin-right: 8px;">📄</span>
-                            <h4 style="margin: 0; color: #495057; font-size: 15px;">Invoice Says</h4>
+                            <h4 style="margin: 0; color: #495057; font-size: 15px;">Invoice Says (Raw OCR)</h4>
                         </div>
                         <div style="font-size: 13px; color: #333; line-height: 1.8;">
                             <div><strong>Name:</strong> ${invoiceVendor.name || 'Unknown'}</div>
+                            ${vendorMatch.resolved_vendor_name ? `
+                                <div style="margin-top: 6px; padding: 8px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                                    <div style="font-size: 11px; color: #856404; margin-bottom: 4px;">🧠 Layer 3.5 AI Resolution:</div>
+                                    <div style="color: #856404;"><strong>Resolved to:</strong> ${escapeHtml(vendorMatch.resolved_vendor_name)}</div>
+                                </div>
+                            ` : ''}
                             <div style="margin-top: 6px;"><strong>Tax ID:</strong> ${invoiceVendor.tax_id || 'Unknown'}</div>
                             <div style="margin-top: 6px;"><strong>Address:</strong> ${invoiceVendor.address || 'Unknown'}</div>
                             <div style="margin-top: 6px;"><strong>Country:</strong> ${invoiceVendor.country || 'Unknown'}</div>
