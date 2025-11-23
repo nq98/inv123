@@ -879,12 +879,21 @@ Use these principles to think like a human accountant:
             
         except Exception as e:
             print(f"❌ Supreme Judge error: {e}")
-            # On error, return NEW_VENDOR (safer than AMBIGUOUS for method mapping)
+            print(f"📝 Response text: {response.text[:500] if 'response' in locals() and hasattr(response, 'text') else 'No response'}")
+            
+            # Try regex fallback to extract verdict and reasoning
+            fallback_result = self._fallback_parse_judge_response(response.text if 'response' in locals() and hasattr(response, 'text') else "")
+            
+            if fallback_result:
+                print(f"✅ Fallback parsing succeeded: {fallback_result.get('verdict')}")
+                return fallback_result
+            
+            # Final fallback: return NEW_VENDOR (safer than AMBIGUOUS for method mapping)
             return {
                 "verdict": "NEW_VENDOR",
                 "vendor_id": None,
                 "confidence": 0.0,
-                "reasoning": f"Error during Supreme Judge decision: {str(e)}",
+                "reasoning": f"Error during Supreme Judge decision: {str(e)}. Unable to parse response.",
                 "risk_analysis": "HIGH",
                 "database_updates": {},
                 "parent_child_logic": {
@@ -892,6 +901,103 @@ Use these principles to think like a human accountant:
                     "parent_company_detected": None
                 }
             }
+    
+    def _fallback_parse_judge_response(self, response_text):
+        """
+        Fallback parser using regex when JSON parsing fails.
+        Attempts to extract verdict, vendor_id, confidence, and reasoning from malformed response.
+        
+        Args:
+            response_text: The raw response text from Gemini
+            
+        Returns:
+            dict or None if parsing fails completely
+        """
+        import re
+        
+        if not response_text:
+            return None
+            
+        try:
+            # Try to extract verdict using various patterns
+            verdict_patterns = [
+                r'"verdict"\s*:\s*"([^"]+)"',
+                r'verdict["\']?\s*:\s*["\']?(\w+)',
+                r'VERDICT\s*=\s*(\w+)',
+            ]
+            
+            verdict = None
+            for pattern in verdict_patterns:
+                match = re.search(pattern, response_text, re.IGNORECASE)
+                if match:
+                    verdict = match.group(1).upper()
+                    if verdict in ["MATCH", "NEW_VENDOR", "AMBIGUOUS"]:
+                        break
+                    verdict = None
+            
+            if not verdict:
+                return None
+            
+            # Try to extract vendor_id
+            vendor_id = None
+            if verdict == "MATCH":
+                vendor_id_patterns = [
+                    r'"selected_vendor_id"\s*:\s*"([^"]+)"',
+                    r'vendor_id["\']?\s*:\s*["\']?([^\s,}]+)',
+                ]
+                for pattern in vendor_id_patterns:
+                    match = re.search(pattern, response_text)
+                    if match and match.group(1) != "null":
+                        vendor_id = match.group(1)
+                        break
+            
+            # Try to extract confidence score
+            confidence = 0.5  # Default
+            confidence_patterns = [
+                r'"confidence_score"\s*:\s*([0-9.]+)',
+                r'confidence["\']?\s*:\s*([0-9.]+)',
+            ]
+            for pattern in confidence_patterns:
+                match = re.search(pattern, response_text)
+                if match:
+                    try:
+                        confidence = float(match.group(1))
+                        confidence = min(max(confidence, 0.0), 1.0)  # Clamp to [0, 1]
+                        break
+                    except ValueError:
+                        pass
+            
+            # Try to extract reasoning
+            reasoning = "Fallback parsing - no detailed reasoning available"
+            reasoning_patterns = [
+                r'"match_reasoning"\s*:\s*"([^"]+)"',
+                r'"reasoning"\s*:\s*"([^"]+)"',
+                r'reasoning["\']?\s*:\s*["\']([^"\']+)',
+            ]
+            for pattern in reasoning_patterns:
+                match = re.search(pattern, response_text)
+                if match:
+                    reasoning = match.group(1)
+                    break
+            
+            print(f"📋 Fallback parsing results: verdict={verdict}, vendor_id={vendor_id}, confidence={confidence}")
+            
+            return {
+                "verdict": verdict,
+                "vendor_id": vendor_id,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "risk_analysis": "MEDIUM",  # Default for fallback
+                "database_updates": {},
+                "parent_child_logic": {
+                    "is_subsidiary": False,
+                    "parent_company_detected": None
+                }
+            }
+            
+        except Exception as e:
+            print(f"❌ Fallback parsing also failed: {e}")
+            return None
     
     def _apply_database_updates(self, vendor_id, updates):
         """

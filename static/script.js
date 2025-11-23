@@ -878,6 +878,11 @@ function initializeInvoiceUpload() {
             console.log('✅ Upload successful, displaying results');
             displayResults(data);
             
+            // Hide the upload form and Gmail section to keep results visible
+            if (uploadArea) uploadArea.style.display = 'none';
+            const gmailSection = document.querySelector('.gmail-import');
+            if (gmailSection) gmailSection.style.display = 'none';
+            
         } catch (error) {
             console.error('❌ Upload error:', error);
             uploadProgressDiv.classList.add('hidden');
@@ -905,8 +910,17 @@ if (urlParams.get('gmail_connected') === 'true') {
 function displayResults(data) {
     results.classList.remove('hidden');
     
+    // Add "Upload Another" button at the top
+    let html = `
+        <div style="text-align: right; margin-bottom: 20px;">
+            <button onclick="location.reload()" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;">
+                📤 Upload Another Invoice
+            </button>
+        </div>
+    `;
+    
     if (data.status === 'error') {
-        resultContent.innerHTML = `
+        resultContent.innerHTML = html + `
             <span class="warning-badge">Processing Error</span>
             <div class="error-message">
                 <strong>Error:</strong> ${data.error || 'Unknown error occurred'}
@@ -919,7 +933,7 @@ function displayResults(data) {
     const validated = data.validated_data || {};
     const rawEntities = data.layers?.layer1_document_ai?.entities || {};
     
-    let html = `<span class="success-badge">✓ Processing Complete</span>`;
+    html += `<span class="success-badge">✓ Processing Complete</span>`;
     
     // ALWAYS SHOW GCS LINK IF AVAILABLE (regardless of invoice ID)
     const invoiceId = validated.invoiceId || validated.invoiceNumber || data.invoice_id || "Unknown";
@@ -998,7 +1012,9 @@ function displayResults(data) {
     }
     
     // AUTOMATIC VENDOR MATCHING Section
+    console.log('🔍 Checking vendor_match in response:', data.vendor_match);
     if (data.vendor_match) {
+        console.log('✅ vendor_match found:', data.vendor_match);
         const vendorMatch = data.vendor_match;
         const verdict = vendorMatch.verdict || 'UNKNOWN';
         const confidence = vendorMatch.confidence || 0;
@@ -1006,6 +1022,8 @@ function displayResults(data) {
         const reasoning = vendorMatch.reasoning || 'No reasoning provided';
         const invoiceVendor = vendorMatch.invoice_vendor || {};
         const databaseVendor = vendorMatch.database_vendor || null;
+        
+        console.log('📊 Vendor matching verdict:', verdict, 'Confidence:', confidence, 'Method:', method);
         
         // Verdict badge styling
         let verdictBadge = '';
@@ -1231,6 +1249,8 @@ function displayResults(data) {
                 </div>
             </div>
         `;
+    } else {
+        console.log('⚠️ vendor_match NOT found in response data');
     }
     
     // Invoice Details Section
