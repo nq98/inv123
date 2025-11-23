@@ -209,7 +209,7 @@ class BigQueryService:
         query = f"""
         SELECT 
             vendor_id,
-            name,
+            global_name,
             emails,
             countries,
             addresses,
@@ -235,7 +235,7 @@ class BigQueryService:
             for row in results:
                 vendors.append({
                     "vendor_id": row.vendor_id,
-                    "name": row.name,
+                    "global_name": row.global_name,
                     "emails": row.emails if row.emails else '',
                     "countries": row.countries if row.countries else '',
                     "addresses": row.addresses if row.addresses else '',

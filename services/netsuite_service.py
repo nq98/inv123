@@ -669,7 +669,7 @@ class NetSuiteService:
     
     def create_vendor_bill(self, bill_data: Dict) -> Optional[Dict]:
         """
-        Create a vendor bill (invoice) in NetSuite
+        Create a vendor bill (invoice) in NetSuite using the EXACT format from working example
         
         Args:
             bill_data: Bill data with fields:
@@ -689,13 +689,17 @@ class NetSuiteService:
         if not self.enabled:
             return None
         
+        # Setup IDs based on working JSON example
+        TERMS_ID = "9"  # Net 30 (REQUIRED - THIS WAS MISSING!)
+        DEPARTMENT_ID = "115"  # Default department
+        
         # Map currency code to NetSuite ID
         currency_id = self.CURRENCY_MAP.get(
             bill_data.get('currency', 'USD').upper(), 
             '1'  # Default to USD
         )
         
-        # Build vendor bill object
+        # Build vendor bill object - EXACT MATCH to working format
         netsuite_bill = {
             'externalId': f"INV_{bill_data['invoice_id']}",
             'entity': {
@@ -708,15 +712,18 @@ class NetSuiteService:
                 'id': currency_id
             },
             'tranId': bill_data.get('invoice_number', bill_data['invoice_id']),
-            'trandate': bill_data.get('invoice_date', datetime.now().strftime('%Y-%m-%d')),
-            'memo': bill_data.get('memo', f"Invoice from AI extraction system - {bill_data['invoice_id']}")
+            'trandate': bill_data.get('invoice_date', datetime.now().strftime('%Y-%m-%d')),  # lowercase!
+            'memo': bill_data.get('memo', f"Invoice from AI extraction system - {bill_data['invoice_id']}"),
+            'terms': {
+                'id': TERMS_ID  # THIS WAS MISSING - CRITICAL!
+            }
         }
         
         # Add due date if provided
         if bill_data.get('due_date'):
             netsuite_bill['duedate'] = bill_data['due_date']
         
-        # Build expense lines
+        # Build expense lines with department field (matching working example)
         expense_items = []
         line_items = bill_data.get('line_items', [])
         
@@ -730,7 +737,10 @@ class NetSuiteService:
                                              self.DEFAULT_EXPENSE_ACCOUNT_ID))
                     },
                     'amount': item.get('amount', 0),
-                    'memo': item.get('description', '')
+                    'memo': item.get('description', ''),
+                    'department': {
+                        'id': DEPARTMENT_ID  # Add department as per working example
+                    }
                 }
                 
                 # Add tax code if provided
@@ -751,6 +761,9 @@ class NetSuiteService:
                 },
                 'amount': bill_data.get('total_amount', 0),
                 'memo': bill_data.get('memo', 'Invoice total'),
+                'department': {
+                    'id': DEPARTMENT_ID  # Add department as per working example
+                },
                 'taxCode': {
                     'id': os.getenv('NETSUITE_TAX_CODE_ID', self.DEFAULT_TAX_CODE_ID)
                 }
@@ -759,6 +772,8 @@ class NetSuiteService:
         netsuite_bill['expense'] = {'items': expense_items}
         
         logger.info(f"Creating vendor bill in NetSuite for invoice: {bill_data['invoice_id']}")
+        logger.info(f"Sending Payload to NetSuite: {json.dumps(netsuite_bill, indent=2)}")
+        
         result = self._make_request('POST', '/record/v1/vendorbill', data=netsuite_bill)
         
         if result:
@@ -767,6 +782,79 @@ class NetSuiteService:
         
         logger.error(f"Failed to create vendor bill for invoice: {bill_data['invoice_id']}")
         return None
+    
+    def create_invoice(self, invoice_data: Dict) -> Optional[Dict]:
+        """
+        Create a vendor bill using the EXACT format from the working example
+        This is an alias for create_vendor_bill with cleaner parameter names
+        
+        Args:
+            invoice_data: Invoice data with fields matching the working example
+                
+        Returns:
+            Created invoice data with NetSuite internal ID or None
+        """
+        if not self.enabled:
+            return None
+        
+        # Setup IDs based on working JSON example
+        SUBSIDIARY_ID = "2"       
+        TERMS_ID = "9"            # Net 30 (REQUIRED!)
+        EXPENSE_ACCOUNT_ID = "351" 
+        DEPARTMENT_ID = "115"
+        TAX_CODE_ID = "18"
+        
+        # Map currency if provided, otherwise use default
+        currency_id = self.CURRENCY_MAP.get(
+            invoice_data.get('currency', 'USD').upper(), 
+            '1'  # Default to USD
+        )
+        
+        # Build Payload - EXACT MATCH to working JSON
+        # Note: Using 'trandate' (lowercase) not 'tranDate'
+        netsuite_bill = {
+            "externalId": invoice_data.get('externalId'),
+            "entity": {
+                "id": invoice_data.get('vendor_netsuite_id')  # Must be NetSuite ID
+            },
+            "subsidiary": {
+                "id": SUBSIDIARY_ID
+            },
+            "currency": {
+                "id": currency_id  # Or use mapping for other currencies
+            },
+            "trandate": invoice_data.get('tranDate', datetime.now().strftime('%Y-%m-%d')),  # lowercase!
+            "tranId": invoice_data.get('tranId'),
+            "memo": invoice_data.get('memo', ''),
+            "terms": {
+                "id": TERMS_ID  # THIS WAS MISSING - CRITICAL!
+            },
+            "expense": {
+                "items": [{
+                    "account": {"id": EXPENSE_ACCOUNT_ID},
+                    "amount": invoice_data.get('amount'),
+                    "memo": invoice_data.get('memo', ''),
+                    "department": {"id": DEPARTMENT_ID},
+                    "taxCode": {"id": TAX_CODE_ID}
+                }]
+            }
+        }
+        
+        logger.info(f"Sending Payload to NetSuite: {json.dumps(netsuite_bill)}")
+        
+        try:
+            result = self._make_request(
+                'POST', 
+                '/record/v1/vendorbill',  # Correct endpoint
+                netsuite_bill,
+                entity_type='invoice',
+                entity_id=invoice_data.get('externalId'),
+                action='create'
+            )
+            return result
+        except Exception as e:
+            logger.error(f"NetSuite Create Failed: {e}")
+            return None
     
     def get_vendor_bill(self, bill_id: str) -> Optional[Dict]:
         """

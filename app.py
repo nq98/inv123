@@ -2794,7 +2794,7 @@ def create_vendor_in_netsuite(vendor_id):
         
         # Prepare vendor data for NetSuite using correct field names
         vendor_data = {
-            'name': vendor.get('name', ''),  # Use 'name' instead of 'global_name'
+            'name': vendor.get('global_name', ''),  # Use 'global_name' from BigQuery
             'external_id': f"{vendor_id}_created_{int(datetime.now().timestamp())}",
             'email': vendor.get('emails', '').split(',')[0] if vendor.get('emails') else None,
             'force_create': True  # Flag to force creation
@@ -2833,7 +2833,7 @@ def create_vendor_in_netsuite(vendor_id):
                 'vendor_id': vendor_id,
                 'netsuite_id': netsuite_id,
                 'action': 'created',
-                'vendor_name': vendor.get('name')  # Use 'name' instead of 'global_name'
+                'vendor_name': vendor.get('global_name')  # Use 'global_name' from BigQuery
             })
         else:
             return jsonify({
