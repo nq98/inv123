@@ -121,6 +121,7 @@ class VendorMatcher:
         
         # STEP 1: Semantic Candidate Retrieval (Vertex AI Search RAG + alternative signals)
         vendor_name = invoice_data.get('vendor_name', '')
+        resolved_legal_name = invoice_data.get('resolved_legal_name', '')
         country = invoice_data.get('country')
         tax_id = invoice_data.get('tax_id', '')
         email_domain = invoice_data.get('email_domain', '')
@@ -129,10 +130,12 @@ class VendorMatcher:
         # BUG FIX #2: Don't abort if name is missing - check other identity signals
         candidates = []
         
-        # Try vendor name search first (if available)
+        # Try vendor name search first (if available) - DUAL-NAME SEARCH
         if vendor_name and vendor_name != 'Unknown':
             print(f"🔎 Step 1: Semantic search for '{vendor_name}' (country: {country})...")
-            candidates = self._get_semantic_candidates(vendor_name, country, top_k=5)
+            if resolved_legal_name and resolved_legal_name != 'Unknown' and resolved_legal_name != vendor_name:
+                print(f"   📝 Also have resolved legal name: '{resolved_legal_name}'")
+            candidates = self._get_semantic_candidates(vendor_name, country, resolved_legal_name=resolved_legal_name, top_k=5)
         
         # If name search failed or no name, try email domain (if valid corporate domain)
         if not candidates and email_domain and email_domain not in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']:
@@ -247,13 +250,16 @@ class VendorMatcher:
             print(f"❌ Tax ID query error: {e}")
             return None
     
-    def _get_semantic_candidates(self, vendor_name, country=None, top_k=5):
+    def _get_semantic_candidates(self, vendor_name, country=None, resolved_legal_name=None, top_k=5):
         """
         Step 1: Use Vertex AI Search to find semantically similar vendors
         
+        DUAL-NAME SEARCH: Tries both OCR name and Layer 3.5 resolved legal name
+        
         Args:
-            vendor_name: Vendor name to search for
+            vendor_name: Vendor name to search for (original OCR name)
             country: Optional country filter
+            resolved_legal_name: Optional resolved legal name from Layer 3.5 (e.g., "Artem Revva" for brand "Fully Booked")
             top_k: Maximum number of candidates to return
             
         Returns:
@@ -262,10 +268,12 @@ class VendorMatcher:
         if not vendor_name or vendor_name == "Unknown":
             return []
         
-        # Build search query
+        # Build search query with original name
         search_query = f"Find vendor: {vendor_name}"
         if country:
             search_query += f" in {country}"
+        
+        print(f"🔎 Searching with original name: '{vendor_name}'")
         
         try:
             # Use Vertex Search service (search_vendor method)
@@ -277,20 +285,56 @@ class VendorMatcher:
             # CRITICAL FIX: Check if Vertex returned empty results
             # (could be no matches OR error was caught internally)
             if not search_results or len(search_results) == 0:
-                print(f"⚠️ Vertex Search returned no results (may have failed silently)")
-                print(f"🔄 Triggering BigQuery fallback for '{vendor_name}'...")
+                print(f"⚠️ Vertex Search returned no results for original name '{vendor_name}'")
                 
-                # Call BigQuery fallback
-                bigquery_results = self.bigquery.search_vendor_by_name(
-                    vendor_name=vendor_name,
-                    limit=top_k
-                )
+                # DUAL-NAME SEARCH: Try resolved legal name if available
+                if resolved_legal_name and resolved_legal_name != vendor_name and resolved_legal_name != 'Unknown':
+                    print(f"🔄 Retrying with resolved legal name: '{resolved_legal_name}'")
+                    
+                    # Build new search query with resolved legal name
+                    resolved_search_query = f"Find vendor: {resolved_legal_name}"
+                    if country:
+                        resolved_search_query += f" in {country}"
+                    
+                    try:
+                        search_results = self.vertex_search.search_vendor(
+                            vendor_query=resolved_search_query,
+                            max_results=top_k
+                        )
+                        
+                        if search_results and len(search_results) > 0:
+                            print(f"✅ Found {len(search_results)} candidates using resolved legal name")
+                            # Continue with normal processing below
+                        else:
+                            print(f"⚠️ Vertex Search also returned no results for resolved name '{resolved_legal_name}'")
+                            search_results = []
+                    except Exception as resolved_search_error:
+                        print(f"❌ Resolved name search error: {resolved_search_error}")
+                        search_results = []
                 
-                if not bigquery_results:
-                    print(f"⚠️ BigQuery fallback also returned no results")
-                    return []
-                
-                print(f"✅ BigQuery fallback found {len(bigquery_results)} candidates")
+                # If still no results, trigger BigQuery fallback with BOTH names
+                if not search_results or len(search_results) == 0:
+                    print(f"🔄 Triggering BigQuery fallback...")
+                    
+                    # Try original name first
+                    bigquery_results = self.bigquery.search_vendor_by_name(
+                        vendor_name=vendor_name,
+                        limit=top_k
+                    )
+                    
+                    # Try resolved legal name if original returned nothing
+                    if (not bigquery_results or len(bigquery_results) == 0) and resolved_legal_name and resolved_legal_name != vendor_name and resolved_legal_name != 'Unknown':
+                        print(f"🔄 BigQuery fallback trying resolved legal name: '{resolved_legal_name}'")
+                        bigquery_results = self.bigquery.search_vendor_by_name(
+                            vendor_name=resolved_legal_name,
+                            limit=top_k
+                        )
+                    
+                    if not bigquery_results:
+                        print(f"⚠️ BigQuery fallback returned no results for both names")
+                        return []
+                    
+                    print(f"✅ BigQuery fallback found {len(bigquery_results)} candidates")
                 
                 # Convert BigQuery results to Vertex Search format
                 candidates = []
@@ -374,14 +418,24 @@ class VendorMatcher:
             print(f"🔄 Falling back to BigQuery direct search...")
             
             # FALLBACK: Search BigQuery directly using LIKE pattern matching
+            # Try BOTH names in fallback
             try:
+                # Try original name first
                 bigquery_results = self.bigquery.search_vendor_by_name(
                     vendor_name=vendor_name,
                     limit=top_k
                 )
                 
+                # Try resolved legal name if original returned nothing
+                if (not bigquery_results or len(bigquery_results) == 0) and resolved_legal_name and resolved_legal_name != vendor_name and resolved_legal_name != 'Unknown':
+                    print(f"🔄 BigQuery fallback trying resolved legal name: '{resolved_legal_name}'")
+                    bigquery_results = self.bigquery.search_vendor_by_name(
+                        vendor_name=resolved_legal_name,
+                        limit=top_k
+                    )
+                
                 if not bigquery_results:
-                    print(f"⚠️ BigQuery fallback also returned no results for '{vendor_name}'")
+                    print(f"⚠️ BigQuery fallback returned no results for both names")
                     return []
                 
                 print(f"✅ BigQuery fallback found {len(bigquery_results)} candidates")
@@ -530,6 +584,7 @@ class VendorMatcher:
         """
         # Extract invoice vendor details
         vendor_name = invoice_data.get("vendor_name", "Unknown")
+        resolved_legal_name = invoice_data.get("resolved_legal_name", "")
         tax_id = invoice_data.get("tax_id", "")
         address = invoice_data.get("address", "")
         email_domain = invoice_data.get("email_domain", "")
@@ -557,6 +612,14 @@ Classifier reasoning: {reasoning}
 (BANK, PAYMENT_PROCESSOR, GOVERNMENT_ENTITY, INDIVIDUAL_PERSON), you MUST return verdict="INVALID_VENDOR".
 """
         
+        # Build the vendor name section with both names if available
+        vendor_name_section = f'- **Invoice Header Name (OCR):** "{vendor_name}"'
+        if resolved_legal_name and resolved_legal_name != 'Unknown' and resolved_legal_name != vendor_name:
+            vendor_name_section += f'\n- **Resolved Legal Name (Layer 3.5 AI):** "{resolved_legal_name}"'
+            vendor_name_section += '\n- **IMPORTANT:** This vendor has BOTH a brand/trade name AND a resolved legal entity name. The database may contain either name.'
+        else:
+            vendor_name_section = f'- **Vendor Name:** "{vendor_name}"'
+        
         # 🧠 SEMANTIC VENDOR RESOLUTION ENGINE (Supreme Judge)
         # AI-First approach: Think like a human accountant, not a keyword matcher
         prompt = f"""
@@ -569,7 +632,7 @@ You do NOT perform exact string matching. You perform **Semantic Identity Verifi
 
 ### 📋 THE EVIDENCE
 **<<< INVOICE VENDOR (THE UNKNOWN) >>>**
-- **Name:** "{vendor_name}"
+{vendor_name_section}
 - **Tax ID:** "{tax_id}" (VAT/EIN/GST/GSTIN/CNPJ/HP)
 - **Address:** "{address}"
 - **Email Domain:** "{email_domain}" (e.g., @uber.com)
