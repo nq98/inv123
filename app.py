@@ -2792,28 +2792,31 @@ def create_vendor_in_netsuite(vendor_id):
         # Sync to NetSuite
         netsuite = NetSuiteService()
         
-        # Prepare vendor data for NetSuite
+        # Prepare vendor data for NetSuite using correct field names
         vendor_data = {
-            'name': vendor.get('global_name', ''),
+            'name': vendor.get('name', ''),  # Use 'name' instead of 'global_name'
             'external_id': f"{vendor_id}_created_{int(datetime.now().timestamp())}",
-            'email': vendor.get('emails', [''])[0] if vendor.get('emails') else None,
+            'email': vendor.get('emails', '').split(',')[0] if vendor.get('emails') else None,
             'force_create': True  # Flag to force creation
         }
         
-        # Extract additional data
-        custom_attrs = vendor.get('custom_attributes', {})
-        if custom_attrs:
-            vendor_data['tax_id'] = custom_attrs.get('tax_id') or custom_attrs.get('vat_number')
-            vendor_data['phone'] = custom_attrs.get('phone')
-            
-            if custom_attrs.get('address'):
-                vendor_data['address'] = {
-                    'line1': custom_attrs.get('address'),
-                    'city': custom_attrs.get('city', ''),
-                    'state': custom_attrs.get('state', ''),
-                    'postal_code': custom_attrs.get('postal_code', ''),
-                    'country': custom_attrs.get('country', 'US')
-                }
+        # Add phone if available
+        if vendor.get('phone_numbers'):
+            vendor_data['phone'] = vendor.get('phone_numbers', '').split(',')[0]
+        
+        # Add tax ID if available  
+        if vendor.get('tax_id'):
+            vendor_data['tax_id'] = vendor.get('tax_id')
+        
+        # Add address if available
+        if vendor.get('addresses'):
+            vendor_data['address'] = {
+                'line1': vendor.get('addresses'),
+                'city': '',
+                'state': '',
+                'postal_code': '',
+                'country': vendor.get('countries', 'US').split(',')[0] if vendor.get('countries') else 'US'
+            }
         
         # Create in NetSuite
         result = netsuite.create_vendor(vendor_data)
@@ -2830,7 +2833,7 @@ def create_vendor_in_netsuite(vendor_id):
                 'vendor_id': vendor_id,
                 'netsuite_id': netsuite_id,
                 'action': 'created',
-                'vendor_name': vendor.get('global_name')
+                'vendor_name': vendor.get('name')  # Use 'name' instead of 'global_name'
             })
         else:
             return jsonify({

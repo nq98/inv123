@@ -1067,3 +1067,84 @@ class NetSuiteService:
                 'success': False,
                 'error': str(e)
             }
+    
+    def create_vendor_only(self, vendor_data: Dict) -> Optional[Dict]:
+        """
+        Create a new vendor using NetSuite REST API format
+        
+        Args:
+            vendor_data: Vendor data with NetSuite field names
+            
+        Returns:
+            Created vendor data with NetSuite internal ID or None
+        """
+        if not self.enabled:
+            return None
+        
+        # NetSuite expects this format for vendors
+        netsuite_vendor = {
+            'externalId': vendor_data.get('externalId'),
+            'companyName': vendor_data.get('companyName'),
+            'email': vendor_data.get('email'),
+            'phone': vendor_data.get('phone'),
+            'subsidiary': vendor_data.get('subsidiary', {'id': self.DEFAULT_SUBSIDIARY_ID}),
+            'isPerson': vendor_data.get('isPerson', False)
+        }
+        
+        # Add tax ID if provided
+        if vendor_data.get('taxId'):
+            netsuite_vendor['vatRegNumber'] = vendor_data.get('taxId')
+        
+        # Remove None values
+        netsuite_vendor = {k: v for k, v in netsuite_vendor.items() if v is not None}
+        
+        logger.info(f"Creating vendor with create_vendor_only: {vendor_data.get('companyName')}")
+        result = self._make_request('POST', '/record/v1/vendor', data=netsuite_vendor,
+                                   entity_type='vendor', entity_id=vendor_data.get('externalId'),
+                                   action='create')
+        return result
+    
+    def create_invoice(self, invoice_data: Dict) -> Optional[Dict]:
+        """
+        Create a vendor bill using the correct NetSuite format
+        
+        Args:
+            invoice_data: Invoice data with NetSuite field names
+            
+        Returns:
+            Created vendor bill data with NetSuite internal ID or None
+        """
+        if not self.enabled:
+            return None
+        
+        # Based on the example, format should be:
+        netsuite_bill = {
+            'externalId': invoice_data.get('externalId'),
+            'entity': {'id': invoice_data.get('vendor_netsuite_id')},  # Vendor internal ID in NetSuite
+            'subsidiary': {'id': self.DEFAULT_SUBSIDIARY_ID},
+            'currency': {'id': self.CURRENCY_MAP.get(invoice_data.get('currency', 'USD'), '1')},  # Default USD
+            'tranDate': invoice_data.get('tranDate', datetime.now().strftime('%Y-%m-%d')),
+            'memo': invoice_data.get('memo', ''),
+            'tranId': invoice_data.get('tranId', '')
+        }
+        
+        # Add expense lines
+        if invoice_data.get('amount'):
+            netsuite_bill['expense'] = {
+                'items': [{
+                    'account': {'id': self.DEFAULT_EXPENSE_ACCOUNT_ID},  # Expense account from example
+                    'amount': invoice_data.get('amount'),
+                    'memo': invoice_data.get('line_memo', ''),
+                    'department': {'id': '115'},  # From example
+                    'taxCode': {'id': self.DEFAULT_TAX_CODE_ID}  # From example
+                }]
+            }
+        
+        # Remove None/empty values
+        netsuite_bill = {k: v for k, v in netsuite_bill.items() if v}
+        
+        logger.info(f"Creating vendor bill with create_invoice: {invoice_data.get('tranId')}")
+        result = self._make_request('POST', '/record/v1/vendorbill', data=netsuite_bill,
+                                   entity_type='invoice', entity_id=invoice_data.get('externalId'),
+                                   action='create')
+        return result

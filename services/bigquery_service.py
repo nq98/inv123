@@ -209,14 +209,13 @@ class BigQueryService:
         query = f"""
         SELECT 
             vendor_id,
-            global_name,
-            normalized_name,
+            name,
             emails,
-            domains,
             countries,
-            custom_attributes,
-            source_system,
-            netsuite_internal_id,
+            addresses,
+            phone_numbers,
+            tax_id,
+            created_at,
             last_updated
         FROM `{self.full_table_id}`
         WHERE vendor_id = @vendor_id
@@ -234,28 +233,15 @@ class BigQueryService:
             vendors = []
             
             for row in results:
-                # Handle custom_attributes
-                custom_attrs = row.custom_attributes
-                if custom_attrs:
-                    if isinstance(custom_attrs, str):
-                        custom_attrs = json.loads(custom_attrs)
-                    elif isinstance(custom_attrs, dict):
-                        custom_attrs = custom_attrs
-                    else:
-                        custom_attrs = {}
-                else:
-                    custom_attrs = {}
-                
                 vendors.append({
                     "vendor_id": row.vendor_id,
-                    "global_name": row.global_name,
-                    "normalized_name": row.normalized_name,
-                    "emails": list(row.emails) if row.emails else [],
-                    "domains": list(row.domains) if row.domains else [],
-                    "countries": list(row.countries) if row.countries else [],
-                    "custom_attributes": custom_attrs,
-                    "source_system": row.source_system,
-                    "netsuite_internal_id": row.netsuite_internal_id,
+                    "name": row.name,
+                    "emails": row.emails if row.emails else '',
+                    "countries": row.countries if row.countries else '',
+                    "addresses": row.addresses if row.addresses else '',
+                    "phone_numbers": row.phone_numbers if row.phone_numbers else '',
+                    "tax_id": row.tax_id if row.tax_id else '',
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
                     "last_updated": row.last_updated.isoformat() if row.last_updated else None
                 })
             
@@ -1164,24 +1150,24 @@ class BigQueryService:
         query = f"""
         SELECT 
             invoice_id,
-            number,
+            invoice_id as number,  -- Using invoice_id as invoice number fallback
             vendor_name,
             vendor_id,
             invoice_date,
-            due_date,
-            currency_code as currency,
+            invoice_date as due_date,  -- Using invoice_date as due_date fallback
+            currency as currency,
             amount as total_amount,
             amount as subtotal,
             0 as tax_amount,
-            line_items,
-            extracted_data,
+            metadata as line_items,  -- Using metadata for line items
+            metadata as extracted_data,  -- Using metadata for extracted data
             gcs_uri,
             file_type,
             file_size,
-            netsuite_bill_id,
-            sync_status,
+            IFNULL(netsuite_bill_id, '') as netsuite_bill_id,
+            IFNULL(netsuite_sync_status, 'pending') as sync_status,
             created_at,
-            updated_at
+            created_at as updated_at  -- Using created_at as updated_at fallback
         FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
         WHERE invoice_id = @invoice_id
         LIMIT 1
