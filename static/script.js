@@ -921,11 +921,12 @@ function displayResults(data) {
     
     let html = `<span class="success-badge">✓ Processing Complete</span>`;
     
-    // SIMPLE DOWNLOAD LINK AT THE TOP (ALWAYS VISIBLE)
-    const invoiceId = validated.invoiceId || validated.invoiceNumber;
+    // ALWAYS SHOW GCS LINK IF AVAILABLE (regardless of invoice ID)
+    const invoiceId = validated.invoiceId || validated.invoiceNumber || data.invoice_id || "Unknown";
     const gcsUri = data.gcs_uri; // Format: gs://payouts-invoices/uploads/filename.pdf
     
-    if (invoiceId && gcsUri) {
+    // Show GCS link even if no invoice ID (just need GCS URI)
+    if (gcsUri) {
         const filename = gcsUri.split('/').pop();
         html += `
             <div style="margin: 20px 0; padding: 25px; background: #4CAF50; color: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);">
@@ -953,50 +954,6 @@ function displayResults(data) {
     
     if (data.status === 'partial' || data.status === 'warning') {
         html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
-    }
-    
-    // Add detailed download section with file info
-    if (invoiceId && gcsUri) {
-        // Extract filename from GCS URI for display purposes
-        const filename = gcsUri.split('/').pop();
-        
-        html += `
-            <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
-                    <div style="color: white; flex: 1; min-width: 200px;">
-                        <div style="font-weight: bold; font-size: 17px; margin-bottom: 6px;">📄 Original Invoice File</div>
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 4px;">Stored securely in Google Cloud Storage</div>
-                        <code style="font-size: 11px; opacity: 0.8; word-break: break-all; display: block; margin-top: 8px;">${escapeHtml(filename)}</code>
-                    </div>
-                    
-                    <!-- Download Button (Signed URL) -->
-                    <button 
-                        onclick="downloadInvoice('${escapeHtml(invoiceId)}', event)" 
-                        style="background: white; color: #667eea; border: none; padding: 14px 28px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; display: flex; align-items: center; gap: 10px; transition: all 0.2s; white-space: nowrap;"
-                        onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.2)';"
-                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        Download Invoice
-                    </button>
-                </div>
-                
-                <!-- Security Notice -->
-                <div style="margin-top: 12px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 4px; border-left: 3px solid rgba(255,255,255,0.5);">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 8px;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                        </svg>
-                        <span>Secure download via time-limited signed URL (valid for 1 hour)</span>
-                    </div>
-                </div>
-            </div>
-        `;
     }
     
     html += buildLayerStatusView(data.layers || {});
