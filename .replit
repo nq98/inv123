@@ -9,11 +9,7 @@ localPort = 34335
 externalPort = 3000
 
 [[ports]]
-localPort = 40937
-externalPort = 3002
-
-[[ports]]
-localPort = 45927
+localPort = 34765
 externalPort = 3001
 
 [agent]
@@ -46,7 +42,7 @@ waitForPort = 5000
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "freetype", "gitFull", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "playwright-driver", "rustc", "tcl", "tk", "zlib", "chromium"]
+packages = ["cargo", "chromium", "freetype", "gitFull", "glibcLocales", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "playwright-driver", "rustc", "tcl", "tk", "zlib"]
 
 [deployment]
 deploymentTarget = "autoscale"

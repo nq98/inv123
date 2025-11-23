@@ -19,6 +19,8 @@ from services.agent_auth_service import require_agent_auth
 from services.agent_search_service import AgentSearchService
 from services.issue_detector import IssueDetector
 from services.action_manager import ActionManager
+from services.pdf_generator import PDFInvoiceGenerator
+from services.invoice_composer import InvoiceComposer
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -2416,6 +2418,184 @@ def agent_test():
         'message': 'Agent API authentication working',
         'client_id': request.client_id
     })
+
+# ==================== INVOICE GENERATION API ENDPOINTS ====================
+
+# Initialize invoice generation services
+pdf_generator = PDFInvoiceGenerator()
+invoice_composer = InvoiceComposer()
+
+@app.route('/api/invoice/search-vendors', methods=['GET'])
+def search_vendors_for_invoice():
+    """
+    Search vendors for invoice generation autocomplete
+    """
+    query = request.args.get('q', '').strip()
+    
+    if not query or len(query) < 2:
+        return jsonify({'vendors': []})
+    
+    try:
+        vendors = invoice_composer.search_vendors(query, limit=10)
+        return jsonify({'vendors': vendors})
+    except Exception as e:
+        print(f"Error searching vendors: {e}")
+        return jsonify({'error': str(e), 'vendors': []}), 500
+
+@app.route('/api/invoice/magic-fill', methods=['POST'])
+def invoice_magic_fill():
+    """
+    Use AI to parse natural language input and fill invoice fields
+    """
+    data = request.get_json()
+    description = data.get('description', '')
+    vendor = data.get('vendor', None)
+    
+    if not description:
+        return jsonify({'error': 'Description is required'}), 400
+    
+    try:
+        result = invoice_composer.magic_fill(description, vendor)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Magic fill error: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/api/invoice/validate', methods=['POST'])
+def validate_invoice():
+    """
+    Perform semantic validation on invoice data
+    """
+    invoice_data = request.get_json()
+    
+    try:
+        result = invoice_composer.validate_invoice(invoice_data)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Validation error: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/api/invoice/generate', methods=['POST'])
+def generate_invoice():
+    """
+    Generate a professional PDF invoice
+    """
+    data = request.get_json()
+    
+    # Prepare invoice data structure
+    invoice_data = {
+        'vendor': data.get('vendor', {}),
+        'buyer': data.get('buyer', {}),
+        'currency': data.get('currency', 'USD'),
+        'tax_type': data.get('tax_type', 'None'),
+        'payment_terms': data.get('payment_terms', 'Net 30'),
+        'notes': data.get('notes', '')
+    }
+    
+    # Handle simple mode
+    if data.get('mode') == 'simple':
+        # Create line items from simple description and amount
+        description = data.get('description', 'Services')
+        amount = float(data.get('amount', 0))
+        
+        # Determine tax rate based on vendor country
+        tax_rate = 0
+        if data.get('tax_type') != 'none':
+            vendor_country = invoice_data['vendor'].get('country', '')
+            tax_info = invoice_composer.get_tax_info_for_country(vendor_country)
+            tax_rate = tax_info['rate']
+        
+        invoice_data['line_items'] = [{
+            'description': description,
+            'quantity': 1,
+            'unit_price': amount,
+            'discount_percent': 0,
+            'tax_rate': tax_rate,
+            'tracking_category': 'General'
+        }]
+        
+        # Generate invoice number
+        invoice_data['invoice_number'] = invoice_composer.generate_invoice_number()
+        
+        # Set dates
+        invoice_data['issue_date'] = datetime.now()
+        invoice_data['due_date'] = datetime.now() + timedelta(days=30)
+    
+    else:  # Advanced mode
+        invoice_data.update({
+            'invoice_number': data.get('invoice_number') or invoice_composer.generate_invoice_number(),
+            'po_number': data.get('po_number', ''),
+            'issue_date': data.get('issue_date', datetime.now()),
+            'due_date': data.get('due_date', datetime.now() + timedelta(days=30)),
+            'line_items': data.get('line_items', []),
+            'exchange_rate': data.get('exchange_rate', 1.0)
+        })
+    
+    try:
+        # Generate the PDF
+        pdf_result = pdf_generator.generate_invoice(invoice_data)
+        
+        # Save invoice metadata to BigQuery
+        try:
+            file_info = {
+                'file_size': os.path.getsize(pdf_result['local_path'])
+            }
+            
+            bigquery_data = invoice_composer.prepare_invoice_for_bigquery(
+                invoice_data,
+                pdf_result['gcs_uri'],
+                file_info
+            )
+            
+            bq_service = BigQueryService()
+            bq_service.insert_invoice(bigquery_data)
+        except Exception as bq_error:
+            print(f"Warning: Could not save to BigQuery: {bq_error}")
+            # Continue even if BigQuery insert fails
+        
+        return jsonify({
+            'success': True,
+            'invoice_number': pdf_result['invoice_number'],
+            'filename': pdf_result['filename'],
+            'gcs_uri': pdf_result['gcs_uri'],
+            'local_path': pdf_result['local_path']
+        })
+        
+    except Exception as e:
+        print(f"Invoice generation error: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/download/invoice/<filename>', methods=['GET'])
+def download_generated_invoice(filename):
+    """
+    Download a generated invoice PDF
+    """
+    try:
+        filepath = os.path.join('uploads', secure_filename(filename))
+        if os.path.exists(filepath):
+            from flask import send_file
+            return send_file(filepath, as_attachment=True, download_name=filename, mimetype='application/pdf')
+        else:
+            return jsonify({'error': 'Invoice file not found'}), 404
+    except Exception as e:
+        print(f"Download error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/view/invoice/<filename>', methods=['GET'])
+def view_generated_invoice(filename):
+    """
+    View a generated invoice PDF in browser
+    """
+    try:
+        filepath = os.path.join('uploads', secure_filename(filename))
+        if os.path.exists(filepath):
+            from flask import send_file
+            return send_file(filepath, mimetype='application/pdf')
+        else:
+            return jsonify({'error': 'Invoice file not found'}), 404
+    except Exception as e:
+        print(f"View error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

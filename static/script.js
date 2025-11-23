@@ -18,6 +18,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const targetContent = document.getElementById(`tab-${tabName}`);
             if (targetContent) {
                 targetContent.classList.add('active');
+                
+                // Initialize Generate Invoice tab if it's selected
+                if (tabName === 'generate') {
+                    initializeInvoiceGeneration();
+                }
             }
         });
     });
@@ -2624,4 +2629,766 @@ async function downloadInvoice(invoiceId, event) {
             `;
         }
     }
+}
+
+// ==================== INVOICE GENERATION ====================
+let selectedVendorData = null;
+let lineItemCounter = 0;
+let generatedInvoiceData = null;
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, m => map[m]);
+}
+
+function initializeInvoiceGeneration() {
+    console.log('Initializing Invoice Generation feature...');
+    
+    // Initialize mode switching
+    initializeModeToggle();
+    
+    // Initialize vendor search autocomplete
+    initializeVendorAutocomplete();
+    
+    // Initialize magic fill
+    initializeMagicFill();
+    
+    // Initialize line items management
+    initializeLineItems();
+    
+    // Initialize form submission
+    initializeInvoiceFormSubmission();
+    
+    // Set default dates
+    setDefaultDates();
+}
+
+// Mode Toggle
+function initializeModeToggle() {
+    const modeButtons = document.querySelectorAll('.mode-btn');
+    const simpleMode = document.getElementById('simple-mode');
+    const advancedMode = document.getElementById('advanced-mode');
+    
+    if (!modeButtons.length || !simpleMode || !advancedMode) return;
+    
+    modeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const mode = this.getAttribute('data-mode');
+            
+            // Update button states
+            modeButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Show/hide forms
+            if (mode === 'simple') {
+                simpleMode.classList.remove('hidden');
+                advancedMode.classList.add('hidden');
+            } else {
+                simpleMode.classList.add('hidden');
+                advancedMode.classList.remove('hidden');
+                
+                // Add initial line item if none exist
+                const lineItemsBody = document.getElementById('lineItemsBody');
+                if (lineItemsBody && lineItemsBody.children.length === 0) {
+                    addLineItem();
+                }
+            }
+        });
+    });
+}
+
+// Vendor Autocomplete
+function initializeVendorAutocomplete() {
+    const vendorSearchInputs = [
+        { input: document.getElementById('vendorSearch'), suggestions: document.getElementById('vendorSuggestions'), idField: document.getElementById('selectedVendorId') },
+        { input: document.getElementById('vendorSearchAdv'), suggestions: document.getElementById('vendorSuggestionsAdv'), idField: document.getElementById('selectedVendorIdAdv') }
+    ];
+    
+    vendorSearchInputs.forEach(({ input, suggestions, idField }) => {
+        if (!input || !suggestions || !idField) return;
+        
+        let searchTimeout = null;
+        
+        input.addEventListener('input', function() {
+            const query = this.value.trim();
+            
+            if (query.length < 2) {
+                suggestions.classList.add('hidden');
+                return;
+            }
+            
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchVendors(query, suggestions, input, idField);
+            }, 300);
+        });
+        
+        // Hide suggestions on click outside
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+                suggestions.classList.add('hidden');
+            }
+        });
+    });
+}
+
+async function searchVendors(query, suggestionsDiv, inputField, idField) {
+    try {
+        const response = await fetch(`/api/invoice/search-vendors?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to search vendors');
+        }
+        
+        displayVendorSuggestions(data.vendors, suggestionsDiv, inputField, idField);
+    } catch (error) {
+        console.error('Error searching vendors:', error);
+        suggestionsDiv.innerHTML = `<div class="suggestion-error">Error searching vendors</div>`;
+        suggestionsDiv.classList.remove('hidden');
+    }
+}
+
+function displayVendorSuggestions(vendors, suggestionsDiv, inputField, idField) {
+    if (!vendors || vendors.length === 0) {
+        suggestionsDiv.innerHTML = '<div class="suggestion-no-results">No vendors found</div>';
+        suggestionsDiv.classList.remove('hidden');
+        return;
+    }
+    
+    let html = '';
+    vendors.forEach(vendor => {
+        html += `
+            <div class="suggestion-item" data-vendor='${JSON.stringify(vendor)}'>
+                <div class="suggestion-name">${escapeHtml(vendor.name)}</div>
+                <div class="suggestion-details">
+                    ${vendor.country ? `<span class="suggestion-country">${escapeHtml(vendor.country)}</span>` : ''}
+                    ${vendor.email ? `<span class="suggestion-email">${escapeHtml(vendor.email)}</span>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    suggestionsDiv.innerHTML = html;
+    suggestionsDiv.classList.remove('hidden');
+    
+    // Add click handlers
+    suggestionsDiv.querySelectorAll('.suggestion-item').forEach(item => {
+        item.addEventListener('click', function() {
+            const vendor = JSON.parse(this.getAttribute('data-vendor'));
+            selectVendor(vendor, inputField, idField, suggestionsDiv);
+        });
+    });
+}
+
+function selectVendor(vendor, inputField, idField, suggestionsDiv) {
+    selectedVendorData = vendor;
+    inputField.value = vendor.name;
+    idField.value = vendor.vendor_id;
+    suggestionsDiv.classList.add('hidden');
+    
+    // Auto-detect tax type based on country
+    const taxTypeSelect = document.getElementById('taxType');
+    if (taxTypeSelect && vendor.country) {
+        autoDetectTaxType(vendor.country, taxTypeSelect);
+    }
+}
+
+function autoDetectTaxType(country, taxTypeSelect) {
+    const taxMappings = {
+        'United Kingdom': 'vat',
+        'UK': 'vat',
+        'United States': 'sales',
+        'USA': 'sales',
+        'US': 'sales',
+        'Canada': 'gst',
+        'Australia': 'gst',
+        'India': 'gst',
+        'Hong Kong': 'none'
+    };
+    
+    const detectedTax = taxMappings[country];
+    if (detectedTax) {
+        taxTypeSelect.value = detectedTax;
+    }
+}
+
+// Magic Fill
+function initializeMagicFill() {
+    const magicFillBtn = document.getElementById('magicFillBtn');
+    const descriptionField = document.getElementById('invoiceDescription');
+    
+    if (!magicFillBtn || !descriptionField) return;
+    
+    magicFillBtn.addEventListener('click', async function() {
+        const description = descriptionField.value.trim();
+        
+        if (!description) {
+            alert('Please enter a description first');
+            return;
+        }
+        
+        magicFillBtn.disabled = true;
+        magicFillBtn.textContent = '⏳ Analyzing...';
+        
+        try {
+            const response = await fetch('/api/invoice/magic-fill', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    description: description,
+                    vendor: selectedVendorData
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Magic fill failed');
+            }
+            
+            // Apply magic fill results
+            applyMagicFillResults(data.data);
+            
+        } catch (error) {
+            console.error('Magic fill error:', error);
+            alert(`Magic fill failed: \${error.message}`);
+        } finally {
+            magicFillBtn.disabled = false;
+            magicFillBtn.textContent = '🪄 Magic Fill';
+        }
+    });
+}
+
+function applyMagicFillResults(data) {
+    // Apply to simple mode
+    if (data.line_items && data.line_items.length > 0) {
+        const firstItem = data.line_items[0];
+        const amountField = document.getElementById('invoiceAmount');
+        
+        if (amountField && firstItem.unit_price) {
+            const total = (firstItem.quantity || 1) * firstItem.unit_price;
+            amountField.value = total.toFixed(2);
+        }
+    }
+    
+    // Apply currency
+    if (data.currency) {
+        const currencySelect = document.getElementById('invoiceCurrency');
+        if (currencySelect) {
+            currencySelect.value = data.currency;
+        }
+    }
+    
+    // Apply suggested tax
+    if (data.suggested_tax_rate !== undefined) {
+        const taxTypeSelect = document.getElementById('taxType');
+        if (taxTypeSelect && data.tax_type) {
+            taxTypeSelect.value = data.tax_type.toLowerCase();
+        }
+    }
+    
+    // Show success message
+    showMessage('✨ Magic fill applied successfully!', 'success');
+}
+
+// Line Items Management
+function initializeLineItems() {
+    const addLineItemBtn = document.getElementById('addLineItemBtn');
+    
+    if (!addLineItemBtn) return;
+    
+    addLineItemBtn.addEventListener('click', addLineItem);
+    
+    // Add initial line item
+    addLineItem();
+}
+
+function addLineItem() {
+    const lineItemsBody = document.getElementById('lineItemsBody');
+    if (!lineItemsBody) return;
+    
+    const itemId = ++lineItemCounter;
+    
+    const row = document.createElement('tr');
+    row.id = `line-item-\${itemId}`;
+    row.innerHTML = `
+        <td>
+            <input type="text" class="line-item-input" 
+                   name="description_\${itemId}" 
+                   placeholder="Item description" required>
+        </td>
+        <td>
+            <input type="number" class="line-item-input line-item-qty" 
+                   name="qty_\${itemId}" 
+                   value="1" min="0" step="0.01" required>
+        </td>
+        <td>
+            <input type="number" class="line-item-input line-item-price" 
+                   name="price_\${itemId}" 
+                   value="0" min="0" step="0.01" required>
+        </td>
+        <td>
+            <input type="number" class="line-item-input line-item-discount" 
+                   name="discount_\${itemId}" 
+                   value="0" min="0" max="100" step="0.1">
+        </td>
+        <td>
+            <input type="number" class="line-item-input line-item-tax" 
+                   name="tax_\${itemId}" 
+                   value="0" min="0" max="100" step="0.1">
+        </td>
+        <td>
+            <select class="line-item-input" name="category_\${itemId}">
+                <option value="General">General</option>
+                <option value="Consulting">Consulting</option>
+                <option value="Services">Services</option>
+                <option value="Products">Products</option>
+                <option value="Software">Software</option>
+                <option value="Marketing">Marketing</option>
+            </select>
+        </td>
+        <td class="line-item-total">$0.00</td>
+        <td>
+            <button type="button" class="btn-remove-line" onclick="removeLineItem(\${itemId})">❌</button>
+        </td>
+    `;
+    
+    lineItemsBody.appendChild(row);
+    
+    // Add change listeners for calculations
+    row.querySelectorAll('.line-item-qty, .line-item-price, .line-item-discount, .line-item-tax').forEach(input => {
+        input.addEventListener('change', () => calculateLineItemTotal(itemId));
+        input.addEventListener('input', () => calculateLineItemTotal(itemId));
+    });
+}
+
+function removeLineItem(itemId) {
+    const row = document.getElementById(`line-item-\${itemId}`);
+    if (row) {
+        row.remove();
+        calculateTotals();
+    }
+}
+
+function calculateLineItemTotal(itemId) {
+    const row = document.getElementById(`line-item-\${itemId}`);
+    if (!row) return;
+    
+    const qty = parseFloat(row.querySelector(`[name="qty_\${itemId}"]`).value) || 0;
+    const price = parseFloat(row.querySelector(`[name="price_\${itemId}"]`).value) || 0;
+    const discount = parseFloat(row.querySelector(`[name="discount_\${itemId}"]`).value) || 0;
+    const tax = parseFloat(row.querySelector(`[name="tax_\${itemId}"]`).value) || 0;
+    
+    const subtotal = qty * price;
+    const discountAmount = subtotal * (discount / 100);
+    const afterDiscount = subtotal - discountAmount;
+    const taxAmount = afterDiscount * (tax / 100);
+    const total = afterDiscount + taxAmount;
+    
+    const totalCell = row.querySelector('.line-item-total');
+    const currency = document.getElementById('invoiceCurrencyAdv')?.value || 'USD';
+    const symbol = getCurrencySymbol(currency);
+    
+    totalCell.textContent = `\${symbol}\${total.toFixed(2)}`;
+    
+    calculateTotals();
+}
+
+function calculateTotals() {
+    let subtotal = 0;
+    let totalDiscount = 0;
+    let totalTax = 0;
+    
+    const lineItemsBody = document.getElementById('lineItemsBody');
+    if (!lineItemsBody) return;
+    
+    lineItemsBody.querySelectorAll('tr').forEach(row => {
+        const itemId = row.id.replace('line-item-', '');
+        
+        const qty = parseFloat(row.querySelector(`[name="qty_\${itemId}"]`)?.value) || 0;
+        const price = parseFloat(row.querySelector(`[name="price_\${itemId}"]`)?.value) || 0;
+        const discount = parseFloat(row.querySelector(`[name="discount_\${itemId}"]`)?.value) || 0;
+        const tax = parseFloat(row.querySelector(`[name="tax_\${itemId}"]`)?.value) || 0;
+        
+        const itemSubtotal = qty * price;
+        const discountAmount = itemSubtotal * (discount / 100);
+        const afterDiscount = itemSubtotal - discountAmount;
+        const taxAmount = afterDiscount * (tax / 100);
+        
+        subtotal += itemSubtotal;
+        totalDiscount += discountAmount;
+        totalTax += taxAmount;
+    });
+    
+    const grandTotal = subtotal - totalDiscount + totalTax;
+    
+    const currency = document.getElementById('invoiceCurrencyAdv')?.value || 'USD';
+    const symbol = getCurrencySymbol(currency);
+    
+    // Update display
+    const subtotalDisplay = document.getElementById('subtotalDisplay');
+    const discountDisplay = document.getElementById('discountDisplay');
+    const taxDisplay = document.getElementById('taxDisplay');
+    const grandTotalDisplay = document.getElementById('grandTotalDisplay');
+    
+    if (subtotalDisplay) subtotalDisplay.textContent = `\${symbol}\${subtotal.toFixed(2)}`;
+    if (discountDisplay) discountDisplay.textContent = `-\${symbol}\${totalDiscount.toFixed(2)}`;
+    if (taxDisplay) taxDisplay.textContent = `\${symbol}\${totalTax.toFixed(2)}`;
+    if (grandTotalDisplay) grandTotalDisplay.textContent = `\${symbol}\${grandTotal.toFixed(2)}`;
+}
+
+// Form Submission
+function initializeInvoiceFormSubmission() {
+    // Simple form
+    const simpleForm = document.getElementById('simpleInvoiceForm');
+    if (simpleForm) {
+        simpleForm.addEventListener('submit', handleSimpleInvoiceSubmit);
+    }
+    
+    // Advanced form
+    const advancedForm = document.getElementById('advancedInvoiceForm');
+    if (advancedForm) {
+        advancedForm.addEventListener('submit', handleAdvancedInvoiceSubmit);
+    }
+    
+    // Validation buttons
+    const validateSimpleBtn = document.getElementById('validateInvoiceBtn');
+    if (validateSimpleBtn) {
+        validateSimpleBtn.addEventListener('click', () => validateInvoice('simple'));
+    }
+    
+    const validateAdvBtn = document.getElementById('validateAdvancedBtn');
+    if (validateAdvBtn) {
+        validateAdvBtn.addEventListener('click', () => validateInvoice('advanced'));
+    }
+}
+
+async function handleSimpleInvoiceSubmit(e) {
+    e.preventDefault();
+    
+    const invoiceData = {
+        vendor: selectedVendorData,
+        description: document.getElementById('invoiceDescription').value,
+        amount: parseFloat(document.getElementById('invoiceAmount').value),
+        currency: document.getElementById('invoiceCurrency').value,
+        tax_type: document.getElementById('taxType').value,
+        buyer: {
+            name: document.getElementById('buyerName').value,
+            address: '',
+            city: '',
+            country: '',
+            tax_id: ''
+        },
+        mode: 'simple'
+    };
+    
+    await generateInvoice(invoiceData);
+}
+
+async function handleAdvancedInvoiceSubmit(e) {
+    e.preventDefault();
+    
+    // Collect line items
+    const lineItems = [];
+    const lineItemsBody = document.getElementById('lineItemsBody');
+    
+    lineItemsBody.querySelectorAll('tr').forEach(row => {
+        const itemId = row.id.replace('line-item-', '');
+        
+        lineItems.push({
+            description: row.querySelector(`[name="description_\${itemId}"]`).value,
+            quantity: parseFloat(row.querySelector(`[name="qty_\${itemId}"]`).value) || 1,
+            unit_price: parseFloat(row.querySelector(`[name="price_\${itemId}"]`).value) || 0,
+            discount_percent: parseFloat(row.querySelector(`[name="discount_\${itemId}"]`).value) || 0,
+            tax_rate: parseFloat(row.querySelector(`[name="tax_\${itemId}"]`).value) || 0,
+            tracking_category: row.querySelector(`[name="category_\${itemId}"]`).value
+        });
+    });
+    
+    const invoiceData = {
+        vendor: selectedVendorData,
+        invoice_number: document.getElementById('invoiceNumber').value,
+        po_number: document.getElementById('poNumber').value,
+        issue_date: document.getElementById('issueDate').value,
+        due_date: document.getElementById('dueDate').value,
+        line_items: lineItems,
+        currency: document.getElementById('invoiceCurrencyAdv').value,
+        exchange_rate: parseFloat(document.getElementById('exchangeRate').value) || 1,
+        payment_terms: document.getElementById('paymentTerms').value,
+        notes: document.getElementById('invoiceNotes').value,
+        buyer: {
+            name: document.getElementById('buyerNameAdv').value,
+            address: document.getElementById('buyerAddress').value,
+            city: '',
+            country: document.getElementById('buyerCountry').value,
+            tax_id: document.getElementById('buyerTaxId').value
+        },
+        mode: 'advanced'
+    };
+    
+    await generateInvoice(invoiceData);
+}
+
+async function generateInvoice(invoiceData) {
+    const generateBtn = invoiceData.mode === 'simple' 
+        ? document.getElementById('generateSimpleInvoiceBtn')
+        : document.getElementById('generateAdvancedInvoiceBtn');
+    
+    const originalText = generateBtn.textContent;
+    generateBtn.disabled = true;
+    generateBtn.textContent = '⏳ Generating...';
+    
+    try {
+        const response = await fetch('/api/invoice/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(invoiceData)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to generate invoice');
+        }
+        
+        generatedInvoiceData = data;
+        displayGenerationResults(data);
+        
+    } catch (error) {
+        console.error('Invoice generation error:', error);
+        alert(`Failed to generate invoice: \${error.message}`);
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = originalText;
+    }
+}
+
+async function validateInvoice(mode) {
+    // Collect invoice data based on mode
+    let invoiceData;
+    
+    if (mode === 'simple') {
+        invoiceData = {
+            vendor: selectedVendorData,
+            tax_type: document.getElementById('taxType').value,
+            currency: document.getElementById('invoiceCurrency').value
+        };
+    } else {
+        // Collect advanced mode data
+        const lineItems = [];
+        const lineItemsBody = document.getElementById('lineItemsBody');
+        
+        lineItemsBody.querySelectorAll('tr').forEach(row => {
+            const itemId = row.id.replace('line-item-', '');
+            lineItems.push({
+                description: row.querySelector(`[name="description_\${itemId}"]`).value,
+                quantity: parseFloat(row.querySelector(`[name="qty_\${itemId}"]`).value) || 1,
+                unit_price: parseFloat(row.querySelector(`[name="price_\${itemId}"]`).value) || 0,
+                tax_rate: parseFloat(row.querySelector(`[name="tax_\${itemId}"]`).value) || 0
+            });
+        });
+        
+        invoiceData = {
+            vendor: selectedVendorData,
+            line_items: lineItems,
+            currency: document.getElementById('invoiceCurrencyAdv').value
+        };
+    }
+    
+    const resultsDiv = mode === 'simple' 
+        ? document.getElementById('validationResults')
+        : document.getElementById('validationResultsAdv');
+    
+    resultsDiv.innerHTML = '<div class="loading">Validating...</div>';
+    resultsDiv.classList.remove('hidden');
+    
+    try {
+        const response = await fetch('/api/invoice/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(invoiceData)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Validation failed');
+        }
+        
+        displayValidationResults(data.validation, resultsDiv);
+        
+    } catch (error) {
+        console.error('Validation error:', error);
+        resultsDiv.innerHTML = `<div class="validation-error">Validation failed: \${error.message}</div>`;
+    }
+}
+
+function displayValidationResults(validation, resultsDiv) {
+    let html = '';
+    
+    if (validation.is_valid) {
+        html = '<div class="validation-success">✅ Invoice is valid</div>';
+    } else {
+        html = '<div class="validation-error">❌ Validation issues found</div>';
+    }
+    
+    if (validation.errors && validation.errors.length > 0) {
+        html += '<div class="validation-section"><h4>Errors:</h4><ul>';
+        validation.errors.forEach(error => {
+            html += `<li class="validation-error-item">\${error.field}: \${error.message}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    
+    if (validation.warnings && validation.warnings.length > 0) {
+        html += '<div class="validation-section"><h4>Warnings:</h4><ul>';
+        validation.warnings.forEach(warning => {
+            html += `<li class="validation-warning-item">\${warning.field}: \${warning.message}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    
+    if (validation.suggestions && validation.suggestions.length > 0) {
+        html += '<div class="validation-section"><h4>Suggestions:</h4><ul>';
+        validation.suggestions.forEach(suggestion => {
+            html += `<li class="validation-suggestion-item">
+                \${suggestion.field}: Change from "\${suggestion.current_value}" to "\${suggestion.suggested_value}" 
+                (\${suggestion.reason})
+            </li>`;
+        });
+        html += '</ul></div>';
+    }
+    
+    resultsDiv.innerHTML = html;
+    resultsDiv.classList.remove('hidden');
+}
+
+function displayGenerationResults(data) {
+    const resultsSection = document.getElementById('generationResults');
+    const infoDiv = document.getElementById('generatedInvoiceInfo');
+    
+    infoDiv.innerHTML = `
+        <div class="invoice-info">
+            <h4>Invoice Generated Successfully!</h4>
+            <div class="invoice-details">
+                <p><strong>Invoice Number:</strong> \${data.invoice_number}</p>
+                <p><strong>File:</strong> \${data.filename}</p>
+                <p><strong>Location:</strong> \${data.gcs_uri}</p>
+            </div>
+        </div>
+    `;
+    
+    resultsSection.classList.remove('hidden');
+    
+    // Scroll to results
+    resultsSection.scrollIntoView({ behavior: 'smooth' });
+    
+    // Setup download button
+    const downloadBtn = document.getElementById('downloadInvoiceBtn');
+    if (downloadBtn) {
+        downloadBtn.onclick = () => downloadGeneratedInvoice(data);
+    }
+    
+    // Setup view button
+    const viewBtn = document.getElementById('viewInvoiceBtn');
+    if (viewBtn) {
+        viewBtn.onclick = () => viewGeneratedInvoice(data);
+    }
+    
+    // Setup generate another button
+    const generateAnotherBtn = document.getElementById('generateAnotherBtn');
+    if (generateAnotherBtn) {
+        generateAnotherBtn.onclick = () => {
+            resultsSection.classList.add('hidden');
+            // Reset forms
+            document.getElementById('simpleInvoiceForm')?.reset();
+            document.getElementById('advancedInvoiceForm')?.reset();
+        };
+    }
+}
+
+async function downloadGeneratedInvoice(invoiceData) {
+    try {
+        // Open the local file path for download
+        window.open(`/download/invoice/\${invoiceData.filename}`, '_blank');
+    } catch (error) {
+        console.error('Download error:', error);
+        alert('Failed to download invoice');
+    }
+}
+
+async function viewGeneratedInvoice(invoiceData) {
+    try {
+        // Open the PDF in a new tab
+        window.open(`/view/invoice/\${invoiceData.filename}`, '_blank');
+    } catch (error) {
+        console.error('View error:', error);
+        alert('Failed to view invoice');
+    }
+}
+
+// Helper Functions
+function setDefaultDates() {
+    const today = new Date();
+    const thirtyDaysLater = new Date(today);
+    thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+    
+    const issueDateField = document.getElementById('issueDate');
+    const dueDateField = document.getElementById('dueDate');
+    
+    if (issueDateField) {
+        issueDateField.value = today.toISOString().split('T')[0];
+    }
+    
+    if (dueDateField) {
+        dueDateField.value = thirtyDaysLater.toISOString().split('T')[0];
+    }
+}
+
+function getCurrencySymbol(currency) {
+    const symbols = {
+        'USD': '$',
+        'EUR': '€',
+        'GBP': '£',
+        'ILS': '₪',
+        'CAD': 'C$',
+        'AUD': 'A$',
+        'JPY': '¥',
+        'INR': '₹',
+        'CNY': '¥',
+        'CHF': 'CHF ',
+        'SEK': 'kr ',
+        'NOK': 'kr ',
+        'DKK': 'kr ',
+        'MXN': '$',
+        'BRL': 'R$'
+    };
+    
+    return symbols[currency] || currency + ' ';
+}
+
+function showMessage(message, type = 'info') {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-\${type}`;
+    messageDiv.textContent = message;
+    
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+        messageDiv.classList.add('message-show');
+    }, 100);
+    
+    setTimeout(() => {
+        messageDiv.classList.remove('message-show');
+        setTimeout(() => messageDiv.remove(), 300);
+    }, 3000);
 }

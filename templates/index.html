@@ -48,6 +48,14 @@
             </svg>
             <span class="tab-label">API</span>
         </button>
+        <button class="tab-btn" data-tab="generate">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
+                <circle cx="12" cy="12" r="10"></circle>
+            </svg>
+            <span class="tab-label">Generate Invoice</span>
+        </button>
     </nav>
 
     <!-- Tab Content Container -->
@@ -752,6 +760,383 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
                         </ol>
                     </div>
                     
+                </div>
+            </section>
+            
+        </div>
+        
+        <!-- ==================== GENERATE INVOICE TAB ==================== -->
+        <div class="tab-content" id="tab-generate">
+            
+            <!-- Mode Toggle -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">➕ Generate Invoice</h2>
+                    <p class="card-desc">Create professional invoices with AI assistance</p>
+                </div>
+                
+                <div class="mode-toggle">
+                    <button class="mode-btn active" data-mode="simple">
+                        <span>✨ Simple Mode</span>
+                    </button>
+                    <button class="mode-btn" data-mode="advanced">
+                        <span>⚙️ Advanced Mode</span>
+                    </button>
+                </div>
+            </section>
+            
+            <!-- Simple Mode Form -->
+            <section class="card invoice-mode" id="simple-mode">
+                <div class="card-header">
+                    <h3 class="card-subtitle">Quick Invoice Generation</h3>
+                </div>
+                
+                <form id="simpleInvoiceForm">
+                    <!-- Vendor Selection -->
+                    <div class="form-group">
+                        <label for="vendorSearch" class="form-label">
+                            <span>🏢 Vendor</span>
+                            <span class="required">*</span>
+                        </label>
+                        <input type="text" 
+                               id="vendorSearch" 
+                               class="form-input vendor-autocomplete" 
+                               placeholder="Type to search vendors..."
+                               autocomplete="off"
+                               required>
+                        <div id="vendorSuggestions" class="autocomplete-suggestions hidden"></div>
+                        <input type="hidden" id="selectedVendorId">
+                    </div>
+                    
+                    <!-- Description with Magic Fill -->
+                    <div class="form-group">
+                        <label for="invoiceDescription" class="form-label">
+                            <span>📝 What for?</span>
+                            <span class="required">*</span>
+                        </label>
+                        <div class="magic-fill-container">
+                            <textarea id="invoiceDescription" 
+                                     class="form-textarea" 
+                                     placeholder="E.g., '5 hours consulting at $100/hour' or 'Website development for $5000'"
+                                     rows="3"
+                                     required></textarea>
+                            <button type="button" id="magicFillBtn" class="magic-fill-btn" title="AI Magic Fill">
+                                🪄 Magic Fill
+                            </button>
+                        </div>
+                        <p class="form-hint">Describe the service/product naturally - AI will understand!</p>
+                    </div>
+                    
+                    <!-- Amount -->
+                    <div class="form-group">
+                        <label for="invoiceAmount" class="form-label">
+                            <span>💰 Amount</span>
+                            <span class="required">*</span>
+                        </label>
+                        <div class="amount-input-group">
+                            <select id="invoiceCurrency" class="form-select currency-select">
+                                <option value="USD">USD ($)</option>
+                                <option value="EUR">EUR (€)</option>
+                                <option value="GBP">GBP (£)</option>
+                                <option value="ILS">ILS (₪)</option>
+                                <option value="CAD">CAD (C$)</option>
+                                <option value="AUD">AUD (A$)</option>
+                                <option value="JPY">JPY (¥)</option>
+                                <option value="INR">INR (₹)</option>
+                            </select>
+                            <input type="number" 
+                                   id="invoiceAmount" 
+                                   class="form-input amount-input" 
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0"
+                                   required>
+                        </div>
+                    </div>
+                    
+                    <!-- Tax Type -->
+                    <div class="form-group">
+                        <label for="taxType" class="form-label">🏛️ Tax Type</label>
+                        <select id="taxType" class="form-select">
+                            <option value="auto">Auto-detect (Based on vendor)</option>
+                            <option value="none">None</option>
+                            <option value="vat">VAT</option>
+                            <option value="sales">Sales Tax</option>
+                            <option value="gst">GST</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Buyer Information -->
+                    <div class="form-group">
+                        <label for="buyerName" class="form-label">
+                            <span>🏪 Bill To (Your Company)</span>
+                            <span class="required">*</span>
+                        </label>
+                        <input type="text" 
+                               id="buyerName" 
+                               class="form-input" 
+                               placeholder="Your company name"
+                               required>
+                    </div>
+                    
+                    <!-- Generate Button -->
+                    <div class="form-actions">
+                        <button type="button" id="validateInvoiceBtn" class="btn btn-secondary">
+                            ✅ Validate
+                        </button>
+                        <button type="submit" id="generateSimpleInvoiceBtn" class="btn btn-primary">
+                            🚀 Generate Invoice
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Validation Results -->
+                <div id="validationResults" class="validation-results hidden"></div>
+            </section>
+            
+            <!-- Advanced Mode Form -->
+            <section class="card invoice-mode hidden" id="advanced-mode">
+                <div class="card-header">
+                    <h3 class="card-subtitle">Enterprise Invoice Builder</h3>
+                </div>
+                
+                <form id="advancedInvoiceForm">
+                    <!-- Invoice Details Row -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="invoiceNumber" class="form-label">Invoice Number</label>
+                            <input type="text" 
+                                   id="invoiceNumber" 
+                                   class="form-input" 
+                                   placeholder="AUTO_GEN_XXXXXX">
+                        </div>
+                        <div class="form-group">
+                            <label for="poNumber" class="form-label">PO Number</label>
+                            <input type="text" 
+                                   id="poNumber" 
+                                   class="form-input" 
+                                   placeholder="Optional">
+                        </div>
+                    </div>
+                    
+                    <!-- Date Row -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="issueDate" class="form-label">
+                                <span>Issue Date</span>
+                                <span class="required">*</span>
+                            </label>
+                            <input type="date" 
+                                   id="issueDate" 
+                                   class="form-input" 
+                                   required>
+                        </div>
+                        <div class="form-group">
+                            <label for="dueDate" class="form-label">
+                                <span>Due Date</span>
+                                <span class="required">*</span>
+                            </label>
+                            <input type="date" 
+                                   id="dueDate" 
+                                   class="form-input" 
+                                   required>
+                        </div>
+                    </div>
+                    
+                    <!-- Vendor Selection (Advanced) -->
+                    <div class="form-group">
+                        <label for="vendorSearchAdv" class="form-label">
+                            <span>🏢 Vendor</span>
+                            <span class="required">*</span>
+                        </label>
+                        <input type="text" 
+                               id="vendorSearchAdv" 
+                               class="form-input vendor-autocomplete" 
+                               placeholder="Type to search vendors..."
+                               autocomplete="off"
+                               required>
+                        <div id="vendorSuggestionsAdv" class="autocomplete-suggestions hidden"></div>
+                        <input type="hidden" id="selectedVendorIdAdv">
+                    </div>
+                    
+                    <!-- Buyer Details -->
+                    <fieldset class="form-fieldset">
+                        <legend>Bill To Information</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="buyerNameAdv" class="form-label">
+                                    <span>Company Name</span>
+                                    <span class="required">*</span>
+                                </label>
+                                <input type="text" 
+                                       id="buyerNameAdv" 
+                                       class="form-input" 
+                                       required>
+                            </div>
+                            <div class="form-group">
+                                <label for="buyerTaxId" class="form-label">Tax ID</label>
+                                <input type="text" 
+                                       id="buyerTaxId" 
+                                       class="form-input">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="buyerAddress" class="form-label">Address</label>
+                                <input type="text" 
+                                       id="buyerAddress" 
+                                       class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="buyerCountry" class="form-label">Country</label>
+                                <input type="text" 
+                                       id="buyerCountry" 
+                                       class="form-input">
+                            </div>
+                        </div>
+                    </fieldset>
+                    
+                    <!-- Line Items -->
+                    <fieldset class="form-fieldset">
+                        <legend>Line Items</legend>
+                        
+                        <!-- Line Items Table -->
+                        <div class="line-items-container">
+                            <table class="line-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Description</th>
+                                        <th>Qty</th>
+                                        <th>Unit Price</th>
+                                        <th>Discount %</th>
+                                        <th>Tax %</th>
+                                        <th>Category</th>
+                                        <th>Total</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="lineItemsBody">
+                                    <!-- Dynamic rows will be added here -->
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="8">
+                                            <button type="button" id="addLineItemBtn" class="btn btn-secondary btn-sm">
+                                                ➕ Add Line Item
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </fieldset>
+                    
+                    <!-- Currency and Exchange Rate -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="invoiceCurrencyAdv" class="form-label">Currency</label>
+                            <select id="invoiceCurrencyAdv" class="form-select">
+                                <option value="USD">USD ($)</option>
+                                <option value="EUR">EUR (€)</option>
+                                <option value="GBP">GBP (£)</option>
+                                <option value="ILS">ILS (₪)</option>
+                                <option value="CAD">CAD (C$)</option>
+                                <option value="AUD">AUD (A$)</option>
+                                <option value="JPY">JPY (¥)</option>
+                                <option value="INR">INR (₹)</option>
+                                <option value="CNY">CNY (¥)</option>
+                                <option value="CHF">CHF</option>
+                                <option value="SEK">SEK (kr)</option>
+                                <option value="NOK">NOK (kr)</option>
+                                <option value="DKK">DKK (kr)</option>
+                                <option value="MXN">MXN ($)</option>
+                                <option value="BRL">BRL (R$)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="exchangeRate" class="form-label">Exchange Rate</label>
+                            <input type="number" 
+                                   id="exchangeRate" 
+                                   class="form-input" 
+                                   placeholder="1.00"
+                                   step="0.0001"
+                                   value="1">
+                        </div>
+                    </div>
+                    
+                    <!-- Payment Terms and Notes -->
+                    <div class="form-group">
+                        <label for="paymentTerms" class="form-label">Payment Terms</label>
+                        <select id="paymentTerms" class="form-select">
+                            <option value="Net 30">Net 30</option>
+                            <option value="Net 15">Net 15</option>
+                            <option value="Net 60">Net 60</option>
+                            <option value="Due on Receipt">Due on Receipt</option>
+                            <option value="Custom">Custom</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="invoiceNotes" class="form-label">Notes</label>
+                        <textarea id="invoiceNotes" 
+                                 class="form-textarea" 
+                                 placeholder="Additional notes or instructions..."
+                                 rows="3"></textarea>
+                    </div>
+                    
+                    <!-- Totals Display -->
+                    <div class="invoice-totals">
+                        <div class="total-row">
+                            <span class="total-label">Subtotal:</span>
+                            <span class="total-value" id="subtotalDisplay">$0.00</span>
+                        </div>
+                        <div class="total-row">
+                            <span class="total-label">Discount:</span>
+                            <span class="total-value" id="discountDisplay">$0.00</span>
+                        </div>
+                        <div class="total-row">
+                            <span class="total-label">Tax:</span>
+                            <span class="total-value" id="taxDisplay">$0.00</span>
+                        </div>
+                        <div class="total-row total-final">
+                            <span class="total-label">Total:</span>
+                            <span class="total-value" id="grandTotalDisplay">$0.00</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Generate Button (Advanced) -->
+                    <div class="form-actions">
+                        <button type="button" id="validateAdvancedBtn" class="btn btn-secondary">
+                            ✅ Validate
+                        </button>
+                        <button type="submit" id="generateAdvancedInvoiceBtn" class="btn btn-primary">
+                            🚀 Generate Invoice
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Validation Results (Advanced) -->
+                <div id="validationResultsAdv" class="validation-results hidden"></div>
+            </section>
+            
+            <!-- Generation Results -->
+            <section class="card hidden" id="generationResults">
+                <div class="card-header">
+                    <h3 class="card-subtitle">✅ Invoice Generated Successfully</h3>
+                </div>
+                
+                <div id="generatedInvoiceInfo"></div>
+                
+                <div class="form-actions">
+                    <button type="button" id="downloadInvoiceBtn" class="btn btn-primary">
+                        📥 Download PDF
+                    </button>
+                    <button type="button" id="viewInvoiceBtn" class="btn btn-secondary">
+                        👁️ View Invoice
+                    </button>
+                    <button type="button" id="generateAnotherBtn" class="btn btn-secondary">
+                        ➕ Generate Another
+                    </button>
                 </div>
             </section>
             

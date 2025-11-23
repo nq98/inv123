@@ -1,0 +1,164 @@
+🚀 Product 5: Smart AI Invoice Generator (Self-Billing Engine)
+Goal: Allow the client to generate professional, legally compliant invoices on behalf of vendors (Self-Billing) or for manual entry. The system must support 200+ countries, multi-currency, complex tax structures, and use AI to automate the boring parts (like tax calculation and categorization).
+1. The Core Logic: "AI-Assisted Creation"
+We are not building a dumb form. We are building an AI Co-Pilot that helps you write the invoice.
+Inputs: User input (Form or Natural Language) + Vendor DB Context.
+Process: Validate Math 
+→
+→
+ Apply Global Tax Rules 
+→
+→
+ Generate PDF.
+Output:
+A professional PDF (stored in GCS).
+A structured record in BigQuery (just like a scanned invoice).
+2. The User Interface (Two Modes)
+Developer Instruction: Create a new tab "Generate Invoice".
+Mode A: Simple Mode (The "Freelancer" View)
+Vendor: Dropdown (Search from BigQuery global_vendors). AI auto-fills address/currency based on selection.
+What for? Single text box (e.g., "Web Design Services").
+Amount: Single field.
+Tax: Simple toggle (None / VAT / Sales Tax).
+Action: Click "Generate". AI auto-calculates everything else.
+Mode B: Advanced Enterprise Mode (The "CFO" View)
+Header: Invoice #, Issue Date, Due Date, PO Number.
+Currency: Multi-currency support (Line items in EUR, Total in USD with FX Rate).
+Dynamic Line Items Table:
+Description, Qty, Unit Price, Discount %, Tax Rate (per line), Tracking Category.
+Feature: "Add Line" / "Remove Line".
+Global Tax Engine: Support for Compound Tax, VAT, GST, Withholding Tax.
+3. The AI Features (The "Smart" Part)
+1. Vendor Autocomplete (RAG)
+User types "Amz".
+System searches BigQuery.
+AI Action: Auto-fills "Amazon Web Services", "410 Terry Ave", "USD".
+2. "Magic Fill" (Gemini)
+User types a rough note: "Consulting for 5 hours at 100 bucks plus tax".
+Gemini Action: Parses this string and auto-fills the table:
+Description: "Consulting Services"
+Qty: 5
+Price: 100
+Tax: (Auto-detects local tax based on vendor country).
+3. Semantic Validation
+Before generating, Gemini checks: "Wait, this vendor is in the UK, but you selected US Sales Tax. Did you mean VAT?"
+4. Technical Implementation Plan
+Developer: Use this stack to ensure compatibility with the existing system.
+Frontend: React/Jinja2 form.
+PDF Engine: Use Python ReportLab. It is the industry standard for programmatic PDFs.
+Storage:
+Save generated PDF to gs://payouts-invoices/generated/.
+Insert JSON data into vendors_ai.invoices (So it appears in the dashboard exactly like a scanned invoice).
+5. The "Generator" Prompt (Copy-Paste to Developer)
+This prompt guides the AI when the user uses "Natural Language" to fill the form, or when the AI validates the manual entry.
+code
+Python
+# ==============================================================================
+#   THE "INVOICE COMPOSER" PROMPT
+#   Target: Gemini 1.5 Flash (Fast)
+#   Goal: Convert natural language or partial data into a PERFECT Invoice JSON
+# ==============================================================================
+
+composer_prompt = f"""
+You are an expert **Accounts Payable Accountant**. Your job is to help the user create a perfect legal invoice.
+
+### INPUT CONTEXT
+1. **Selected Vendor:** {vendor_json_from_db} (Contains Country, Currency, Address)
+2. **User Input:** "{user_input_text}" (e.g. "5 hours of dev work")
+3. **Current Date:** {today_date}
+
+### YOUR TASKS
+1. **Structure the Data:** Convert the user's input into structured Line Items.
+2. **Apply Local Logic:**
+   - If Vendor is in UK -> Default Tax = "VAT (20%)", Currency = GBP.
+   - If Vendor is in US -> Default Tax = "Sales Tax", Currency = USD.
+   - If Vendor is in Israel -> Default Tax = "VAT (18%)", Currency = ILS.
+   - *Override defaults only if the user specified otherwise.*
+3. **Calculate:** Perform all math (Subtotal, Tax Amount, Grand Total).
+
+### OUTPUT SCHEMA (Strict JSON)
+{{
+  "invoice_metadata": {{
+    "invoice_number": "AUTO_GEN_{uuid}",
+    "issue_date": "YYYY-MM-DD",
+    "due_date": "YYYY-MM-DD (Default to Net 30 if unspecified)",
+    "currency_code": "ISO_CODE",
+    "language": "en" 
+  }},
+  "vendor_details": {{
+    "name": "string",
+    "address": "string",
+    "tax_id": "string (from DB)"
+  }},
+  "buyer_details": {{
+    "name": "My Company Ltd",
+    "address": "My HQ Address"
+  }},
+  "line_items": [
+    {{
+      "description": "Professional description based on input",
+      "quantity": float,
+      "unit_price": float,
+      "tax_rate_percent": float,
+      "tax_name": "VAT/GST/Sales Tax",
+      "line_total": float
+    }}
+  ],
+  "financial_summary": {{
+    "subtotal": float,
+    "total_tax": float,
+    "grand_total": float
+  }}
+}}
+"""
+6. The PDF Generation Code (Python)
+Developer: Use this logic to generate the file.
+code
+Python
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+
+def generate_pdf_invoice(invoice_data):
+    filename = f"invoice_{invoice_data['invoice_number']}.pdf"
+    c = canvas.Canvas(filename, pagesize=A4)
+    
+    # Draw Header
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(50, 800, "INVOICE")
+    
+    # Draw Vendor Info (From "Vendor" To "Us")
+    c.setFont("Helvetica", 12)
+    c.drawString(50, 750, f"From: {invoice_data['vendor']['name']}")
+    c.drawString(50, 735, f"{invoice_data['vendor']['address']}")
+    
+    # Draw Line Items Table
+    y = 600
+    c.drawString(50, y, "Description")
+    c.drawString(350, y, "Qty")
+    c.drawString(400, y, "Price")
+    c.drawString(500, y, "Total")
+    
+    y -= 20
+    for item in invoice_data['line_items']:
+        c.drawString(50, y, item['description'])
+        c.drawString(350, y, str(item['quantity']))
+        c.drawString(400, y, str(item['unit_price']))
+        c.drawString(500, y, str(item['line_total']))
+        y -= 20
+        
+    c.save()
+    return filename
+Summary of Work for Developer:
+Frontend: Build the "Create Invoice" Form (Simple + Advanced Tabs).
+Backend: Implement the generate_pdf_invoice function using ReportLab.
+AI Layer: Implement the "Magic Fill" button using the composer_prompt.
+Integration: When "Save" is clicked 
+→
+→
+ Generate PDF 
+→
+→
+ Upload to GCS 
+→
+→
+ Save Metadata to BigQuery invoices table.
