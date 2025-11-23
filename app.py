@@ -2998,8 +2998,8 @@ def create_invoice_in_netsuite(invoice_id):
                         'address': vendor.get('address')  # Optional address
                     }
                     
-                    # Use the correct sync_vendor method with 'create' mode
-                    sync_result = netsuite.sync_vendor(vendor_sync_data, mode='create')
+                    # Use the correct sync_vendor_to_netsuite method
+                    sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
                     if sync_result and sync_result.get('success'):
                         netsuite_vendor_id = sync_result.get('netsuite_id')
                         # Update BigQuery with the new ID immediately
@@ -3128,8 +3128,8 @@ def update_invoice_in_netsuite(invoice_id):
                         'address': vendor.get('address')  # Optional address
                     }
                     
-                    # Use the correct sync_vendor method with 'create' mode
-                    sync_result = netsuite.sync_vendor(vendor_sync_data, mode='create')
+                    # Use the correct sync_vendor_to_netsuite method
+                    sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
                     if sync_result and sync_result.get('success'):
                         netsuite_vendor_id = sync_result.get('netsuite_id')
                         # Update BigQuery with the new ID immediately
