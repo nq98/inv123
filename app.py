@@ -396,8 +396,12 @@ def upload_invoice():
                                 
                                 # Extract addresses from custom attributes
                                 addresses = []
-                                if custom_attrs and custom_attrs.get('address'):
-                                    addresses.append(custom_attrs['address'])
+                                # Try 'addresses' (plural) first, then 'address' (singular)
+                                if custom_attrs:
+                                    if custom_attrs.get('addresses') and isinstance(custom_attrs.get('addresses'), list):
+                                        addresses = custom_attrs['addresses']
+                                    elif custom_attrs.get('address'):
+                                        addresses.append(custom_attrs['address'])
                                 
                                 vendor_match_result['database_vendor'] = {
                                     'vendor_id': row.vendor_id,
