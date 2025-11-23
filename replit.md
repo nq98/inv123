@@ -30,13 +30,31 @@ A pure AI-driven validation system to prevent non-vendors (banks, payment proces
 
 This validation system is automatically integrated into both invoice upload and CSV import pipelines, with rejection statistics returned in API responses.
 
-#### Vendor Matching Engine (Product 4)
-A 3-step semantic matching system to link invoices to vendor IDs:
-1.  **Hard Tax ID Match**: Fast, exact match on tax registration IDs using BigQuery SQL.
-2.  **Semantic Candidate Retrieval**: Finds top 5 semantically similar vendors using Vertex AI Search RAG.
-3.  **The Supreme Judge (Gemini 1.5 Pro)**: Provides comprehensive semantic reasoning to determine MATCH, NEW_VENDOR, or AMBIGUOUS, handling name variations, typos, multilingual names, and mergers/acquisitions. It includes false friend detection, parent/child logic, risk analysis, and suggests database updates.
+#### Vendor Matching Engine (Product 4) — Semantic Vendor Resolution
+A 3-step AI-first semantic matching system to link invoices to vendor IDs:
 
-This matching system is automatically integrated into the invoice upload pipeline, providing `validated_data` and `vendor_match` results in the UI, with visual indicators and action buttons.
+**Step 0: Hard Tax ID Match** — Fast, exact match on tax registration IDs using BigQuery SQL (Gold Tier Evidence).
+
+**Step 1: Semantic Candidate Retrieval** — Finds top 5 semantically similar vendors using Vertex AI Search RAG, with automatic BigQuery fallback when Vertex Search fails (404 errors or empty results).
+
+**Step 2: The Supreme Judge (Gemini 1.5 Pro)** — Global Entity Resolution Engine with AI-first semantic intelligence:
+
+**Evidence Hierarchy (Gold/Silver/Bronze Tiers)**:
+- 🥇 **Gold Tier** (0.95-1.0 confidence): Tax ID match, IBAN match, unique corporate domain match
+- 🥈 **Silver Tier** (0.75-0.90 confidence): Semantic name match, address proximity, phone match
+- 🥉 **Bronze Tier** (0.50-0.70 confidence): Generic business name match, partial name match
+
+**Semantic Reasoning Rules** (NO keyword matching):
+1. **Corporate Hierarchy & Acquisitions**: "Slack" → "Salesforce" (parent/child relationship detection)
+2. **Brand vs. Legal Entity**: "GitHub" → "Microsoft Corporation", "YouTube" → "Google LLC"
+3. **Geographic Subsidiaries**: "Uber BV" (Netherlands) == "Uber Technologies Inc" (USA)
+4. **Typos & OCR Errors**: "G0ogle" == "Google", "Microsft" == "Microsoft" (AI tolerance)
+5. **Multilingual Names**: "חברת חשמל" (Hebrew) == "Israel Electric Corp" (translation understanding)
+6. **False Friend Detection**: "Apple Landscaping" ≠ "Apple Inc." (industry validation)
+7. **Franchise Logic**: "McDonald's (Branch)" → "McDonald's HQ" (headquarters matching)
+8. **Data Evolution**: Self-healing database updates (new aliases, addresses, domains)
+
+This matching system is automatically integrated into the invoice upload pipeline, providing `validated_data` and `vendor_match` results in the UI, with visual indicators and action buttons. The system handles freelancers/contractors as valid vendors (not rejected as INDIVIDUAL_PERSON).
 
 #### Real-Time Progress Tracking System
 A comprehensive system using Server-Sent Events (SSE) provides granular, step-by-step feedback for Invoice Processing (7 steps), CSV Import (7 steps), Vendor Matching (4 steps), and Gmail Filtering Funnel. This includes CSS infrastructure for progress bars and status displays, JavaScript helper functions for dynamic updates, and backend SSE endpoints for all major workflows. An automatic fallback system is implemented for Gemini service rate limits, switching between a user's API key and Replit AI Integrations to ensure zero-downtime.

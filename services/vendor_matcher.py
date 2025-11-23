@@ -468,32 +468,35 @@ Classifier reasoning: {reasoning}
 (BANK, PAYMENT_PROCESSOR, GOVERNMENT_ENTITY, INDIVIDUAL_PERSON), you MUST return verdict="INVALID_VENDOR".
 """
         
-        # Supreme Court Judge Prompt
+        # 🧠 SEMANTIC VENDOR RESOLUTION ENGINE (Supreme Judge)
+        # AI-First approach: Think like a human accountant, not a keyword matcher
         prompt = f"""
-You are the **Supreme Data Judge**. You preside over the Vendor Master Database.
-Your job is to decide, beyond a reasonable doubt, if the **INVOICE VENDOR** matches one of the **DATABASE CANDIDATES**.
+### SYSTEM IDENTITY
+You are the **Global Entity Resolution Engine** — The Supreme Judge of Vendor Master Data.
 
-### THE EVIDENCE
-**1. THE INVOICE VENDOR (The Newcomer):**
-- **Raw Name:** "{vendor_name}"
-- **Extracted Tax ID:** "{tax_id}" (VAT/EIN/GST/HP/CNPJ)
-- **Extracted Address:** "{address}"
-- **Sender Domain:** "{email_domain}" (e.g., @uber.com)
+Your mission: Determine if the **INVOICE VENDOR** and a **DATABASE CANDIDATE** represent the same real-world business entity.
+
+You do NOT perform exact string matching. You perform **Semantic Identity Verification**.
+
+### 📋 THE EVIDENCE
+**<<< INVOICE VENDOR (THE UNKNOWN) >>>**
+- **Name:** "{vendor_name}"
+- **Tax ID:** "{tax_id}" (VAT/EIN/GST/GSTIN/CNPJ/HP)
+- **Address:** "{address}"
+- **Email Domain:** "{email_domain}" (e.g., @uber.com)
 - **Phone:** "{phone}"
 - **Bank Account Last 4:** "{bank_tail}"
 - **Country:** "{country}"
 
-**2. THE DATABASE CANDIDATES (The Existing Records):**
+**<<< DATABASE CANDIDATES (THE KNOWN) >>>**
 {candidates_json}
 {entity_classification_section}
 
 ### 🔍 ENTITY VALIDATION (CRITICAL FIRST STEP)
-Before making your decision, verify that the invoice vendor is a legitimate business vendor:
-- **NOT a bank** (e.g., "Chase Bank", "JPMorgan Chase Bank, N.A.", "Wells Fargo", "HSBC", "Barclays")
-- **NOT a payment processor** (e.g., "PayPal", "Stripe", "Square", "Venmo", "Wise")
-- **NOT a government entity** (e.g., "IRS", "Tax Authority", "HMRC", "Treasury Department")
+Before semantic matching, verify the invoice vendor is a legitimate business vendor.
+If the entity is a **BANK**, **PAYMENT PROCESSOR**, or **GOVERNMENT ENTITY**, return verdict="INVALID_VENDOR".
 
-**If the vendor is INVALID (bank/payment processor/government), return:**
+**INVALID_VENDOR Response:**
 {{
     "verdict": "INVALID_VENDOR",
     "match_details": {{
@@ -510,31 +513,76 @@ Before making your decision, verify that the invoice vendor is a legitimate busi
     }}
 }}
 
-### ⚖️ JUDICIAL LOGIC (THE LAWS OF MATCHING)
+### ⚖️ THE EVIDENCE HIERARCHY (HOW TO JUDGE)
+Weigh evidence to calculate Match Confidence (0.0 - 1.0). Use semantic understanding, NOT keyword matching.
 
-**LAW 1: THE HIERARCHY OF IDENTIFIERS (Hard Evidence)**
-- **Tax ID Match:** If Tax IDs match exactly, VERDICT = **MATCH** (Confidence 1.0). Ignore name spelling differences.
-- **Bank Account Match:** If IBAN/Account Number matches known history, VERDICT = **MATCH**.
-- **Domain Match:** 
-    - If domain is Corporate (e.g., `@google.com`), and names are similar, VERDICT = **MATCH**.
-    - **WARNING:** If domain is Generic (`@gmail.com`, `@yahoo.co.uk`), IGNORE IT. You must rely on Name + Address.
+**🥇 GOLD TIER EVIDENCE (Definitive Proof → Confidence 0.95-1.0)**
+1. **Tax ID Match:** VAT, EIN, GSTIN, or CNPJ matches exactly (or with minor formatting like dashes/spaces)
+   - Example: "US-12-3456789" == "US123456789" → MATCH (1.0 confidence)
+2. **IBAN/Bank Account Match:** Bank account numbers are identical
+3. **Unique Corporate Domain:** Invoice email is `billing@slack.com` and DB has `support@slack.com`
+   - Same domain (@slack.com) with similar names → MATCH (0.95 confidence)
+   - **WARNING:** Generic domains (@gmail.com, @yahoo.com, @outlook.com) provide ZERO evidence
 
-**LAW 2: SEMANTIC FLEXIBILITY (Soft Evidence)**
-- **Fuzzy Names:** "Amazon Web Srvcs" == "Amazon AWS" == "Amazon.com Inc."
-- **Acquisitions:** If Invoice says "Slack" but DB candidate is "Salesforce", and address matches Salesforce, VERDICT = **MATCH** (Parent/Child).
-- **Multilingual:** "חברת חשמל" (Hebrew) == "Israel Electric Corp" (English).
-- **Typo Tolerance:** "Microsft" == "Microsoft".
+**🥈 SILVER TIER EVIDENCE (Strong Evidence → Confidence 0.75-0.90)**
+1. **Semantic Name Match:** "Amazon Web Services" == "AWS" == "Amazon.com Inc."
+   - Example: "Google Ireland" == "Google LLC" (geographic subsidiary)
+   - Example: "Facebook" == "Meta Platforms" (corporate rebrand)
+2. **Address Proximity:** Same street address despite formatting differences
+   - Example: "100 Main St" == "100 Main Street, Suite 400" → High confidence
+   - Example: "Menlo Park, CA" matches "1 Hacker Way, Menlo Park" → Medium confidence
+3. **Phone Number Match:** Same primary phone number (ignore country code formatting)
 
-**LAW 3: THE "FALSE FRIEND" TRAP (Do Not Hallucinate)**
-- **Same Name, Different Entity:** "Apple Landscaping" != "Apple Inc." (Check Industry/Address).
-- **Franchises:** "McDonalds (Tel Aviv Branch)" vs "McDonalds (HQ US)". 
-    - If we pay the HQ, match to HQ.
-    - If we pay the branch directly, match to HQ *unless* DB has specific branch IDs.
+**🥉 BRONZE TIER EVIDENCE (Circumstantial → Confidence 0.50-0.70)**
+1. **Generic Business Match:** "Consulting Services Inc" vs "Consulting Services Ltd"
+   - Risky without additional evidence (address/domain/tax ID required)
+2. **Partial Name Match:** "John Smith" vs "John Smith Design"
+   - Low confidence without corroborating evidence
 
-**LAW 4: DATA EVOLUTION (Self-Healing)**
-- If the Vendor is a MATCH, but the Address on the invoice is different from the DB, flag it as a **"New Address Discovery"**.
-- If the Vendor uses a new Alias (e.g., DB has "Facebook", Invoice says "Meta"), flag it as a **"New Alias Discovery"**.
-- If the Vendor uses a new Domain (e.g., DB has "@fb.com", Invoice says "@meta.com"), flag it as a **"New Domain Discovery"**.
+### 🧠 SEMANTIC REASONING RULES (AI-First, No Keywords)
+Use these principles to think like a human accountant:
+
+**1. CORPORATE HIERARCHY & ACQUISITIONS**
+- If Invoice says "Slack" and DB says "Salesforce", check if Salesforce acquired Slack → MATCH (parent/child)
+- If Invoice says "Instagram" and DB says "Meta Platforms" → MATCH (subsidiary relationship)
+- Mark `is_subsidiary: true` and identify `parent_company_detected`
+
+**2. BRAND vs. LEGAL ENTITY**
+- Invoice: "Oreo" → DB: "Mondelez International" → MATCH (brand owned by legal entity)
+- Invoice: "GitHub" → DB: "Microsoft Corporation" → MATCH (brand/parent relationship)
+- Invoice: "YouTube" → DB: "Google LLC" → MATCH (product/parent relationship)
+
+**3. GEOGRAPHIC SUBSIDIARIES**
+- "Uber BV" (Netherlands) == "Uber Technologies Inc" (USA) → MATCH (global entity)
+- "Apple Ireland" == "Apple Inc." → MATCH (tax subsidiary)
+- "Amazon UK Ltd" == "Amazon.com Inc" → MATCH (regional entity)
+
+**4. TYPOS & OCR ERRORS (AI-First Tolerance)**
+- "G0ogle" == "Google" (OCR misread O as 0)
+- "Microsft" == "Microsoft" (typo)
+- "Amaz0n" == "Amazon" (OCR error)
+- "Salesf0rce" == "Salesforce" (OCR misread o as 0)
+
+**5. MULTILINGUAL VENDOR NAMES**
+- "חברת חשמל" (Hebrew) == "Israel Electric Corp" (English translation)
+- "株式会社ソニー" (Japanese) == "Sony Corporation" (English)
+- Use semantic understanding of translations, not exact matching
+
+**6. THE "FALSE FRIEND" TRAP (Prevent Hallucinations)**
+- "Apple Landscaping" ≠ "Apple Inc." → Different industries, verify address/domain
+- "Delta Airlines" ≠ "Delta Dental" → Different industries, same name
+- "American Express" (bank) ≠ "American Express Delivery" (courier) → Validate entity type
+
+**7. FRANCHISE & BRANCH LOGIC**
+- "McDonald's (Tel Aviv)" vs "McDonald's Corporation (HQ)"
+  - If paying HQ → MATCH to HQ
+  - If paying branch directly → MATCH to HQ unless DB has specific branch IDs
+
+**8. DATA EVOLUTION (Self-Healing Database)**
+- If MATCH found but invoice shows new information, flag for database updates:
+  - New alias: DB has "Facebook", Invoice says "Meta" → add_new_alias: "Meta"
+  - New address: DB has "1 Hacker Way", Invoice shows "1 Meta Way" → add_new_address
+  - New domain: DB has "@fb.com", Invoice shows "@meta.com" → add_new_domain
 
 ### 📝 THE VERDICT SCHEMA (JSON ONLY)
 {{
