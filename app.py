@@ -1314,9 +1314,10 @@ def gmail_import_stream():
                     if not page_token:
                         break
                     
-                    # Show progress for large mailboxes
-                    if len(all_messages) % 1000 == 0:
+                    # Show progress for large mailboxes - more frequent updates to prevent timeout
+                    if len(all_messages) % 250 == 0:  # Update every 250 messages instead of 1000
                         yield send_event('progress', {'type': 'status', 'message': f'  Counted {len(all_messages):,} emails so far...'})
+                        yield send_event('keepalive', {'type': 'ping', 'message': 'Still counting...'})
                 
                 total_inbox_count = len(all_messages)
             except Exception as e:
