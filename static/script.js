@@ -924,6 +924,12 @@ function displayResults(data) {
     const invoiceId = validated.invoiceId || validated.invoiceNumber;
     const gcsUri = data.gcs_uri; // Format: gs://payouts-invoices/uploads/filename.pdf
     
+    console.log('🔍 DEBUG Download Button Visibility Check:');
+    console.log('  - validated object:', validated);
+    console.log('  - invoiceId:', invoiceId);
+    console.log('  - gcsUri:', gcsUri);
+    console.log('  - Will show button?', !!(invoiceId && gcsUri));
+    
     if (invoiceId && gcsUri) {
         // Extract filename from GCS URI for display purposes
         const filename = gcsUri.split('/').pop();
