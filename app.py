@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+from google.cloud import bigquery
 from invoice_processor import InvoiceProcessor
 from services.gmail_service import GmailService
 from services.token_storage import SecureTokenStorage
