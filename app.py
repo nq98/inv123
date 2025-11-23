@@ -48,6 +48,15 @@ def cleanup_old_uploads():
     if to_delete:
         print(f"🧹 Cleaned up {len(to_delete)} old CSV uploads")
 
+def is_generic_domain(email):
+    """Check if email domain is generic (gmail, yahoo, etc.)"""
+    if not email or '@' not in email:
+        return True
+    domain = email.split('@')[1].lower()
+    generic_domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 
+                      'live.com', 'icloud.com', 'mail.com', 'aol.com']
+    return domain in generic_domains
+
 def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confidence, verdict):
     """
     Parse Supreme Judge reasoning to generate evidence breakdown
@@ -166,19 +175,36 @@ def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confide
         })
     
     # SILVER TIER EVIDENCE (Strong Evidence)
-    # Email Domain Match
+    # Email Domain Match - Classified by domain type (Generic vs Corporate)
     if invoice_vendor.get('email') and invoice_vendor['email'] != 'Unknown':
+        inv_email = invoice_vendor.get('email', 'Unknown')
+        
         if check_field_match(['email', 'domain', '@'], 'Email'):
-            inv_email = invoice_vendor.get('email', 'Unknown')
+            # Email domain matched - check if generic or corporate
             db_email = database_vendor.get('email', 'Unknown') if database_vendor else 'Unknown'
-            evidence['silver_tier'].append({
-                'field': 'Email Domain',
-                'matched': True,
-                'invoice_value': inv_email,
-                'database_value': db_email,
-                'confidence_contribution': 20.0,
-                'icon': '✅'
-            })
+            
+            if is_generic_domain(inv_email):
+                # Generic domain (gmail, yahoo, etc.) - BRONZE TIER with warning
+                evidence['bronze_tier'].append({
+                    'field': 'Email Domain',
+                    'matched': True,
+                    'invoice_value': inv_email,
+                    'database_value': db_email,
+                    'reason': 'Generic domain - provides no evidence',
+                    'confidence_contribution': 0.0,
+                    'icon': '⚠️'
+                })
+            else:
+                # Unique corporate domain - GOLD TIER
+                evidence['gold_tier'].append({
+                    'field': 'Email Domain',
+                    'matched': True,
+                    'invoice_value': inv_email,
+                    'database_value': db_email,
+                    'reason': 'Unique corporate domain',
+                    'confidence_contribution': 45.0,
+                    'icon': '✅'
+                })
         else:
             evidence['silver_tier'].append({
                 'field': 'Email Domain',
