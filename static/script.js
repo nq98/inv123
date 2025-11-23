@@ -2667,24 +2667,180 @@ function initializeInvoiceGeneration() {
     // Initialize form submission
     initializeInvoiceFormSubmission();
     
+    // Initialize test data buttons - NEW!
+    initializeTestDataButtons();
+    
     // Set default dates
     setDefaultDates();
 }
 
-// Mode Toggle
+// Test Data Functionality - NEW!
+function initializeTestDataButtons() {
+    // Simple mode test data button
+    const simpleTestBtn = document.getElementById('fillTestDataSimple');
+    if (simpleTestBtn) {
+        simpleTestBtn.addEventListener('click', fillSimpleTestData);
+    }
+    
+    // Advanced mode test data button
+    const advancedTestBtn = document.getElementById('fillTestDataAdvanced');
+    if (advancedTestBtn) {
+        advancedTestBtn.addEventListener('click', fillAdvancedTestData);
+    }
+}
+
+async function fillSimpleTestData() {
+    console.log('🎲 Filling simple mode with test data...');
+    
+    // Set test vendor data
+    const vendorSearch = document.getElementById('vendorSearch');
+    const vendorId = document.getElementById('selectedVendorId');
+    const description = document.getElementById('invoiceDescription');
+    const amount = document.getElementById('invoiceAmount');
+    const currency = document.getElementById('invoiceCurrency');
+    const taxType = document.getElementById('taxType');
+    const buyerName = document.getElementById('buyerName');
+    
+    if (vendorSearch) vendorSearch.value = 'Acme Corporation';
+    if (vendorId) vendorId.value = 'test-vendor-001';
+    if (description) description.value = 'Web Development Services';
+    if (amount) amount.value = '1500.00';
+    if (currency) currency.value = 'USD';
+    if (taxType) taxType.value = 'vat';
+    if (buyerName) buyerName.value = 'MyCompany Inc.';
+    
+    // Trigger change events
+    [vendorSearch, description, amount, currency, taxType, buyerName].forEach(field => {
+        if (field) field.dispatchEvent(new Event('change'));
+    });
+    
+    // Show success message
+    showToast('✅ Test data filled successfully!', 'success');
+}
+
+async function fillAdvancedTestData() {
+    console.log('🎲 Filling advanced mode with test data...');
+    
+    // Fill basic invoice info
+    const invoiceNumber = document.getElementById('invoiceNumber');
+    const poNumber = document.getElementById('poNumber');
+    const issueDate = document.getElementById('issueDate');
+    const dueDate = document.getElementById('dueDate');
+    
+    const today = new Date();
+    const dueDateValue = new Date(today);
+    dueDateValue.setDate(dueDateValue.getDate() + 30);
+    
+    if (invoiceNumber) invoiceNumber.value = 'INV-2024-TEST-001';
+    if (poNumber) poNumber.value = 'PO-12345';
+    if (issueDate) issueDate.value = today.toISOString().split('T')[0];
+    if (dueDate) dueDate.value = dueDateValue.toISOString().split('T')[0];
+    
+    // Fill vendor
+    const vendorSearchAdv = document.getElementById('vendorSearchAdv');
+    const vendorIdAdv = document.getElementById('selectedVendorIdAdv');
+    if (vendorSearchAdv) vendorSearchAdv.value = 'Tech Solutions Ltd.';
+    if (vendorIdAdv) vendorIdAdv.value = 'test-vendor-002';
+    
+    // Fill buyer info
+    const buyerNameAdv = document.getElementById('buyerNameAdv');
+    const buyerTaxId = document.getElementById('buyerTaxId');
+    const buyerAddress = document.getElementById('buyerAddress');
+    const buyerCountry = document.getElementById('buyerCountry');
+    
+    if (buyerNameAdv) buyerNameAdv.value = 'Global Enterprises Corp.';
+    if (buyerTaxId) buyerTaxId.value = 'TAX-123456789';
+    if (buyerAddress) buyerAddress.value = '123 Business Ave, Suite 500';
+    if (buyerCountry) buyerCountry.value = 'United States';
+    
+    // Clear existing line items and add test items
+    const lineItemsBody = document.getElementById('lineItemsBody');
+    if (lineItemsBody) {
+        lineItemsBody.innerHTML = '';
+        lineItemCounter = 0;
+        
+        // Add 3 sample line items
+        const sampleItems = [
+            { desc: 'Frontend Development', qty: 40, price: 75, discount: 0, tax: 10, category: 'Consulting' },
+            { desc: 'Backend API Development', qty: 60, price: 85, discount: 5, tax: 10, category: 'Services' },
+            { desc: 'Database Optimization', qty: 20, price: 100, discount: 0, tax: 10, category: 'Consulting' }
+        ];
+        
+        sampleItems.forEach(item => {
+            addLineItem();
+            const itemId = lineItemCounter;
+            
+            setTimeout(() => {
+                const descInput = document.querySelector(`input[name="description_${itemId}"]`);
+                const qtyInput = document.querySelector(`input[name="qty_${itemId}"]`);
+                const priceInput = document.querySelector(`input[name="price_${itemId}"]`);
+                const discountInput = document.querySelector(`input[name="discount_${itemId}"]`);
+                const taxInput = document.querySelector(`input[name="tax_${itemId}"]`);
+                const categorySelect = document.querySelector(`select[name="category_${itemId}"]`);
+                
+                if (descInput) descInput.value = item.desc;
+                if (qtyInput) qtyInput.value = item.qty;
+                if (priceInput) priceInput.value = item.price;
+                if (discountInput) discountInput.value = item.discount;
+                if (taxInput) taxInput.value = item.tax;
+                if (categorySelect) categorySelect.value = item.category;
+                
+                calculateLineItemTotal(itemId);
+            }, 100);
+        });
+    }
+    
+    // Set currency and notes
+    const currencyAdv = document.getElementById('invoiceCurrencyAdv');
+    const exchangeRate = document.getElementById('exchangeRate');
+    const paymentTerms = document.getElementById('paymentTerms');
+    const notes = document.getElementById('invoiceNotes');
+    
+    if (currencyAdv) currencyAdv.value = 'USD';
+    if (exchangeRate) exchangeRate.value = '1.00';
+    if (paymentTerms) paymentTerms.value = 'Net 30';
+    if (notes) notes.value = 'Thank you for your business!';
+    
+    // Calculate totals
+    setTimeout(calculateTotals, 500);
+    
+    // Show success
+    showToast('✅ Advanced test data filled!', 'success');
+}
+
+function showToast(message, type = 'info') {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.style.cssText = `
+        position: fixed; top: 80px; right: 20px; padding: 16px 20px;
+        border-radius: 8px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000; animation: slideIn 0.3s ease; max-width: 400px;
+        ${type === 'success' ? 'background: #22c55e; color: white;' : ''}
+        ${type === 'error' ? 'background: #ef4444; color: white;' : ''}
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 3000);
+}
+
+// Mode Toggle - UPDATED!
 function initializeModeToggle() {
-    const modeButtons = document.querySelectorAll('.mode-btn');
+    const modeCards = document.querySelectorAll('.mode-card');
     const simpleMode = document.getElementById('simple-mode');
     const advancedMode = document.getElementById('advanced-mode');
     
-    if (!modeButtons.length || !simpleMode || !advancedMode) return;
+    if (!modeCards.length || !simpleMode || !advancedMode) return;
     
-    modeButtons.forEach(button => {
-        button.addEventListener('click', function() {
+    modeCards.forEach(card => {
+        card.addEventListener('click', function() {
             const mode = this.getAttribute('data-mode');
             
-            // Update button states
-            modeButtons.forEach(btn => btn.classList.remove('active'));
+            // Update card states
+            modeCards.forEach(c => c.classList.remove('active'));
             this.classList.add('active');
             
             // Show/hide forms

@@ -193,22 +193,68 @@ class PDFInvoiceGenerator:
         # Build PDF
         doc.build(elements)
         
-        # Save to GCS
+        # Save to GCS with better error handling
         buffer.seek(0)
-        gcs_path = f"generated/{filename}"
-        blob = self.bucket.blob(gcs_path)
-        blob.upload_from_file(buffer, content_type='application/pdf')
+        gcs_uri = None
+        public_url = None
         
-        gcs_uri = f"gs://{self.bucket_name}/{gcs_path}"
+        try:
+            gcs_path = f"generated/{filename}"
+            blob = self.bucket.blob(gcs_path)
+            
+            print(f"📤 Uploading PDF to GCS...")
+            print(f"   Bucket: {self.bucket_name}")
+            print(f"   Path: {gcs_path}")
+            
+            # Upload with proper content type and metadata
+            blob.upload_from_file(
+                buffer, 
+                content_type='application/pdf',
+                timeout=30  # 30 second timeout
+            )
+            
+            # Set cache control for better performance
+            blob.cache_control = "public, max-age=3600"
+            blob.update()
+            
+            # Make the file publicly accessible (optional)
+            # blob.make_public()
+            
+            gcs_uri = f"gs://{self.bucket_name}/{gcs_path}"
+            public_url = f"https://storage.googleapis.com/{self.bucket_name}/{gcs_path}"
+            
+            print(f"✅ Successfully uploaded PDF to GCS!")
+            print(f"   GCS URI: {gcs_uri}")
+            print(f"   Public URL: {public_url}")
+            
+        except Exception as e:
+            print(f"❌ Error uploading to GCS: {e}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Bucket: {self.bucket_name}")
+            print(f"   Path: generated/{filename}")
+            
+            # Create a fallback GCS URI even if upload failed
+            gcs_uri = f"gs://{self.bucket_name}/generated/{filename}"
+            
+            # Try to get more error details
+            import traceback
+            traceback.print_exc()
         
-        # Also save locally for immediate access
+        # Always save locally as a backup
         local_path = os.path.join('uploads', filename)
         buffer.seek(0)
-        with open(local_path, 'wb') as f:
-            f.write(buffer.getvalue())
+        
+        try:
+            with open(local_path, 'wb') as f:
+                f.write(buffer.getvalue())
+            print(f"✅ Saved local backup: {local_path}")
+        except Exception as e:
+            print(f"❌ Error saving local file: {e}")
+            local_path = None
         
         return {
             'gcs_uri': gcs_uri,
+            'public_url': public_url,
             'local_path': local_path,
             'filename': filename,
             'invoice_number': invoice_number

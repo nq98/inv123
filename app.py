@@ -2532,13 +2532,33 @@ def generate_invoice():
         })
     
     try:
+        print("\n" + "="*60)
+        print("🚀 Starting Invoice Generation")
+        print("="*60)
+        
         # Generate the PDF
         pdf_result = pdf_generator.generate_invoice(invoice_data)
+        
+        # Calculate total amount for display
+        total_amount = 0
+        currency = invoice_data.get('currency', 'USD')
+        
+        for item in invoice_data.get('line_items', []):
+            quantity = item.get('quantity', 1)
+            unit_price = item.get('unit_price', 0)
+            discount_percent = item.get('discount_percent', 0)
+            tax_rate = item.get('tax_rate', 0)
+            
+            subtotal = quantity * unit_price
+            discount = subtotal * (discount_percent / 100)
+            after_discount = subtotal - discount
+            tax = after_discount * (tax_rate / 100)
+            total_amount += after_discount + tax
         
         # Save invoice metadata to BigQuery
         try:
             file_info = {
-                'file_size': os.path.getsize(pdf_result['local_path'])
+                'file_size': os.path.getsize(pdf_result['local_path']) if pdf_result.get('local_path') else 0
             }
             
             bigquery_data = invoice_composer.prepare_invoice_for_bigquery(
@@ -2549,20 +2569,41 @@ def generate_invoice():
             
             bq_service = BigQueryService()
             bq_service.insert_invoice(bigquery_data)
+            print("✅ Invoice metadata saved to BigQuery")
         except Exception as bq_error:
-            print(f"Warning: Could not save to BigQuery: {bq_error}")
+            print(f"⚠️ BigQuery insert error (non-critical): {bq_error}")
             # Continue even if BigQuery insert fails
+        
+        # Prepare download URL
+        download_url = f"/download/invoice/{pdf_result['filename']}"
+        view_url = f"/view/invoice/{pdf_result['filename']}"
+        
+        print(f"✅ Invoice generation completed successfully!")
+        print(f"   Invoice Number: {pdf_result['invoice_number']}")
+        print(f"   Total Amount: {total_amount:.2f} {currency}")
+        print(f"   GCS URI: {pdf_result.get('gcs_uri', 'N/A')}")
+        print(f"   Download URL: {download_url}")
+        print("="*60 + "\n")
         
         return jsonify({
             'success': True,
             'invoice_number': pdf_result['invoice_number'],
             'filename': pdf_result['filename'],
-            'gcs_uri': pdf_result['gcs_uri'],
-            'local_path': pdf_result['local_path']
+            'gcs_uri': pdf_result.get('gcs_uri'),
+            'public_url': pdf_result.get('public_url'),
+            'local_path': pdf_result.get('local_path'),
+            'download_url': download_url,
+            'view_url': view_url,
+            'vendor_name': invoice_data.get('vendor', {}).get('name', 'Unknown'),
+            'total_amount': round(total_amount, 2),
+            'currency': currency,
+            'message': 'Invoice generated successfully!'
         })
         
     except Exception as e:
-        print(f"Invoice generation error: {e}")
+        print(f"❌ Invoice generation error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e), 'success': False}), 500
 
 @app.route('/download/invoice/<filename>', methods=['GET'])
