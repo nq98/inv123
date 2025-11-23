@@ -916,20 +916,34 @@ function displayResults(data) {
     
     let html = `<span class="success-badge">✓ Processing Complete</span>`;
     
+    // SIMPLE DOWNLOAD LINK AT THE TOP (ALWAYS VISIBLE)
+    const invoiceId = validated.invoiceId || validated.invoiceNumber;
+    const gcsUri = data.gcs_uri; // Format: gs://payouts-invoices/uploads/filename.pdf
+    
+    if (invoiceId && gcsUri) {
+        const filename = gcsUri.split('/').pop();
+        html += `
+            <div style="margin: 20px 0; padding: 25px; background: #2196F3; color: white; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);">
+                <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px;">📥 DOWNLOAD YOUR INVOICE</div>
+                <div style="margin-bottom: 20px; font-size: 14px; opacity: 0.9;">Invoice ID: ${escapeHtml(invoiceId)}</div>
+                <button 
+                    onclick="downloadInvoice('${escapeHtml(invoiceId)}', event)" 
+                    style="background: white; color: #2196F3; border: none; padding: 16px 40px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s;"
+                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)';"
+                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)';"
+                >
+                    ⬇️ CLICK HERE TO DOWNLOAD
+                </button>
+                <div style="margin-top: 15px; font-size: 12px; opacity: 0.85;">File: ${escapeHtml(filename)}</div>
+            </div>
+        `;
+    }
+    
     if (data.status === 'partial' || data.status === 'warning') {
         html += `<p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Some processing layers encountered issues. Showing extracted data from Document AI.</p>`;
     }
     
-    // Add Download Invoice Button (using Signed URLs only - bucket is private)
-    const invoiceId = validated.invoiceId || validated.invoiceNumber;
-    const gcsUri = data.gcs_uri; // Format: gs://payouts-invoices/uploads/filename.pdf
-    
-    console.log('🔍 DEBUG Download Button Visibility Check:');
-    console.log('  - validated object:', validated);
-    console.log('  - invoiceId:', invoiceId);
-    console.log('  - gcsUri:', gcsUri);
-    console.log('  - Will show button?', !!(invoiceId && gcsUri));
-    
+    // Add detailed download section with file info
     if (invoiceId && gcsUri) {
         // Extract filename from GCS URI for display purposes
         const filename = gcsUri.split('/').pop();

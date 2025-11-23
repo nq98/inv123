@@ -1,0 +1,64 @@
+✓ Grand Total: 169.25 USD
+
+🧠 LAYER 3.5: Semantic Vendor Identity Resolution
+------------------------------------------------------------
+⚠️ AI Studio rate limit hit: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota. Please migrate to Gemini 2.0 Flash Preview (Image Generation) (models/gemini-2.0-flash-preview-image-generation) for higher quota limits. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel'}]}]}}
+🔄 Falling back to Replit AI Integrations...
+✅ Fallback successful using gemini-2.5-flash
+🧠 Semantic Vendor Resolution:
+   TRUE Vendor: WUNDERBRAND (PTY) LTD
+   Confidence: 0.98
+   Type: COMPANY
+   Reasoning: All identity signals consistently point to 'WUNDERBRAND (PTY) LTD' as the legal entity and the ultimate recipient of funds. The supplier name, legal beneficiary fields, and the account holder specified in the payment instructions all match 'WUNDERBRAND (PTY) LTD'. 'WUNDERBRAND' appears to be the brand name associated with this company, which is a common practice for companies.
+🔄 UPDATING VENDOR: 'WUNDERBRAND' → 'WUNDERBRAND (PTY) LTD'
+✓ Vendor resolution complete
+
+🧠 FEEDBACK LOOP: Storing extraction to knowledge base...
+⚠ Error storing invoice extraction: 404 Data store projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+
+============================================================
+PROCESSING COMPLETE
+============================================================
+
+
+============================================================
+AUTOMATIC VENDOR MATCHING: WUNDERBRAND
+============================================================
+
+⚡ Starting automatic vendor matching for vendor: WUNDERBRAND
+
+🤖 Step 0: Semantic Entity Classification
+------------------------------------------------------------
+⚠️ AI Studio rate limit hit: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota. Please migrate to Gemini 2.0 Flash Preview (Image Generation) (models/gemini-2.0-flash-preview-image-generation) for higher quota limits. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel'}]}]}}
+🔄 Falling back to Replit AI Integrations...
+✅ Fallback successful using gemini-2.5-flash
+🤖 Entity Classification: VENDOR (HIGH)
+   Reasoning: The name 'WUNDERBRAND' semantically suggests a commercial entity, likely a company or business involved in branding or related services. Such an entity would provide goods or services for payment, classifying it as a VENDOR.
+✓ Entity is valid vendor, proceeding with matching...
+🔍 Starting vendor matching for: WUNDERBRAND
+⚡ Step 0: Checking hard Tax ID match for 4130265533...
+🔎 Step 1: Semantic search for 'WUNDERBRAND' (country: South Africa)...
+   📝 Also have resolved legal name: 'WUNDERBRAND (PTY) LTD'
+🔎 Searching with original name: 'WUNDERBRAND'
+⚠️ Error checking rejected entities: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+Error searching vendor: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+⚠️ Vertex Search returned no results for original name 'WUNDERBRAND'
+🔄 Retrying with resolved legal name: 'WUNDERBRAND (PTY) LTD'
+⚠️ Error checking rejected entities: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+Error searching vendor: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+⚠️ Vertex Search also returned no results for resolved name 'WUNDERBRAND (PTY) LTD'
+🔄 Triggering BigQuery fallback...
+🔍 BigQuery search: 'WUNDERBRAND' → normalized: 'WUNDERBRAND'
+✅ BigQuery fallback found 1 candidates
+📋 Found 1 semantic candidates
+⚖️ Step 2: Invoking Supreme Judge (Gemini 1.5 Pro)...
+⚠️ AI Studio rate limit hit: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota. Please migrate to Gemini 2.0 Flash Preview (Image Generation) (models/gemini-2.0-flash-preview-image-generation) for higher quota limits. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel'}]}]}}
+🔄 Falling back to Replit AI Integrations...
+✅ Fallback successful using gemini-2.5-flash
+✅ Gemini returned structured evidence breakdown (AI-First semantic classification)
+📊 Final verdict: MATCH (confidence: 0.75)
+✓ Fetching database vendor details for AUTO_WUNDERBRAND_(PTY)_LT_14...
+✅ Using Gemini's structured evidence breakdown (AI-First)
+✓ Vendor matching complete: MATCH
+✓ Inserted invoice INV0000146 into BigQuery
+10.83.9.152 - - [23/Nov/2025:13:42:56 +0000] "POST /upload HTTP/1.1" 200 9980 "https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
