@@ -137,8 +137,9 @@ class VendorMatcher:
                 print(f"   📝 Also have resolved legal name: '{resolved_legal_name}'")
             candidates = self._get_semantic_candidates(vendor_name, country, resolved_legal_name=resolved_legal_name, top_k=5)
         
-        # If name search failed or no name, try email domain (if valid corporate domain)
-        if not candidates and email_domain and email_domain not in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']:
+        # If name search failed or no name, try email domain
+        # NOTE: AI will semantically classify domains (corporate vs generic) in Supreme Judge step
+        if not candidates and email_domain:
             print(f"🔎 Step 1B: Searching by email domain '{email_domain}'...")
             domain_candidates = self._get_candidates_by_domain(email_domain)
             if domain_candidates:
@@ -484,13 +485,16 @@ class VendorMatcher:
         """
         Search BigQuery for vendors with matching email domain
         
+        NOTE: No hardcoded domain filtering - AI Supreme Judge will semantically
+        classify domains (CORPORATE_UNIQUE vs GENERIC_PROVIDER) in Step 2.
+        
         Args:
-            email_domain: Email domain to search for (e.g., 'aws.com', 'stripe.com')
+            email_domain: Email domain to search for (e.g., 'aws.com', 'stripe.com', 'gmail.com')
             
         Returns:
             List of candidate vendor dicts with metadata
         """
-        if not email_domain or email_domain in ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']:
+        if not email_domain:
             return []
         
         # Clean domain (remove @ if present)
@@ -668,13 +672,43 @@ If the entity is a **BANK**, **PAYMENT PROCESSOR**, or **GOVERNMENT ENTITY**, re
 ### ⚖️ THE EVIDENCE HIERARCHY (HOW TO JUDGE)
 Weigh evidence to calculate Match Confidence (0.0 - 1.0). Use semantic understanding, NOT keyword matching.
 
+**EMAIL DOMAIN CLASSIFICATION (AI-First Semantic Analysis)**
+CRITICAL: Analyze email domains using SEMANTIC INTELLIGENCE, not hardcoded keyword lists.
+
+Classify email domains into these categories:
+
+1. **CORPORATE_UNIQUE (Gold Tier, +45%)**: 
+   - Domain matches or semantically relates to the company name
+   - Examples: 
+     * @slack.com for "Slack Technologies"
+     * @fully-booked.ca for "Fully Booked" or "Artem Revva"
+     * @stripe.com for "Stripe Inc."
+   - Custom business domains that uniquely identify the vendor
+   - High confidence evidence for matching
+
+2. **GENERIC_PROVIDER (Bronze Tier, +0%)**:
+   - Free email providers that ANYONE can use
+   - Examples: gmail.com, yahoo.com, outlook.com, hotmail.com, icloud.com, live.com
+   - Provides ZERO evidence for vendor matching
+   - Individual freelancers or small businesses may use these
+
+3. **RESELLER (Silver Tier, +20%)**:
+   - Business email domain but may represent an intermediary or reseller
+   - Domain doesn't match the invoice vendor name
+   - Moderate confidence contribution
+
+**IMPORTANT:** Use SEMANTIC UNDERSTANDING to classify domains. Do NOT use keyword matching!
+- If domain semantically relates to vendor name → CORPORATE_UNIQUE
+- If domain is a known email provider → GENERIC_PROVIDER  
+- Otherwise → RESELLER
+
 **🥇 GOLD TIER EVIDENCE (Definitive Proof → Confidence 0.95-1.0)**
 1. **Tax ID Match:** VAT, EIN, GSTIN, or CNPJ matches exactly (or with minor formatting like dashes/spaces)
    - Example: "US-12-3456789" == "US123456789" → MATCH (1.0 confidence)
 2. **IBAN/Bank Account Match:** Bank account numbers are identical
-3. **Unique Corporate Domain:** Invoice email is `billing@slack.com` and DB has `support@slack.com`
-   - Same domain (@slack.com) with similar names → MATCH (0.95 confidence)
-   - **WARNING:** Generic domains (@gmail.com, @yahoo.com, @outlook.com) provide ZERO evidence
+3. **CORPORATE_UNIQUE Domain Match:** Invoice email domain semantically matches vendor name
+   - Invoice: billing@slack.com + DB: support@slack.com → Same domain, MATCH (0.95 confidence)
+   - Invoice: invoices@fully-booked.ca + DB: contact@fully-booked.ca → Same domain, MATCH (0.95 confidence)
 
 **🥈 SILVER TIER EVIDENCE (Strong Evidence → Confidence 0.75-0.90)**
 1. **Semantic Name Match:** "Amazon Web Services" == "AWS" == "Amazon.com Inc."
@@ -743,7 +777,39 @@ Use these principles to think like a human accountant:
         "selected_vendor_id": "string (ID from DB Candidate) or null",
         "confidence_score": 0.0-1.0,
         "match_reasoning": "Explain specifically: 'Matched via Tax ID', 'Matched via Corporate Domain + Fuzzy Name', etc.",
-        "risk_analysis": "NONE | LOW | HIGH (e.g. 'Name matches but domain is gmail.com')"
+        "risk_analysis": "NONE | LOW | HIGH (e.g. 'Name matches but domain is gmail.com')",
+        "evidence_breakdown": {{
+            "email_domain": {{
+                "domain_type": "CORPORATE_UNIQUE" | "GENERIC_PROVIDER" | "RESELLER" | "NOT_AVAILABLE",
+                "tier": "GOLD" | "SILVER" | "BRONZE",
+                "confidence_contribution": 0.0-50.0,
+                "reasoning": "Explain why domain is classified this way (e.g., 'fully-booked.ca semantically matches company name Fully Booked')"
+            }},
+            "tax_id": {{
+                "tier": "GOLD" | "SILVER" | "BRONZE",
+                "matched": true|false,
+                "confidence_contribution": 0.0-50.0,
+                "reasoning": "Tax ID match status and reasoning"
+            }},
+            "name": {{
+                "tier": "GOLD" | "SILVER" | "BRONZE",
+                "matched": true|false,
+                "confidence_contribution": 0.0-40.0,
+                "reasoning": "Name match quality (exact, semantic, partial)"
+            }},
+            "address": {{
+                "tier": "GOLD" | "SILVER" | "BRONZE",
+                "matched": true|false,
+                "confidence_contribution": 0.0-30.0,
+                "reasoning": "Address match status"
+            }},
+            "phone": {{
+                "tier": "GOLD" | "SILVER" | "BRONZE",
+                "matched": true|false,
+                "confidence_contribution": 0.0-15.0,
+                "reasoning": "Phone match status"
+            }}
+        }}
     }},
     "database_updates": {{
         "add_new_alias": "string (If invoice name is a valid nickname not in DB) or null",
@@ -785,18 +851,31 @@ Use these principles to think like a human accountant:
             if raw_verdict not in ["MATCH", "NEW_VENDOR", "AMBIGUOUS"]:
                 raw_verdict = "NEW_VENDOR"
             
-            return {
+            # Extract structured evidence breakdown (AI-First semantic classification)
+            match_details = result.get("match_details", {})
+            evidence_breakdown = match_details.get("evidence_breakdown")
+            
+            judge_result = {
                 "verdict": raw_verdict,
-                "vendor_id": result.get("match_details", {}).get("selected_vendor_id"),
-                "confidence": result.get("match_details", {}).get("confidence_score", 0.0),
-                "reasoning": result.get("match_details", {}).get("match_reasoning", "No reasoning provided"),
-                "risk_analysis": result.get("match_details", {}).get("risk_analysis", "UNKNOWN"),
+                "vendor_id": match_details.get("selected_vendor_id"),
+                "confidence": match_details.get("confidence_score", 0.0),
+                "reasoning": match_details.get("match_reasoning", "No reasoning provided"),
+                "risk_analysis": match_details.get("risk_analysis", "UNKNOWN"),
                 "database_updates": result.get("database_updates", {}),
                 "parent_child_logic": result.get("parent_child_logic", {
                     "is_subsidiary": False,
                     "parent_company_detected": None
                 })
             }
+            
+            # Include structured evidence if AI provided it
+            if evidence_breakdown:
+                judge_result["evidence_breakdown"] = evidence_breakdown
+                print("✅ Gemini returned structured evidence breakdown (AI-First semantic classification)")
+            else:
+                print("⚠️ Gemini did not return structured evidence - will use reasoning fallback")
+            
+            return judge_result
             
         except Exception as e:
             print(f"❌ Supreme Judge error: {e}")

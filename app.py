@@ -48,32 +48,189 @@ def cleanup_old_uploads():
     if to_delete:
         print(f"🧹 Cleaned up {len(to_delete)} old CSV uploads")
 
-def is_generic_domain(email):
-    """Check if email domain is generic (gmail, yahoo, etc.)"""
-    if not email or '@' not in email:
-        return True
-    domain = email.split('@')[1].lower()
-    generic_domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 
-                      'live.com', 'icloud.com', 'mail.com', 'aol.com']
-    return domain in generic_domains
-
-def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confidence, verdict):
+def _parse_structured_evidence(structured_evidence, invoice_vendor, database_vendor, confidence):
     """
-    Parse Supreme Judge reasoning to generate evidence breakdown
+    Parse Gemini's structured evidence breakdown (AI-First approach)
     
     Args:
-        reasoning: Supreme Judge reasoning text
+        structured_evidence: dict with Gemini's evidence_breakdown structure
         invoice_vendor: Invoice vendor data dict
         database_vendor: Database vendor data dict
         confidence: Overall confidence score (0.0-1.0)
-        verdict: Match verdict (MATCH, NEW_VENDOR, etc.)
     
     Returns:
         dict: Evidence breakdown with tiers and field-level analysis
     """
+    evidence = {
+        'gold_tier': [],
+        'silver_tier': [],
+        'bronze_tier': [],
+        'total_confidence': round(confidence * 100, 1)
+    }
+    
+    # Helper to get tier list
+    def get_tier_list(tier_name):
+        tier_map = {
+            'GOLD': evidence['gold_tier'],
+            'SILVER': evidence['silver_tier'],
+            'BRONZE': evidence['bronze_tier']
+        }
+        return tier_map.get(tier_name, evidence['bronze_tier'])
+    
+    # Parse Email Domain (AI-First Semantic Classification)
+    if 'email_domain' in structured_evidence:
+        email_evidence = structured_evidence['email_domain']
+        domain_type = email_evidence.get('domain_type', 'NOT_AVAILABLE')
+        tier = email_evidence.get('tier', 'BRONZE')
+        contribution = email_evidence.get('confidence_contribution', 0.0)
+        reasoning = email_evidence.get('reasoning', 'No reasoning provided')
+        
+        if domain_type != 'NOT_AVAILABLE':
+            tier_list = get_tier_list(tier)
+            
+            # Set icon based on domain type
+            icon_map = {
+                'CORPORATE_UNIQUE': '✅',
+                'GENERIC_PROVIDER': '⚠️',
+                'RESELLER': '🔄'
+            }
+            icon = icon_map.get(domain_type, '❓')
+            
+            inv_email = invoice_vendor.get('email', 'Unknown')
+            db_email = database_vendor.get('email', 'Unknown') if database_vendor else 'Unknown'
+            
+            tier_list.append({
+                'field': 'Email Domain',
+                'matched': True,
+                'invoice_value': inv_email,
+                'database_value': db_email,
+                'domain_type': domain_type,
+                'reason': reasoning,
+                'confidence_contribution': contribution,
+                'icon': icon
+            })
+    
+    # Parse Tax ID
+    if 'tax_id' in structured_evidence:
+        tax_evidence = structured_evidence['tax_id']
+        tier = tax_evidence.get('tier', 'BRONZE')
+        matched = tax_evidence.get('matched', False)
+        contribution = tax_evidence.get('confidence_contribution', 0.0)
+        reasoning = tax_evidence.get('reasoning', 'No reasoning provided')
+        
+        tier_list = get_tier_list(tier)
+        inv_tax = invoice_vendor.get('tax_id', 'Unknown')
+        db_tax = database_vendor.get('tax_id', 'Unknown') if database_vendor else 'Unknown'
+        
+        tier_list.append({
+            'field': 'Tax ID',
+            'matched': matched,
+            'invoice_value': inv_tax,
+            'database_value': db_tax,
+            'reason': reasoning,
+            'confidence_contribution': contribution,
+            'icon': '✅' if matched else '❌'
+        })
+    
+    # Parse Name
+    if 'name' in structured_evidence:
+        name_evidence = structured_evidence['name']
+        tier = name_evidence.get('tier', 'BRONZE')
+        matched = name_evidence.get('matched', False)
+        contribution = name_evidence.get('confidence_contribution', 0.0)
+        reasoning = name_evidence.get('reasoning', 'No reasoning provided')
+        
+        tier_list = get_tier_list(tier)
+        inv_name = invoice_vendor.get('name', 'Unknown')
+        db_name = database_vendor.get('name', 'Unknown') if database_vendor else 'Unknown'
+        
+        tier_list.append({
+            'field': 'Name',
+            'matched': matched,
+            'invoice_value': inv_name,
+            'database_value': db_name,
+            'reason': reasoning,
+            'confidence_contribution': contribution,
+            'icon': '✅' if matched else '❌'
+        })
+    
+    # Parse Address
+    if 'address' in structured_evidence:
+        addr_evidence = structured_evidence['address']
+        tier = addr_evidence.get('tier', 'BRONZE')
+        matched = addr_evidence.get('matched', False)
+        contribution = addr_evidence.get('confidence_contribution', 0.0)
+        reasoning = addr_evidence.get('reasoning', 'No reasoning provided')
+        
+        tier_list = get_tier_list(tier)
+        inv_addr = invoice_vendor.get('address', 'Unknown')
+        db_addr = database_vendor.get('address', 'Unknown') if database_vendor else 'Unknown'
+        
+        # Truncate long addresses for display
+        inv_addr_display = inv_addr[:50] + '...' if len(inv_addr) > 50 else inv_addr
+        db_addr_display = db_addr[:50] + '...' if len(db_addr) > 50 else db_addr
+        
+        tier_list.append({
+            'field': 'Address',
+            'matched': matched,
+            'invoice_value': inv_addr_display,
+            'database_value': db_addr_display,
+            'reason': reasoning,
+            'confidence_contribution': contribution,
+            'icon': '✅' if matched else '❌'
+        })
+    
+    # Parse Phone
+    if 'phone' in structured_evidence:
+        phone_evidence = structured_evidence['phone']
+        tier = phone_evidence.get('tier', 'BRONZE')
+        matched = phone_evidence.get('matched', False)
+        contribution = phone_evidence.get('confidence_contribution', 0.0)
+        reasoning = phone_evidence.get('reasoning', 'No reasoning provided')
+        
+        tier_list = get_tier_list(tier)
+        inv_phone = invoice_vendor.get('phone', 'Unknown')
+        db_phone = database_vendor.get('phone', 'Unknown') if database_vendor else 'Unknown'
+        
+        tier_list.append({
+            'field': 'Phone',
+            'matched': matched,
+            'invoice_value': inv_phone,
+            'database_value': db_phone,
+            'reason': reasoning,
+            'confidence_contribution': contribution,
+            'icon': '✅' if matched else '❌'
+        })
+    
+    return evidence
+
+def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confidence, verdict, structured_evidence=None):
+    """
+    Parse Supreme Judge reasoning to generate evidence breakdown
+    
+    AI-FIRST: Prefers Gemini's structured evidence breakdown over fallback parsing.
+    
+    Args:
+        reasoning: Supreme Judge reasoning text (fallback)
+        invoice_vendor: Invoice vendor data dict
+        database_vendor: Database vendor data dict
+        confidence: Overall confidence score (0.0-1.0)
+        verdict: Match verdict (MATCH, NEW_VENDOR, etc.)
+        structured_evidence: Optional dict with Gemini's structured evidence breakdown
+    
+    Returns:
+        dict: Evidence breakdown with tiers and field-level analysis
+    """
+    # PRIORITY 1: Use Gemini's structured evidence if available
+    if structured_evidence:
+        print("✅ Using Gemini's structured evidence breakdown (AI-First)")
+        return _parse_structured_evidence(structured_evidence, invoice_vendor, database_vendor, confidence)
+    
+    # PRIORITY 2: Fallback to reasoning-based parsing (no hardcoded lists)
     if not reasoning:
         return None
     
+    print("⚠️ Falling back to reasoning-based parsing (Gemini didn't return structured evidence)")
     reasoning_lower = reasoning.lower()
     
     # Initialize evidence structure
@@ -175,34 +332,46 @@ def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confide
         })
     
     # SILVER TIER EVIDENCE (Strong Evidence)
-    # Email Domain Match - Classified by domain type (Generic vs Corporate)
+    # Email Domain Match - AI will classify domain type in structured evidence
     if invoice_vendor.get('email') and invoice_vendor['email'] != 'Unknown':
         inv_email = invoice_vendor.get('email', 'Unknown')
         
         if check_field_match(['email', 'domain', '@'], 'Email'):
-            # Email domain matched - check if generic or corporate
+            # Email domain matched - tier depends on AI's semantic classification
             db_email = database_vendor.get('email', 'Unknown') if database_vendor else 'Unknown'
             
-            if is_generic_domain(inv_email):
-                # Generic domain (gmail, yahoo, etc.) - BRONZE TIER with warning
+            # Check if reasoning mentions "generic" or "corporate" domain
+            if 'generic' in reasoning_lower and ('gmail' in reasoning_lower or 'yahoo' in reasoning_lower):
+                # AI indicated generic domain - BRONZE TIER
                 evidence['bronze_tier'].append({
                     'field': 'Email Domain',
                     'matched': True,
                     'invoice_value': inv_email,
                     'database_value': db_email,
-                    'reason': 'Generic domain - provides no evidence',
+                    'reason': 'Generic email provider (from AI reasoning)',
                     'confidence_contribution': 0.0,
                     'icon': '⚠️'
                 })
-            else:
-                # Unique corporate domain - GOLD TIER
+            elif 'corporate' in reasoning_lower or 'business' in reasoning_lower or 'unique' in reasoning_lower:
+                # AI indicated corporate/unique domain - GOLD TIER
                 evidence['gold_tier'].append({
                     'field': 'Email Domain',
                     'matched': True,
                     'invoice_value': inv_email,
                     'database_value': db_email,
-                    'reason': 'Unique corporate domain',
+                    'reason': 'Corporate domain (from AI reasoning)',
                     'confidence_contribution': 45.0,
+                    'icon': '✅'
+                })
+            else:
+                # Unclear from reasoning - SILVER TIER by default
+                evidence['silver_tier'].append({
+                    'field': 'Email Domain',
+                    'matched': True,
+                    'invoice_value': inv_email,
+                    'database_value': db_email,
+                    'reason': 'Domain matched (tier unclear from reasoning)',
+                    'confidence_contribution': 20.0,
                     'icon': '✅'
                 })
         else:
@@ -634,13 +803,14 @@ def upload_invoice():
                             print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
                             vendor_match_result['database_vendor_error'] = str(e)
                     
-                    # Generate evidence breakdown
+                    # Generate evidence breakdown (AI-First: use structured evidence if available)
                     evidence_breakdown = parse_evidence_breakdown(
                         reasoning=match_result.get('reasoning', ''),
                         invoice_vendor=vendor_match_result['invoice_vendor'],
                         database_vendor=vendor_match_result.get('database_vendor'),
                         confidence=match_result.get('confidence', 0.0),
-                        verdict=verdict
+                        verdict=verdict,
+                        structured_evidence=match_result.get('evidence_breakdown')
                     )
                     if evidence_breakdown:
                         vendor_match_result['evidence_breakdown'] = evidence_breakdown
