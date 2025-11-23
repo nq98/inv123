@@ -269,7 +269,53 @@ class VendorMatcher:
                 max_results=top_k
             )
             
-            # Format candidates for Gemini Supreme Judge
+            # CRITICAL FIX: Check if Vertex returned empty results
+            # (could be no matches OR error was caught internally)
+            if not search_results or len(search_results) == 0:
+                print(f"⚠️ Vertex Search returned no results (may have failed silently)")
+                print(f"🔄 Triggering BigQuery fallback for '{vendor_name}'...")
+                
+                # Call BigQuery fallback
+                bigquery_results = self.bigquery.search_vendor_by_name(
+                    vendor_name=vendor_name,
+                    limit=top_k
+                )
+                
+                if not bigquery_results:
+                    print(f"⚠️ BigQuery fallback also returned no results")
+                    return []
+                
+                print(f"✅ BigQuery fallback found {len(bigquery_results)} candidates")
+                
+                # Convert BigQuery results to Vertex Search format
+                candidates = []
+                for vendor in bigquery_results:
+                    custom_attrs = vendor.get('custom_attributes', {})
+                    if isinstance(custom_attrs, str):
+                        try:
+                            custom_attrs = json.loads(custom_attrs)
+                        except:
+                            custom_attrs = {}
+                    
+                    tax_ids = [custom_attrs.get('tax_id')] if custom_attrs.get('tax_id') else []
+                    addresses = [custom_attrs.get('address')] if custom_attrs.get('address') else []
+                    
+                    candidates.append({
+                        "candidate_id": vendor.get('vendor_id'),
+                        "global_name": vendor.get('global_name', 'Unknown'),
+                        "normalized_name": vendor.get('normalized_name', ''),
+                        "aliases": [vendor.get('normalized_name')] if vendor.get('normalized_name') else [],
+                        "tax_ids": tax_ids,
+                        "domains": vendor.get('domains', []),
+                        "emails": vendor.get('emails', []),
+                        "addresses": addresses,
+                        "countries": vendor.get('countries', []),
+                        "custom_attributes": custom_attrs
+                    })
+                
+                return candidates
+            
+            # Vertex Search returned results, format them normally
             candidates = []
             
             for result in search_results:
@@ -320,7 +366,60 @@ class VendorMatcher:
             
         except Exception as e:
             print(f"❌ Semantic search error: {e}")
-            return []
+            print(f"🔄 Falling back to BigQuery direct search...")
+            
+            # FALLBACK: Search BigQuery directly using LIKE pattern matching
+            try:
+                bigquery_results = self.bigquery.search_vendor_by_name(
+                    vendor_name=vendor_name,
+                    limit=top_k
+                )
+                
+                if not bigquery_results:
+                    print(f"⚠️ BigQuery fallback also returned no results for '{vendor_name}'")
+                    return []
+                
+                print(f"✅ BigQuery fallback found {len(bigquery_results)} candidates")
+                
+                # Convert BigQuery results to same format as Vertex Search results
+                candidates = []
+                for vendor in bigquery_results:
+                    # Extract custom attributes
+                    custom_attrs = vendor.get('custom_attributes', {})
+                    if isinstance(custom_attrs, str):
+                        try:
+                            custom_attrs = json.loads(custom_attrs)
+                        except:
+                            custom_attrs = {}
+                    
+                    # Extract tax IDs from custom attributes
+                    tax_ids = []
+                    if custom_attrs.get('tax_id'):
+                        tax_ids.append(custom_attrs['tax_id'])
+                    
+                    # Extract addresses from custom attributes  
+                    addresses = []
+                    if custom_attrs.get('address'):
+                        addresses.append(custom_attrs['address'])
+                    
+                    candidates.append({
+                        "candidate_id": vendor.get('vendor_id'),
+                        "global_name": vendor.get('global_name', 'Unknown'),
+                        "normalized_name": vendor.get('normalized_name', ''),
+                        "aliases": [vendor.get('normalized_name', '')] if vendor.get('normalized_name') else [],
+                        "tax_ids": tax_ids,
+                        "domains": vendor.get('domains', []),
+                        "emails": vendor.get('emails', []),
+                        "addresses": addresses,
+                        "countries": vendor.get('countries', []),
+                        "custom_attributes": custom_attrs
+                    })
+                
+                return candidates
+                
+            except Exception as bigquery_error:
+                print(f"❌ BigQuery fallback also failed: {bigquery_error}")
+                return []
     
     def _supreme_judge_decision(self, invoice_data, candidates, classifier_verdict=None):
         """
