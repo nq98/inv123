@@ -2651,16 +2651,23 @@ def test_netsuite_connection():
         netsuite = NetSuiteService()
         result = netsuite.test_connection()
         
-        # Also ensure BigQuery tables have NetSuite fields
-        bigquery_service = BigQueryService()
-        bigquery_service.ensure_table_schema()
-        bigquery_service.ensure_invoices_table_with_netsuite()
+        # Try to ensure BigQuery tables have NetSuite fields (optional, non-critical)
+        bigquery_status = 'Not tested'
+        try:
+            bigquery_service = BigQueryService()
+            bigquery_service.ensure_table_schema()
+            bigquery_service.ensure_invoices_table_with_netsuite()
+            bigquery_status = 'NetSuite tracking fields ensured in BigQuery tables'
+        except Exception as bq_error:
+            print(f"❌ Error checking/creating BigQuery tables (non-critical): {bq_error}")
+            bigquery_status = f'BigQuery update skipped: {str(bq_error)[:100]}'
         
+        # Return NetSuite connection status (the main purpose of this endpoint)
         return jsonify({
             'success': result.get('connected', False),
             'connection_details': result,
             'message': 'NetSuite connection successful' if result.get('connected') else 'NetSuite connection failed',
-            'bigquery_status': 'NetSuite tracking fields ensured in BigQuery tables'
+            'bigquery_status': bigquery_status
         })
     except Exception as e:
         print(f"NetSuite test error: {e}")

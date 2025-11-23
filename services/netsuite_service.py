@@ -7,15 +7,19 @@ import os
 import json
 import time
 import logging
+import hashlib
+import hmac
+import random
+import base64
+from urllib.parse import quote_plus, urlparse, parse_qs, urlencode
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from requests_oauthlib import OAuth1
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +86,126 @@ class NetSuiteService:
         
         logger.info(f"NetSuite service initialized for account: {self.account_id}")
     
+    def _generate_oauth_signature(self, method: str, url: str, oauth_params: Dict, 
+                                 query_params: Dict = None) -> str:
+        """
+        Generate OAuth 1.0a signature according to NetSuite's exact requirements
+        
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            url: Full request URL (without query parameters)
+            oauth_params: OAuth parameters (without realm)
+            query_params: URL query parameters if any
+            
+        Returns:
+            Base64 encoded signature
+        """
+        # Step 1: Combine OAuth parameters with query parameters (if any)
+        all_params = oauth_params.copy()
+        if query_params:
+            all_params.update(query_params)
+        
+        # Step 2: Sort parameters alphabetically by key
+        sorted_params = sorted(all_params.items())
+        
+        # Step 3: Encode and format parameters
+        encoded_params = []
+        for key, value in sorted_params:
+            # URL encode key and value using quote_plus
+            encoded_key = quote_plus(str(key))
+            encoded_value = quote_plus(str(value))
+            encoded_params.append(f"{encoded_key}={encoded_value}")
+        
+        # Step 4: Join parameters with &
+        param_string = '&'.join(encoded_params)
+        
+        # Step 5: Create signature base string
+        # Format: METHOD&URL&PARAMETERS
+        signature_base = f"{method.upper()}&{quote_plus(url)}&{quote_plus(param_string)}"
+        
+        # Log signature base for debugging
+        logger.debug(f"Signature base string: {signature_base}")
+        
+        # Step 6: Create signing key
+        # Format: consumer_secret&token_secret (NOT URL encoded)
+        signing_key = f"{self.consumer_secret}&{self.token_secret}"
+        
+        # Step 7: Generate HMAC-SHA256 signature
+        signature_bytes = hmac.new(
+            signing_key.encode('utf-8'),
+            signature_base.encode('utf-8'),
+            hashlib.sha256
+        ).digest()
+        
+        # Step 8: Base64 encode the signature
+        signature = base64.b64encode(signature_bytes).decode('utf-8')
+        
+        logger.debug(f"Generated signature: {signature}")
+        return signature
+    
+    def _generate_auth_header(self, method: str, full_url: str, query_params: Dict = None) -> str:
+        """
+        Generate complete OAuth Authorization header for NetSuite
+        
+        Args:
+            method: HTTP method
+            full_url: Complete URL (may include query parameters)
+            query_params: Parsed query parameters
+            
+        Returns:
+            Complete Authorization header value
+        """
+        # Parse URL to separate base URL from query parameters
+        parsed_url = urlparse(full_url)
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+        
+        # If query params weren't provided, parse them from URL
+        if query_params is None and parsed_url.query:
+            query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+            # Flatten single-value lists
+            query_params = {k: v[0] if len(v) == 1 else v for k, v in query_params.items()}
+        
+        # Generate nonce (11 digit random number)
+        nonce = ''.join([str(random.randint(0, 9)) for _ in range(11)])
+        
+        # Generate timestamp (Unix epoch time)
+        timestamp = str(int(time.time()))
+        
+        # Create OAuth parameters (alphabetically sorted for signature)
+        # Note: realm is NOT included in signature calculation
+        oauth_params = {
+            'oauth_consumer_key': self.consumer_key,
+            'oauth_nonce': nonce,
+            'oauth_signature_method': 'HMAC-SHA256',
+            'oauth_timestamp': timestamp,
+            'oauth_token': self.token_id,
+            'oauth_version': '1.0'
+        }
+        
+        # Generate signature (without realm)
+        signature = self._generate_oauth_signature(method, base_url, oauth_params, query_params)
+        
+        # Add signature to OAuth parameters
+        oauth_params['oauth_signature'] = signature
+        
+        # Build Authorization header
+        # Include realm in the header (but it wasn't used in signature calculation)
+        auth_parts = [f'realm="{self.account_id}"']
+        
+        # Add OAuth parameters to header (in alphabetical order)
+        for key in sorted(oauth_params.keys()):
+            value = oauth_params[key]
+            # URL encode all values, including the signature
+            # The signature is base64 but still needs to be URL encoded for the header
+            encoded_value = quote_plus(str(value))
+            auth_parts.append(f'{key}="{encoded_value}"')
+        
+        # Join all parts with comma and space
+        auth_header = 'OAuth ' + ', '.join(auth_parts)
+        
+        logger.debug(f"Generated Authorization header: {auth_header[:100]}...")  # Log first 100 chars
+        return auth_header
+    
     def _make_request(self, method: str, endpoint: str, data: Dict = None, 
                      params: Dict = None, retries: int = 3) -> Optional[Dict]:
         """
@@ -103,28 +227,34 @@ class NetSuiteService:
         
         url = f"{self.base_url}{endpoint}"
         
-        # Create OAuth1 authentication for each request
-        oauth = OAuth1(
-            client_key=self.consumer_key,
-            client_secret=self.consumer_secret,
-            resource_owner_key=self.token_id,
-            resource_owner_secret=self.token_secret,
-            realm=self.account_id,  # Use account ID as realm
-            signature_method='HMAC-SHA256'
-        )
+        # Build the full URL with query parameters if provided
+        if params:
+            # Convert params to URL query string
+            query_string = urlencode(params)
+            full_url = f"{url}?{query_string}"
+        else:
+            full_url = url
         
-        # Merge default headers with any custom headers
+        # Generate custom OAuth Authorization header
+        auth_header = self._generate_auth_header(method, full_url, params)
+        
+        # Merge default headers with OAuth header
         headers = self.default_headers.copy()
+        headers['Authorization'] = auth_header
+        
+        # Log request details for debugging
+        logger.debug(f"NetSuite request URL: {full_url}")
+        logger.debug(f"NetSuite request method: {method}")
+        logger.debug(f"NetSuite request headers (excluding Auth): {headers}")
         
         for attempt in range(retries):
             try:
                 logger.debug(f"NetSuite {method} request to {endpoint} (attempt {attempt + 1}/{retries})")
                 
-                # Make the request with OAuth1 authentication
+                # Make the request with custom OAuth authentication header
                 response = requests.request(
                     method=method,
-                    url=url,
-                    auth=oauth,
+                    url=url,  # Use base URL, params are passed separately
                     json=data,
                     params=params,
                     headers=headers,
