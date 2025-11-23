@@ -292,7 +292,8 @@ class NetSuiteService:
         # Build the full URL with query parameters if provided
         if params:
             # Convert params to URL query string
-            query_string = urlencode(params)
+            # Use quote_plus=False to keep spaces as %20 not +
+            query_string = urlencode(params, quote_via=quote)
             full_url = f"{url}?{query_string}"
         else:
             full_url = url
