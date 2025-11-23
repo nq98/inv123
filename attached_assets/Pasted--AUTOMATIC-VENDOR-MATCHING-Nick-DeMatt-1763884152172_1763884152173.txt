@@ -1,0 +1,26 @@
+
+============================================================
+AUTOMATIC VENDOR MATCHING: Nick DeMatteo
+============================================================
+
+⚡ Starting automatic vendor matching for vendor: Nick DeMatteo
+
+🤖 Step 0: Semantic Entity Classification
+------------------------------------------------------------
+🤖 Entity Classification: VENDOR (HIGH)
+   Reasoning: The name 'Nick DeMatteo' with a phone number suggests an individual providing a service. Since the context is invoice processing, it's highly likely Nick DeMatteo is a freelancer or contractor providing services for payment, thus classifying as a vendor.
+✓ Entity is valid vendor, proceeding with matching...
+🔍 Starting vendor matching for: Nick DeMatteo
+🔎 Step 1: Semantic search for 'Nick DeMatteo' (country: United States)...
+⚠️ Error checking rejected entities: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+Error searching vendor: 404 DataStore projects/437918215047/locations/global/collections/default_collection/dataStores/invoices-ds not found.
+⚠️ Vertex Search returned no results (may have failed silently)
+🔄 Triggering BigQuery fallback for 'Nick DeMatteo'...
+✅ BigQuery fallback found 1 candidates
+📋 Found 1 semantic candidates
+⚖️ Step 2: Invoking Supreme Judge (Gemini 1.5 Pro)...
+📊 Final verdict: MATCH (confidence: 0.90)
+✓ Fetching database vendor details for AUTO_NICK_DEMATTEO_11...
+✓ Vendor matching complete: MATCH
+❌ Error inserting invoice: 404 POST https://bigquery.googleapis.com/bigquery/v2/projects/invoicereader-477008/datasets/vendors_ai/tables/invoices/insertAll?prettyPrint=false: Not found: Table invoicereader-477008:vendors_ai.invoices
+10.83.5.142 - - [23/Nov/2025:07:48:56 +0000] "POST /upload HTTP/1.1" 200 8840 "https://75bd8e64-74c3-4cba-a6bc-f00d155715e0-00-286n65r8swcy1.janeway.replit.dev/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"

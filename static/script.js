@@ -117,6 +117,18 @@ function updateStepsList(containerId, steps) {
 }
 
 /**
+ * Escape HTML special characters to prevent XSS
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text
+ */
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
  * Generate HTML for Gmail filtering funnel
  * @param {Object} stats - Statistics object
  * @returns {string} HTML string for filtering funnel
