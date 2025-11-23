@@ -2791,11 +2791,26 @@ def create_vendor_in_netsuite(vendor_id):
         netsuite = NetSuiteService()
         
         # Prepare vendor data for NetSuite with correct field names for create_vendor_only
+        # Handle both List (BigQuery ARRAY) and String (legacy) formats for emails and phones
+        email_val = vendor.get('emails')
+        primary_email = None
+        if isinstance(email_val, list) and len(email_val) > 0:
+            primary_email = email_val[0]
+        elif isinstance(email_val, str) and email_val:
+            primary_email = email_val.split(',')[0]
+        
+        phone_val = vendor.get('phone_numbers')
+        primary_phone = None
+        if isinstance(phone_val, list) and len(phone_val) > 0:
+            primary_phone = phone_val[0]
+        elif isinstance(phone_val, str) and phone_val:
+            primary_phone = phone_val.split(',')[0]
+        
         vendor_data = {
             'externalId': f"{vendor_id}_created_{int(datetime.now().timestamp())}",
             'companyName': vendor.get('global_name', ''),  # Use global_name
-            'email': vendor.get('emails', '').split(',')[0] if vendor.get('emails') else None,
-            'phone': vendor.get('phone_numbers', '').split(',')[0] if vendor.get('phone_numbers') else None,
+            'email': primary_email,
+            'phone': primary_phone,
             'taxId': vendor.get('tax_id'),
             'isPerson': False,
             'subsidiary': {'id': '2'}
@@ -2858,10 +2873,18 @@ def update_vendor_in_netsuite(vendor_id):
         netsuite = NetSuiteService()
         
         # Prepare vendor data
+        # Handle both List (BigQuery ARRAY) and String (legacy) formats for email
+        email_val = vendor.get('emails')
+        primary_email = None
+        if isinstance(email_val, list) and len(email_val) > 0:
+            primary_email = email_val[0]
+        elif isinstance(email_val, str) and email_val:
+            primary_email = email_val.split(',')[0]
+        
         vendor_data = {
             'name': vendor.get('global_name', ''),
             'external_id': vendor_id,
-            'email': vendor.get('emails', [''])[0] if vendor.get('emails') else None
+            'email': primary_email
         }
         
         # Extract additional data
