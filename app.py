@@ -1343,7 +1343,7 @@ def gmail_import_stream():
                     
                     # Process links
                     for link_url in links[:2]:  # Limit to first 2 links per email
-                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Downloading from link...'})
+                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Downloading from link: {link_url[:80]}...'})
                         
                         pdf_result = gmail_service.download_pdf_from_link(link_url)
                         
@@ -1389,6 +1389,9 @@ def gmail_import_stream():
                                     'line_items': validated.get('lineItems', []),
                                     'full_data': validated
                                 })
+                        else:
+                            # Download failed - show why
+                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Download failed: Link not a direct PDF or requires authentication'})
                     
                 except Exception as e:
                     yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
