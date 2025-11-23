@@ -1145,20 +1145,43 @@ def gmail_import_stream():
             email = credentials.get('email', 'Gmail account')
             yield send_event('progress', {'type': 'status', 'message': f'Connected to {email}'})
             
-            # Get total inbox count within selected time range
+            # Get ACCURATE total count by fetching all message IDs in time range
             from datetime import datetime, timedelta
             after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
-            try:
-                inbox_total_result = service.users().messages().list(
-                    userId='me',
-                    q=f'after:{after_date}',
-                    maxResults=1
-                ).execute()
-                total_inbox_count = inbox_total_result.get('resultSizeEstimate', 0)
-            except:
-                total_inbox_count = 0
+            yield send_event('progress', {'type': 'status', 'message': f'\n📊 Counting total emails in last {time_label}...'})
             
-            yield send_event('progress', {'type': 'status', 'message': f'\n📬 Total emails in selected time range ({time_label}): {total_inbox_count:,} emails'})
+            try:
+                # Paginate through ALL emails in time range to get accurate count
+                all_messages = []
+                page_token = None
+                
+                while True:
+                    params = {
+                        'userId': 'me',
+                        'q': f'after:{after_date}',
+                        'maxResults': 500  # Max per page
+                    }
+                    if page_token:
+                        params['pageToken'] = page_token
+                    
+                    response = service.users().messages().list(**params).execute()
+                    messages_page = response.get('messages', [])
+                    all_messages.extend(messages_page)
+                    
+                    page_token = response.get('nextPageToken')
+                    if not page_token:
+                        break
+                    
+                    # Show progress for large mailboxes
+                    if len(all_messages) % 1000 == 0:
+                        yield send_event('progress', {'type': 'status', 'message': f'  Counted {len(all_messages):,} emails so far...'})
+                
+                total_inbox_count = len(all_messages)
+            except Exception as e:
+                total_inbox_count = 0
+                yield send_event('progress', {'type': 'status', 'message': f'⚠️ Could not count emails: {str(e)}'})
+            
+            yield send_event('progress', {'type': 'status', 'message': f'📬 Total emails in selected time range ({time_label}): {total_inbox_count:,} emails'})
             
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
