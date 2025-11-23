@@ -1403,6 +1403,43 @@ def gmail_import_stream():
                             total = totals.get('total', 0)
                             currency = validated.get('currency', 'USD')
                             
+                            # Save to BigQuery if extraction succeeded
+                            if invoice_result.get('status') == 'completed' and validated:
+                                invoice_id = validated.get('invoiceId', 'Unknown')
+                                total_amount = validated.get('totalAmount', 0)
+                                currency_code = validated.get('currencyCode', 'USD')
+                                invoice_date = validated.get('invoiceDate', None)
+                                
+                                invoice_data = {
+                                    'invoice_id': invoice_id,
+                                    'vendor_id': None,
+                                    'vendor_name': vendor,
+                                    'client_id': 'default_client',
+                                    'amount': total_amount,
+                                    'currency': currency_code,
+                                    'invoice_date': invoice_date,
+                                    'status': 'unmatched',
+                                    'gcs_uri': invoice_result.get('gcs_uri'),
+                                    'file_type': invoice_result.get('file_type'),
+                                    'file_size': invoice_result.get('file_size'),
+                                    'metadata': {
+                                        'file_name': invoice_result.get('file_name'),
+                                        'validated_data': validated,
+                                        'gmail_metadata': {
+                                            'subject': subject,
+                                            'from': sender,
+                                            'date': metadata.get('date'),
+                                            'source_type': link_type
+                                        }
+                                    }
+                                }
+                                
+                                try:
+                                    bigquery_service = get_bigquery_service()
+                                    bigquery_service.insert_invoice(invoice_data)
+                                except Exception as bq_error:
+                                    print(f"⚠️ Warning: Could not save Gmail invoice to BigQuery: {bq_error}")
+                            
                             if vendor and vendor != 'Unknown' and total and total > 0:
                                 source_label = '📸 Screenshot' if link_type == 'screenshot' else '🔗 Link'
                                 yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
@@ -1534,6 +1571,49 @@ def gmail_import():
                         invoice_result = processor.process_local_file(filepath, 'application/pdf')
                         
                         os.remove(filepath)
+                        
+                        # Save to BigQuery if extraction succeeded
+                        if invoice_result.get('status') == 'completed' and 'validated_data' in invoice_result:
+                            validated_data = invoice_result.get('validated_data', {})
+                            
+                            # Extract invoice data
+                            invoice_id = validated_data.get('invoiceId', 'Unknown')
+                            total_amount = validated_data.get('totalAmount', 0)
+                            currency_code = validated_data.get('currencyCode', 'USD')
+                            invoice_date = validated_data.get('invoiceDate', None)
+                            vendor_data = validated_data.get('vendor', {})
+                            vendor_name = vendor_data.get('name', 'Unknown')
+                            
+                            # Prepare invoice data for BigQuery
+                            invoice_data = {
+                                'invoice_id': invoice_id,
+                                'vendor_id': None,  # Not doing vendor matching in Gmail import for now
+                                'vendor_name': vendor_name,
+                                'client_id': 'default_client',
+                                'amount': total_amount,
+                                'currency': currency_code,
+                                'invoice_date': invoice_date,
+                                'status': 'unmatched',
+                                'gcs_uri': invoice_result.get('gcs_uri'),
+                                'file_type': invoice_result.get('file_type'),
+                                'file_size': invoice_result.get('file_size'),
+                                'metadata': {
+                                    'file_name': invoice_result.get('file_name'),
+                                    'validated_data': validated_data,
+                                    'gmail_metadata': {
+                                        'subject': metadata.get('subject'),
+                                        'from': metadata.get('from'),
+                                        'date': metadata.get('date')
+                                    }
+                                }
+                            }
+                            
+                            # Insert into BigQuery
+                            try:
+                                bigquery_service = get_bigquery_service()
+                                bigquery_service.insert_invoice(invoice_data)
+                            except Exception as e:
+                                print(f"⚠️ Warning: Could not save Gmail invoice to BigQuery: {e}")
                         
                         results['processed'].append({
                             'gmail_id': msg_ref['id'],
