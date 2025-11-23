@@ -942,6 +942,57 @@ body {
     color: #92400e;
 }
 
+/* ========== EVIDENCE BREAKDOWN ========== */
+.evidence-tier-title {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.evidence-tier-title.gold {
+    color: #FF8C00;
+}
+
+.evidence-tier-title.silver {
+    color: #808080;
+}
+
+.evidence-tier-title.bronze {
+    color: #CD7F32;
+}
+
+.evidence-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.evidence-item.gold {
+    background: linear-gradient(135deg, #FFF9E6 0%, #FFEDCC 100%);
+    border: 1px solid #FFD700;
+}
+
+.evidence-item.silver {
+    background: linear-gradient(135deg, #F5F5F5 0%, #E8E8E8 100%);
+    border: 1px solid #C0C0C0;
+}
+
+.evidence-item.bronze {
+    background: linear-gradient(135deg, #FFF5F0 0%, #FFE8DD 100%);
+    border: 1px solid #CD7F32;
+}
+
+.confidence-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: 5px;
+}
+
 /* ========== LAYER PIPELINE ========== */
 .layer-pipeline {
     margin: 20px 0;

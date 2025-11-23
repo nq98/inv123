@@ -48,6 +48,186 @@ def cleanup_old_uploads():
     if to_delete:
         print(f"🧹 Cleaned up {len(to_delete)} old CSV uploads")
 
+def parse_evidence_breakdown(reasoning, invoice_vendor, database_vendor, confidence, verdict):
+    """
+    Parse Supreme Judge reasoning to generate evidence breakdown
+    
+    Args:
+        reasoning: Supreme Judge reasoning text
+        invoice_vendor: Invoice vendor data dict
+        database_vendor: Database vendor data dict
+        confidence: Overall confidence score (0.0-1.0)
+        verdict: Match verdict (MATCH, NEW_VENDOR, etc.)
+    
+    Returns:
+        dict: Evidence breakdown with tiers and field-level analysis
+    """
+    if not reasoning:
+        return None
+    
+    reasoning_lower = reasoning.lower()
+    
+    # Initialize evidence structure
+    evidence = {
+        'gold_tier': [],
+        'silver_tier': [],
+        'bronze_tier': [],
+        'total_confidence': round(confidence * 100, 1)
+    }
+    
+    # Helper function to check if a field was mentioned and matched
+    def check_field_match(field_keywords, field_name):
+        for keyword in field_keywords:
+            if keyword in reasoning_lower and ('match' in reasoning_lower or 'same' in reasoning_lower or 'identical' in reasoning_lower):
+                return True
+        return False
+    
+    # GOLD TIER EVIDENCE (Definitive Proof)
+    # Tax ID Match
+    if invoice_vendor.get('tax_id') and invoice_vendor['tax_id'] != 'Unknown':
+        if check_field_match(['tax id', 'vat', 'ein', 'tax number'], 'Tax ID'):
+            inv_tax = invoice_vendor.get('tax_id', 'Unknown')
+            db_tax = database_vendor.get('tax_id', 'Unknown') if database_vendor else 'Unknown'
+            evidence['gold_tier'].append({
+                'field': 'Tax ID',
+                'matched': True,
+                'invoice_value': inv_tax,
+                'database_value': db_tax,
+                'confidence_contribution': 50.0,
+                'icon': '✅'
+            })
+        elif database_vendor and database_vendor.get('tax_id'):
+            evidence['bronze_tier'].append({
+                'field': 'Tax ID',
+                'matched': False,
+                'reason': 'Not matched in reasoning',
+                'confidence_contribution': 0.0,
+                'icon': '❌'
+            })
+    else:
+        evidence['bronze_tier'].append({
+            'field': 'Tax ID',
+            'matched': False,
+            'reason': 'Unknown on both sides',
+            'confidence_contribution': 0.0,
+            'icon': '❌'
+        })
+    
+    # Name Match
+    if invoice_vendor.get('name') and invoice_vendor['name'] != 'Unknown':
+        if check_field_match(['name', 'company name', 'vendor name'], 'Name'):
+            inv_name = invoice_vendor.get('name', 'Unknown')
+            db_name = database_vendor.get('name', 'Unknown') if database_vendor else 'Unknown'
+            evidence['gold_tier'].append({
+                'field': 'Name',
+                'matched': True,
+                'invoice_value': inv_name,
+                'database_value': db_name,
+                'confidence_contribution': 40.0,
+                'icon': '✅'
+            })
+        elif verdict == 'NEW_VENDOR':
+            evidence['bronze_tier'].append({
+                'field': 'Name',
+                'matched': False,
+                'reason': 'New vendor - not in database',
+                'confidence_contribution': 0.0,
+                'icon': '❌'
+            })
+    
+    # Address Match
+    if invoice_vendor.get('address') and invoice_vendor['address'] != 'Unknown':
+        if check_field_match(['address', 'location', 'street'], 'Address'):
+            inv_addr = invoice_vendor.get('address', 'Unknown')
+            db_addr = database_vendor.get('address', 'Unknown') if database_vendor else 'Unknown'
+            evidence['silver_tier'].append({
+                'field': 'Address',
+                'matched': True,
+                'invoice_value': inv_addr[:50] + '...' if len(inv_addr) > 50 else inv_addr,
+                'database_value': db_addr[:50] + '...' if len(db_addr) > 50 else db_addr,
+                'confidence_contribution': 30.0,
+                'icon': '✅'
+            })
+        elif database_vendor and database_vendor.get('address'):
+            evidence['bronze_tier'].append({
+                'field': 'Address',
+                'matched': False,
+                'reason': 'Not matched in reasoning',
+                'confidence_contribution': 0.0,
+                'icon': '❌'
+            })
+    else:
+        evidence['bronze_tier'].append({
+            'field': 'Address',
+            'matched': False,
+            'reason': 'Not available in invoice',
+            'confidence_contribution': 0.0,
+            'icon': '❌'
+        })
+    
+    # SILVER TIER EVIDENCE (Strong Evidence)
+    # Email Domain Match
+    if invoice_vendor.get('email') and invoice_vendor['email'] != 'Unknown':
+        if check_field_match(['email', 'domain', '@'], 'Email'):
+            inv_email = invoice_vendor.get('email', 'Unknown')
+            db_email = database_vendor.get('email', 'Unknown') if database_vendor else 'Unknown'
+            evidence['silver_tier'].append({
+                'field': 'Email Domain',
+                'matched': True,
+                'invoice_value': inv_email,
+                'database_value': db_email,
+                'confidence_contribution': 20.0,
+                'icon': '✅'
+            })
+        else:
+            evidence['silver_tier'].append({
+                'field': 'Email Domain',
+                'matched': False,
+                'reason': 'Not matched',
+                'confidence_contribution': 0.0,
+                'icon': '❌'
+            })
+    else:
+        evidence['silver_tier'].append({
+            'field': 'Email Domain',
+            'matched': False,
+            'reason': 'Not available in invoice',
+            'confidence_contribution': 0.0,
+            'icon': '❌'
+        })
+    
+    # Phone Match
+    if invoice_vendor.get('phone') and invoice_vendor['phone'] != 'Unknown':
+        if check_field_match(['phone', 'telephone', 'contact'], 'Phone'):
+            inv_phone = invoice_vendor.get('phone', 'Unknown')
+            db_phone = database_vendor.get('phone', 'Unknown') if database_vendor else 'Unknown'
+            evidence['silver_tier'].append({
+                'field': 'Phone',
+                'matched': True,
+                'invoice_value': inv_phone,
+                'database_value': db_phone,
+                'confidence_contribution': 15.0,
+                'icon': '✅'
+            })
+        else:
+            evidence['silver_tier'].append({
+                'field': 'Phone',
+                'matched': False,
+                'reason': 'Not matched',
+                'confidence_contribution': 0.0,
+                'icon': '❌'
+            })
+    else:
+        evidence['silver_tier'].append({
+            'field': 'Phone',
+            'matched': False,
+            'reason': 'Not available in invoice',
+            'confidence_contribution': 0.0,
+            'icon': '❌'
+        })
+    
+    return evidence
+
 _processor = None
 _gmail_service = None
 _token_storage = None
@@ -417,6 +597,17 @@ def upload_invoice():
                         except Exception as e:
                             print(f"⚠️ Warning: Could not fetch database vendor details: {e}")
                             vendor_match_result['database_vendor_error'] = str(e)
+                    
+                    # Generate evidence breakdown
+                    evidence_breakdown = parse_evidence_breakdown(
+                        reasoning=match_result.get('reasoning', ''),
+                        invoice_vendor=vendor_match_result['invoice_vendor'],
+                        database_vendor=vendor_match_result.get('database_vendor'),
+                        confidence=match_result.get('confidence', 0.0),
+                        verdict=verdict
+                    )
+                    if evidence_breakdown:
+                        vendor_match_result['evidence_breakdown'] = evidence_breakdown
                     
                     print(f"✓ Vendor matching complete: {match_result.get('verdict')}")
                 

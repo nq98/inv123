@@ -1077,6 +1077,100 @@ function displayResults(data) {
                     <p style="margin: 0; color: #555; font-size: 14px; line-height: 1.6;">${reasoning}</p>
                 </div>
                 
+                <!-- Evidence Breakdown Panel -->
+                ${vendorMatch.evidence_breakdown ? `
+                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <span style="font-size: 16px; margin-right: 8px;">🔍</span>
+                        <strong style="color: #4caf50;">Evidence Analysis</strong>
+                    </div>
+                    <div style="border-bottom: 2px solid #e0e0e0; margin-bottom: 15px;"></div>
+                    
+                    <!-- Gold Tier Evidence -->
+                    ${vendorMatch.evidence_breakdown.gold_tier && vendorMatch.evidence_breakdown.gold_tier.length > 0 ? `
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 20px; margin-right: 8px;">🥇</span>
+                            <strong class="evidence-tier-title gold">GOLD TIER EVIDENCE</strong>
+                            <span style="margin-left: 8px; font-size: 12px; color: #666;">(Definitive Proof)</span>
+                        </div>
+                        ${vendorMatch.evidence_breakdown.gold_tier.map(evidence => `
+                            <div class="evidence-item gold">
+                                <div style="display: flex; align-items: flex-start; margin-bottom: 5px;">
+                                    <span style="font-size: 16px; margin-right: 8px;">${evidence.icon}</span>
+                                    <div style="flex: 1;">
+                                        <strong>${evidence.field} Match:</strong> 
+                                        <span style="color: #555;">"${escapeHtml(evidence.invoice_value)}" == "${escapeHtml(evidence.database_value)}"</span>
+                                    </div>
+                                </div>
+                                <div style="margin-left: 24px; font-size: 13px; color: #666;">
+                                    Confidence: <span class="confidence-badge" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #000;">+${evidence.confidence_contribution.toFixed(1)}%</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Silver Tier Evidence -->
+                    ${vendorMatch.evidence_breakdown.silver_tier && vendorMatch.evidence_breakdown.silver_tier.length > 0 ? `
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 20px; margin-right: 8px;">🥈</span>
+                            <strong class="evidence-tier-title silver">SILVER TIER EVIDENCE</strong>
+                            <span style="margin-left: 8px; font-size: 12px; color: #666;">(Strong Evidence)</span>
+                        </div>
+                        ${vendorMatch.evidence_breakdown.silver_tier.map(evidence => `
+                            <div class="evidence-item silver">
+                                <div style="display: flex; align-items: flex-start;">
+                                    <span style="font-size: 16px; margin-right: 8px;">${evidence.icon}</span>
+                                    <div style="flex: 1;">
+                                        <strong>${evidence.field}:</strong> 
+                                        ${evidence.matched ? 
+                                            `<span style="color: #555;">"${escapeHtml(evidence.invoice_value)}" == "${escapeHtml(evidence.database_value)}"</span>` :
+                                            `<span style="color: #999;">${evidence.reason}</span>`
+                                        }
+                                    </div>
+                                </div>
+                                ${evidence.matched ? `
+                                <div style="margin-left: 24px; font-size: 13px; color: #666; margin-top: 5px;">
+                                    Confidence: <span class="confidence-badge" style="background: linear-gradient(135deg, #C0C0C0 0%, #A8A8A8 100%); color: #000;">+${evidence.confidence_contribution.toFixed(1)}%</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Bronze Tier Evidence -->
+                    ${vendorMatch.evidence_breakdown.bronze_tier && vendorMatch.evidence_breakdown.bronze_tier.length > 0 ? `
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 20px; margin-right: 8px;">🥉</span>
+                            <strong class="evidence-tier-title bronze">BRONZE TIER EVIDENCE</strong>
+                            <span style="margin-left: 8px; font-size: 12px; color: #666;">(Circumstantial)</span>
+                        </div>
+                        ${vendorMatch.evidence_breakdown.bronze_tier.map(evidence => `
+                            <div class="evidence-item bronze">
+                                <div style="display: flex; align-items: flex-start;">
+                                    <span style="font-size: 16px; margin-right: 8px;">${evidence.icon}</span>
+                                    <div style="flex: 1;">
+                                        <strong>${evidence.field}:</strong> 
+                                        <span style="color: #999;">${evidence.reason}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Total Confidence -->
+                    <div style="border-top: 2px solid #e0e0e0; padding-top: 15px; text-align: center;">
+                        <strong style="font-size: 16px; color: #333;">TOTAL CONFIDENCE: </strong>
+                        <span style="font-size: 20px; font-weight: bold; color: #4caf50;">${vendorMatch.evidence_breakdown.total_confidence}%</span>
+                    </div>
+                </div>
+                ` : ''}
+                
                 <!-- Action Buttons -->
                 <div style="display: flex; gap: 10px; justify-content: flex-end;">
                     ${verdict === 'MATCH' ? `
