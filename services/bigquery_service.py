@@ -515,6 +515,13 @@ class BigQueryService:
                 pass  # Columns may already exist
             
             # Prepare the row data
+            # Convert metadata dict to JSON string for BigQuery STRING column
+            metadata_value = invoice_data.get("metadata", {})
+            if isinstance(metadata_value, dict):
+                metadata_json = json.dumps(metadata_value)
+            else:
+                metadata_json = json.dumps({})
+            
             row = {
                 "invoice_id": invoice_data.get("invoice_id"),
                 "vendor_id": invoice_data.get("vendor_id"),
@@ -527,7 +534,7 @@ class BigQueryService:
                 "gcs_uri": invoice_data.get("gcs_uri"),
                 "file_type": invoice_data.get("file_type"),
                 "file_size": invoice_data.get("file_size"),
-                "metadata": invoice_data.get("metadata", {})  # Direct dict, not JSON string
+                "metadata": metadata_json  # JSON string for BigQuery
             }
             
             # Insert the row
