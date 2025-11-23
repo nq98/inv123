@@ -2989,18 +2989,19 @@ def create_invoice_in_netsuite(invoice_id):
                         primary_phone = phone_val.split(',')[0]
                     
                     vendor_sync_data = {
-                        'externalId': f"{vendor_id}_auto_{int(datetime.now().timestamp())}",
-                        'companyName': vendor.get('global_name', ''),
+                        'vendor_id': vendor_id,  # BigQuery vendor ID
+                        'name': vendor.get('global_name', ''),
                         'email': primary_email,
                         'phone': primary_phone,
-                        'taxId': vendor.get('tax_id'),
-                        'isPerson': False,
-                        'subsidiary': {'id': '2'}
+                        'tax_id': vendor.get('tax_id'),
+                        'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
+                        'address': vendor.get('address')  # Optional address
                     }
                     
-                    sync_result = netsuite.create_vendor_only(vendor_sync_data)
-                    if sync_result and sync_result.get('id'):
-                        netsuite_vendor_id = sync_result.get('id')
+                    # Use the correct sync_vendor method with 'create' mode
+                    sync_result = netsuite.sync_vendor(vendor_sync_data, mode='create')
+                    if sync_result and sync_result.get('success'):
+                        netsuite_vendor_id = sync_result.get('netsuite_id')
                         # Update BigQuery with the new ID immediately
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
@@ -3118,18 +3119,19 @@ def update_invoice_in_netsuite(invoice_id):
                         primary_phone = phone_val.split(',')[0]
                     
                     vendor_sync_data = {
-                        'externalId': f"{vendor_id}_auto_{int(datetime.now().timestamp())}",
-                        'companyName': vendor.get('global_name', ''),
+                        'vendor_id': vendor_id,  # BigQuery vendor ID
+                        'name': vendor.get('global_name', ''),
                         'email': primary_email,
                         'phone': primary_phone,
-                        'taxId': vendor.get('tax_id'),
-                        'isPerson': False,
-                        'subsidiary': {'id': '2'}
+                        'tax_id': vendor.get('tax_id'),
+                        'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
+                        'address': vendor.get('address')  # Optional address
                     }
                     
-                    sync_result = netsuite.create_vendor_only(vendor_sync_data)
-                    if sync_result and sync_result.get('id'):
-                        netsuite_vendor_id = sync_result.get('id')
+                    # Use the correct sync_vendor method with 'create' mode
+                    sync_result = netsuite.sync_vendor(vendor_sync_data, mode='create')
+                    if sync_result and sync_result.get('success'):
+                        netsuite_vendor_id = sync_result.get('netsuite_id')
                         # Update BigQuery with the new ID immediately
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
