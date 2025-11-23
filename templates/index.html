@@ -4,135 +4,59 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enterprise Invoice Extraction System</title>
-    <link rel="stylesheet" href="/static/style.css?v=9">
+    <link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
-    <!-- Mobile-First Header -->
-    <header class="app-header">
-        <div class="header-content">
-            <h1 class="app-title">🧾 Invoice AI</h1>
-            <p class="app-subtitle">4-Layer Hybrid Intelligence</p>
+    <!-- Main Navigation Header -->
+    <header class="main-navigation">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1 class="brand-title">🧾 Invoice AI</h1>
+                <span class="brand-subtitle">4-Layer Hybrid Intelligence</span>
+            </div>
+            <nav class="nav-tabs">
+                <a href="/" class="nav-link active" data-tab="invoices">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-text">Invoices</span>
+                </a>
+                <a href="/#vendors" class="nav-link" data-tab="vendors">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Vendors</span>
+                </a>
+                <a href="/#matching" class="nav-link" data-tab="matching">
+                    <span class="nav-icon">🔗</span>
+                    <span class="nav-text">Matching</span>
+                </a>
+                <a href="/#gmail" class="nav-link" data-tab="gmail">
+                    <span class="nav-icon">📧</span>
+                    <span class="nav-text">Gmail</span>
+                </a>
+                <a href="/netsuite-dashboard" class="nav-link">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">NetSuite</span>
+                </a>
+                <a href="/#generate" class="nav-link" data-tab="generate">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-text">Generate</span>
+                </a>
+                <a href="/#api-docs" class="nav-link" data-tab="api-docs">
+                    <span class="nav-icon">🔧</span>
+                    <span class="nav-text">API</span>
+                </a>
+            </nav>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <svg class="nav-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M3 12h18M3 6h18M3 18h18"></path>
+                </svg>
+            </button>
         </div>
     </header>
-
-    <!-- Tab Navigation -->
-    <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="invoices">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            <span class="tab-label">Invoices</span>
-        </button>
-        <button class="tab-btn" data-tab="vendors">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-            </svg>
-            <span class="tab-label">Vendors</span>
-        </button>
-        <button class="tab-btn" data-tab="matching">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                <path d="M2 17l10 5 10-5"></path>
-                <path d="M2 12l10 5 10-5"></path>
-            </svg>
-            <span class="tab-label">Matching</span>
-        </button>
-        <a href="/netsuite-dashboard" class="tab-btn" style="text-decoration: none;">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M23 12l-2.44-2.78.34-3.68-3.61-.82-1.89-3.18L12 3 8.6 1.54 6.71 4.72l-3.61.81.34 3.68L1 12l2.44 2.78-.34 3.69 3.61.82 1.89 3.18L12 21l3.4 1.46 1.89-3.18 3.61-.82-.34-3.68L23 12z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-            <span class="tab-label">NetSuite</span>
-        </a>
-        <button class="tab-btn" data-tab="api-docs">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M16 18l2-2-2-2M8 6l-2 2 2 2M12 2v20"></path>
-                <path d="M3 12h18"></path>
-            </svg>
-            <span class="tab-label">API</span>
-        </button>
-        <button class="tab-btn" data-tab="generate">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M12 5v14"></path>
-                <path d="M5 12h14"></path>
-                <circle cx="12" cy="12" r="10"></circle>
-            </svg>
-            <span class="tab-label">Generate Invoice</span>
-        </button>
-    </nav>
 
     <!-- Tab Content Container -->
     <main class="tab-content-container">
         
         <!-- ==================== INVOICES TAB ==================== -->
         <div class="tab-content active" id="tab-invoices">
-            
-            <!-- Gmail Import Section -->
-            <section class="card">
-                <div class="card-header">
-                    <h2 class="card-title">📧 Import from Gmail</h2>
-                    <p class="card-desc">Scan your inbox for invoices & receipts</p>
-                </div>
-                
-                <div id="gmailStatus" class="status-banner"></div>
-                
-                <div id="gmailConnectSection">
-                    <button id="gmailConnectBtn" class="btn btn-primary btn-full">
-                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                            <polyline points="22,6 12,13 2,6"></polyline>
-                        </svg>
-                        Connect Gmail
-                    </button>
-                </div>
-                
-                <div id="gmailImportSection" class="hidden">
-                    <div class="form-group">
-                        <label for="gmailTimeRange" class="form-label">⏰ Scan emails from:</label>
-                        <select id="gmailTimeRange" class="form-select">
-                            <option value="1">Last 24 hours</option>
-                            <option value="7" selected>Last 7 days</option>
-                            <option value="14">Last 14 days</option>
-                            <option value="30">Last 30 days</option>
-                            <option value="60">Last 60 days</option>
-                            <option value="90">Last 90 days</option>
-                            <option value="180">Last 6 months</option>
-                            <option value="365">Last year</option>
-                            <option value="9999">All time</option>
-                        </select>
-                    </div>
-                    
-                    <div class="button-group">
-                        <button id="gmailImportBtn" class="btn btn-primary">
-                            🔍 Start Smart Scan
-                        </button>
-                        <button id="gmailDisconnectBtn" class="btn btn-secondary">
-                            Disconnect
-                        </button>
-                    </div>
-                    
-                    <!-- Real-time Progress Terminal -->
-                    <div id="gmailProgressTerminal" class="hidden terminal-window">
-                        <div class="terminal-header">
-                            <div class="terminal-title">📧 Gmail Invoice Scanner - Live Progress</div>
-                            <button id="minimizeTerminal" class="terminal-minimize">Minimize</button>
-                        </div>
-                        <div class="terminal-body" id="terminalOutput"></div>
-                    </div>
-                    
-                    <div id="gmailImportResults"></div>
-                    
-                    <!-- Import History -->
-                    <div id="gmailImportHistory" class="hidden">
-                        <h3 class="section-title">📜 Import History</h3>
-                        <div id="historyList"></div>
-                    </div>
-                </div>
-            </section>
             
             <!-- Upload Invoice Section -->
             <section class="card">
@@ -380,6 +304,74 @@
                 </div>
                 
                 <div id="matchResults" class="card hidden"></div>
+            </section>
+            
+        </div>
+        
+        <!-- ==================== GMAIL TAB ==================== -->
+        <div class="tab-content" id="tab-gmail">
+            
+            <!-- Gmail Import Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📧 Import from Gmail</h2>
+                    <p class="card-desc">Automatically scan and import invoices from your Gmail inbox</p>
+                </div>
+                
+                <div id="gmailStatus" class="status-banner"></div>
+                
+                <div id="gmailConnectSection">
+                    <button id="gmailConnectBtn" class="btn btn-primary btn-full">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                            <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                        Connect Gmail
+                    </button>
+                </div>
+                
+                <div id="gmailImportSection" class="hidden">
+                    <div class="form-group">
+                        <label for="gmailTimeRange" class="form-label">⏰ Scan emails from:</label>
+                        <select id="gmailTimeRange" class="form-select">
+                            <option value="1">Last 24 hours</option>
+                            <option value="7" selected>Last 7 days</option>
+                            <option value="14">Last 14 days</option>
+                            <option value="30">Last 30 days</option>
+                            <option value="60">Last 60 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="180">Last 6 months</option>
+                            <option value="365">Last year</option>
+                            <option value="9999">All time</option>
+                        </select>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="gmailImportBtn" class="btn btn-primary">
+                            🔍 Start Smart Scan
+                        </button>
+                        <button id="gmailDisconnectBtn" class="btn btn-secondary">
+                            Disconnect
+                        </button>
+                    </div>
+                    
+                    <!-- Real-time Progress Terminal -->
+                    <div id="gmailProgressTerminal" class="hidden terminal-window">
+                        <div class="terminal-header">
+                            <div class="terminal-title">📧 Gmail Invoice Scanner - Live Progress</div>
+                            <button id="minimizeTerminal" class="terminal-minimize">Minimize</button>
+                        </div>
+                        <div class="terminal-body" id="terminalOutput"></div>
+                    </div>
+                    
+                    <div id="gmailImportResults"></div>
+                    
+                    <!-- Import History -->
+                    <div id="gmailImportHistory" class="hidden">
+                        <h3 class="section-title">📜 Import History</h3>
+                        <div id="historyList"></div>
+                    </div>
+                </div>
             </section>
             
         </div>

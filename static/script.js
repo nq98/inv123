@@ -2,30 +2,108 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 DOM Content Loaded - Initializing Invoice AI...');
     
-    const tabButtons = document.querySelectorAll('.tab-btn');
+    // New navigation system with hash-based routing
+    const navLinks = document.querySelectorAll('.nav-link[data-tab]');
     const tabContents = document.querySelectorAll('.tab-content');
+    const navToggle = document.getElementById('navToggle');
+    const navTabs = document.querySelector('.nav-tabs');
     
-    tabButtons.forEach(button => {
-        button.addEventListener('click', function() {
+    // Function to switch tabs
+    function switchTab(tabName) {
+        // Remove active class from all nav links and contents
+        navLinks.forEach(link => link.classList.remove('active'));
+        tabContents.forEach(content => content.classList.remove('active'));
+        
+        // Add active class to matching nav link and content
+        const activeLink = document.querySelector(`.nav-link[data-tab="${tabName}"]`);
+        const targetContent = document.getElementById(`tab-${tabName}`);
+        
+        if (activeLink && targetContent) {
+            activeLink.classList.add('active');
+            targetContent.classList.add('active');
+            
+            // Initialize Generate Invoice tab if it's selected
+            if (tabName === 'generate') {
+                initializeInvoiceGeneration();
+            }
+            
+            // Close mobile menu after selection
+            if (navTabs && navTabs.classList.contains('active')) {
+                navTabs.classList.remove('active');
+            }
+        }
+    }
+    
+    // Handle nav link clicks
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
             const tabName = this.getAttribute('data-tab');
             
-            // Remove active class from all buttons and contents
-            tabButtons.forEach(btn => btn.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('active'));
+            // Update URL hash
+            if (tabName === 'invoices') {
+                history.pushState(null, null, '/');
+            } else {
+                history.pushState(null, null, `/#${tabName}`);
+            }
             
-            // Add active class to clicked button and corresponding content
-            this.classList.add('active');
-            const targetContent = document.getElementById(`tab-${tabName}`);
-            if (targetContent) {
-                targetContent.classList.add('active');
-                
-                // Initialize Generate Invoice tab if it's selected
-                if (tabName === 'generate') {
-                    initializeInvoiceGeneration();
+            switchTab(tabName);
+        });
+    });
+    
+    // Handle mobile navigation toggle
+    if (navToggle) {
+        navToggle.addEventListener('click', function() {
+            if (navTabs) {
+                navTabs.classList.toggle('active');
+            }
+        });
+        
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(e) {
+            if (navTabs && navTabs.classList.contains('active')) {
+                if (!navToggle.contains(e.target) && !navTabs.contains(e.target)) {
+                    navTabs.classList.remove('active');
                 }
             }
         });
-    });
+    }
+    
+    // Handle hash-based navigation on page load and hash change
+    function handleHashNavigation() {
+        const hash = window.location.hash.slice(1); // Remove the # symbol
+        if (hash) {
+            switchTab(hash);
+        } else {
+            // Default to invoices tab if no hash
+            switchTab('invoices');
+        }
+    }
+    
+    // Initial navigation based on URL hash
+    handleHashNavigation();
+    
+    // Listen for hash changes (browser back/forward buttons)
+    window.addEventListener('hashchange', handleHashNavigation);
+    
+    // Backward compatibility: Handle old tab buttons if they still exist
+    const oldTabButtons = document.querySelectorAll('.tab-btn');
+    if (oldTabButtons.length > 0) {
+        oldTabButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const tabName = this.getAttribute('data-tab');
+                
+                // Update URL hash
+                if (tabName === 'invoices') {
+                    history.pushState(null, null, '/');
+                } else {
+                    history.pushState(null, null, `/#${tabName}`);
+                }
+                
+                switchTab(tabName);
+            });
+        });
+    }
     
     // Initialize invoice upload functionality
     initializeInvoiceUpload();

@@ -63,53 +63,116 @@ body {
     min-height: 100vh;
     color: var(--gray-900);
     line-height: 1.6;
-    padding-bottom: 80px;
+    padding-top: 70px; /* Space for fixed header */
+    padding-bottom: 20px;
 }
 
-/* ========== HEADER - MOBILE FIRST ========== */
-.app-header {
-    background: rgba(255, 255, 255, 0.1);
+/* ========== MAIN NAVIGATION HEADER ========== */
+.main-navigation {
+    background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 16px;
-    text-align: center;
-    position: sticky;
+    border-bottom: 1px solid var(--gray-200);
+    position: fixed;
     top: 0;
-    z-index: 100;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    box-shadow: var(--shadow-md);
 }
 
-.header-content {
-    max-width: 100%;
+.nav-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
 }
 
-.app-title {
+.nav-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.brand-title {
     font-size: 1.5rem;
     font-weight: 700;
-    color: var(--white);
-    margin-bottom: 4px;
+    color: var(--gray-900);
+    margin: 0;
     letter-spacing: -0.02em;
 }
 
-.app-subtitle {
+.brand-subtitle {
     font-size: 0.875rem;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--gray-600);
     font-weight: 500;
+    display: none;
 }
 
-/* ========== TAB NAVIGATION - MOBILE BOTTOM FIXED ========== */
-.tab-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--white);
-    border-top: 1px solid var(--gray-200);
+.nav-tabs {
     display: flex;
-    justify-content: space-around;
-    padding: 8px 8px 8px 8px;
-    box-shadow: var(--shadow-xl);
-    z-index: 1000;
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    color: var(--gray-600);
+    text-decoration: none;
+    border-radius: var(--radius);
+    transition: var(--transition-fast);
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.nav-link:hover {
+    background: var(--gray-100);
+    color: var(--gray-900);
+}
+
+.nav-link.active {
+    background: var(--purple-500);
+    color: var(--white);
+}
+
+.nav-icon {
+    font-size: 1rem;
+}
+
+.nav-text {
+    display: none;
+}
+
+.nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: var(--gray-600);
+}
+
+.nav-toggle-icon {
+    width: 24px;
+    height: 24px;
+    stroke-width: 2;
+}
+
+/* Hide old navigation elements */
+.app-header {
+    display: none;
+}
+
+.tab-nav {
+    display: none;
 }
 
 .tab-btn {
@@ -148,6 +211,64 @@ body {
 .tab-label {
     font-size: 0.75rem;
     white-space: nowrap;
+}
+
+/* ========== RESPONSIVE NAVIGATION ========== */
+@media (max-width: 768px) {
+    .nav-container {
+        padding: 12px 16px;
+    }
+    
+    .brand-title {
+        font-size: 1.25rem;
+    }
+    
+    .nav-tabs {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        background: var(--white);
+        flex-direction: column;
+        padding: 16px;
+        box-shadow: var(--shadow-lg);
+        border-bottom: 1px solid var(--gray-200);
+        max-height: calc(100vh - 60px);
+        overflow-y: auto;
+    }
+    
+    .nav-tabs.active {
+        display: flex;
+    }
+    
+    .nav-link {
+        width: 100%;
+        justify-content: flex-start;
+        padding: 12px 16px;
+    }
+    
+    .nav-text {
+        display: inline;
+    }
+    
+    .nav-toggle {
+        display: block;
+    }
+}
+
+@media (min-width: 769px) {
+    .brand-subtitle {
+        display: inline;
+    }
+    
+    .nav-text {
+        display: inline;
+    }
+    
+    .nav-tabs {
+        display: flex !important;
+    }
 }
 
 /* ========== MAIN CONTENT CONTAINER ========== */

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NetSuite Integration Hub - Enterprise Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css?v=10">
     <style>
         /* Dashboard-specific styles */
         :root {
@@ -708,6 +709,51 @@
     </style>
 </head>
 <body>
+    <!-- Main Navigation Header -->
+    <header class="main-navigation">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1 class="brand-title">🧾 Invoice AI</h1>
+                <span class="brand-subtitle">4-Layer Hybrid Intelligence</span>
+            </div>
+            <nav class="nav-tabs">
+                <a href="/" class="nav-link" data-tab="invoices">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-text">Invoices</span>
+                </a>
+                <a href="/#vendors" class="nav-link" data-tab="vendors">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Vendors</span>
+                </a>
+                <a href="/#matching" class="nav-link" data-tab="matching">
+                    <span class="nav-icon">🔗</span>
+                    <span class="nav-text">Matching</span>
+                </a>
+                <a href="/#gmail" class="nav-link" data-tab="gmail">
+                    <span class="nav-icon">📧</span>
+                    <span class="nav-text">Gmail</span>
+                </a>
+                <a href="/netsuite-dashboard" class="nav-link active">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">NetSuite</span>
+                </a>
+                <a href="/#generate" class="nav-link" data-tab="generate">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-text">Generate</span>
+                </a>
+                <a href="/#api-docs" class="nav-link" data-tab="api-docs">
+                    <span class="nav-icon">🔧</span>
+                    <span class="nav-text">API</span>
+                </a>
+            </nav>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <svg class="nav-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M3 12h18M3 6h18M3 18h18"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
     <!-- Dashboard Header -->
     <header class="dashboard-header">
         <div class="header-content">
