@@ -4977,6 +4977,454 @@ def sweep_unpaid_bills():
         }
     )
 
+# ============= NetSuite Events Dashboard API =============
+
+@app.route('/api/netsuite/events/dashboard')
+def netsuite_events_dashboard():
+    """Render NetSuite events dashboard"""
+    return render_template('netsuite_events_dashboard.html')
+
+@app.route('/api/netsuite/events', methods=['GET'])
+def get_netsuite_events():
+    """Get NetSuite sync events with filters"""
+    try:
+        from services.netsuite_event_tracker import NetSuiteEventTracker
+        
+        # Get query parameters
+        direction = request.args.get('direction')
+        event_category = request.args.get('category')
+        entity_id = request.args.get('entity_id')
+        netsuite_id = request.args.get('netsuite_id')
+        status = request.args.get('status')
+        hours = int(request.args.get('hours', 24))
+        limit = int(request.args.get('limit', 100))
+        
+        # Initialize tracker
+        tracker = NetSuiteEventTracker()
+        
+        # Get events
+        events = tracker.get_events(
+            direction=direction,
+            event_category=event_category,
+            entity_id=entity_id,
+            netsuite_id=netsuite_id,
+            status=status,
+            hours=hours,
+            limit=limit
+        )
+        
+        return jsonify({
+            'success': True,
+            'events': events,
+            'count': len(events)
+        })
+        
+    except Exception as e:
+        print(f"Error getting NetSuite events: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'events': []
+        }), 500
+
+@app.route('/api/netsuite/events/stats', methods=['GET'])
+def get_netsuite_event_stats():
+    """Get NetSuite event statistics"""
+    try:
+        from services.netsuite_event_tracker import NetSuiteEventTracker
+        
+        # Initialize tracker
+        tracker = NetSuiteEventTracker()
+        
+        # Get statistics
+        stats = tracker.get_event_statistics()
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        print(f"Error getting event statistics: {e}")
+        return jsonify({
+            'total_events': 0,
+            'outbound_count': 0,
+            'inbound_count': 0,
+            'success_count': 0,
+            'failed_count': 0,
+            'pending_count': 0,
+            'avg_duration_ms': 0,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/events/supported', methods=['GET'])
+def get_supported_netsuite_events():
+    """Get list of supported NetSuite event types"""
+    try:
+        from services.netsuite_event_tracker import NetSuiteEventTracker
+        
+        # Initialize tracker
+        tracker = NetSuiteEventTracker()
+        
+        # Get supported events
+        supported = tracker.get_supported_events()
+        
+        return jsonify(supported)
+        
+    except Exception as e:
+        print(f"Error getting supported events: {e}")
+        return jsonify({
+            'outbound': {},
+            'inbound': {},
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/events/log', methods=['POST'])
+def log_netsuite_event():
+    """Log a NetSuite sync event (internal API)"""
+    try:
+        from services.netsuite_event_tracker import NetSuiteEventTracker
+        
+        data = request.get_json()
+        
+        # Initialize tracker
+        tracker = NetSuiteEventTracker()
+        
+        # Log the event
+        success = tracker.log_event(
+            direction=data.get('direction', 'OUTBOUND'),
+            event_type=data.get('event_type'),
+            event_category=data.get('event_category'),
+            status=data.get('status', 'SUCCESS'),
+            entity_type=data.get('entity_type'),
+            entity_id=data.get('entity_id'),
+            netsuite_id=data.get('netsuite_id'),
+            action=data.get('action'),
+            request_data=data.get('request_data'),
+            response_data=data.get('response_data'),
+            error_message=data.get('error_message'),
+            duration_ms=data.get('duration_ms'),
+            user=data.get('user'),
+            metadata=data.get('metadata')
+        )
+        
+        return jsonify({
+            'success': success,
+            'message': 'Event logged successfully' if success else 'Failed to log event'
+        })
+        
+    except Exception as e:
+        print(f"Error logging NetSuite event: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/bill/<invoice_id>/approval', methods=['GET'])
+def check_bill_approval_status(invoice_id):
+    """
+    Check bill approval status in NetSuite
+    This polls NetSuite for the current approval status of a vendor bill
+    """
+    try:
+        from services.netsuite_event_tracker import NetSuiteEventTracker
+        import time
+        
+        start_time = time.time()
+        
+        # Initialize services
+        netsuite = get_netsuite_service()
+        tracker = NetSuiteEventTracker()
+        
+        # Get invoice details from BigQuery first
+        bigquery_service = BigQueryService()
+        invoice_query = f"""
+        SELECT 
+            invoice_id,
+            vendor_id,
+            netsuite_bill_id,
+            netsuite_sync_status,
+            netsuite_approval_status,
+            total_amount,
+            due_date
+        FROM `invoicereader-477008.vendors_ai.invoices`
+        WHERE invoice_id = '{invoice_id}'
+        LIMIT 1
+        """
+        
+        result = bigquery_service.client.query(invoice_query).result()
+        invoice = None
+        for row in result:
+            invoice = {
+                'invoice_id': row.invoice_id,
+                'vendor_id': row.vendor_id,
+                'netsuite_bill_id': row.netsuite_bill_id,
+                'current_sync_status': row.netsuite_sync_status,
+                'current_approval_status': row.netsuite_approval_status,
+                'total_amount': float(row.total_amount) if row.total_amount else 0,
+                'due_date': row.due_date.isoformat() if row.due_date else None
+            }
+            break
+        
+        if not invoice:
+            return jsonify({
+                'success': False,
+                'error': 'Invoice not found'
+            }), 404
+        
+        if not invoice.get('netsuite_bill_id'):
+            return jsonify({
+                'success': False,
+                'error': 'No NetSuite bill ID found for this invoice'
+            }), 400
+        
+        # Check bill status in NetSuite
+        bill_status_result = netsuite.get_bill_status(invoice['netsuite_bill_id'])
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        if bill_status_result['success']:
+            # Log successful status check
+            tracker.log_event(
+                direction='INBOUND',
+                event_type='bill_status_check',
+                event_category='BILL',
+                status='SUCCESS',
+                entity_type='invoice',
+                entity_id=invoice_id,
+                netsuite_id=invoice['netsuite_bill_id'],
+                action='STATUS_CHECK',
+                response_data=bill_status_result,
+                duration_ms=duration_ms,
+                metadata={'source': 'approval_check'}
+            )
+            
+            # Update BigQuery if status changed
+            new_status = bill_status_result.get('approval_status')
+            if new_status and new_status != invoice.get('current_approval_status'):
+                update_query = f"""
+                UPDATE `invoicereader-477008.vendors_ai.invoices`
+                SET 
+                    netsuite_approval_status = '{new_status}',
+                    netsuite_last_sync = CURRENT_TIMESTAMP()
+                WHERE invoice_id = '{invoice_id}'
+                """
+                bigquery_service.client.query(update_query).result()
+                
+                # Log status change event
+                tracker.log_event(
+                    direction='INBOUND',
+                    event_type='bill_approval_status_change',
+                    event_category='BILL',
+                    status='SUCCESS',
+                    entity_type='invoice',
+                    entity_id=invoice_id,
+                    netsuite_id=invoice['netsuite_bill_id'],
+                    action='APPROVE' if 'approved' in new_status.lower() else 'UPDATE',
+                    metadata={
+                        'old_status': invoice.get('current_approval_status'),
+                        'new_status': new_status
+                    }
+                )
+            
+            return jsonify({
+                'success': True,
+                'invoice_id': invoice_id,
+                'netsuite_bill_id': invoice['netsuite_bill_id'],
+                'approval_status': new_status or invoice.get('current_approval_status'),
+                'bill_details': bill_status_result.get('bill'),
+                'status_changed': new_status != invoice.get('current_approval_status')
+            })
+        else:
+            # Log failed status check
+            tracker.log_event(
+                direction='INBOUND',
+                event_type='bill_status_check',
+                event_category='BILL',
+                status='FAILED',
+                entity_type='invoice',
+                entity_id=invoice_id,
+                netsuite_id=invoice['netsuite_bill_id'],
+                action='STATUS_CHECK',
+                error_message=bill_status_result.get('error'),
+                duration_ms=duration_ms
+            )
+            
+            return jsonify({
+                'success': False,
+                'error': bill_status_result.get('error', 'Failed to check bill status')
+            }), 500
+            
+    except Exception as e:
+        print(f"Error checking bill approval status: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/bills/sync-approvals', methods=['POST'])
+def sync_all_bill_approvals():
+    """
+    Sync approval status for all pending bills from NetSuite
+    Checks all bills that are synced but not yet approved/rejected
+    """
+    def generate():
+        try:
+            from services.netsuite_event_tracker import NetSuiteEventTracker
+            import time
+            
+            # Initialize services
+            netsuite = get_netsuite_service()
+            tracker = NetSuiteEventTracker()
+            bigquery_service = BigQueryService()
+            
+            yield f"data: {json.dumps({'message': 'Fetching pending bills from database...'})}\n\n"
+            
+            # Get all bills pending approval
+            pending_query = """
+            SELECT 
+                invoice_id,
+                vendor_id,
+                netsuite_bill_id,
+                netsuite_approval_status,
+                total_amount
+            FROM `invoicereader-477008.vendors_ai.invoices`
+            WHERE netsuite_bill_id IS NOT NULL
+                AND (netsuite_approval_status IS NULL 
+                     OR netsuite_approval_status NOT IN ('APPROVED', 'REJECTED', 'PAID'))
+            """
+            
+            result = bigquery_service.client.query(pending_query).result()
+            pending_bills = list(result)
+            
+            total_bills = len(pending_bills)
+            yield f"data: {json.dumps({'message': f'Found {total_bills} bills to check', 'total': total_bills})}\n\n"
+            
+            stats = {
+                'checked': 0,
+                'approved': 0,
+                'rejected': 0,
+                'pending': 0,
+                'failed': 0,
+                'updated': 0
+            }
+            
+            for idx, bill in enumerate(pending_bills):
+                start_time = time.time()
+                
+                try:
+                    # Check status in NetSuite
+                    status_result = netsuite.get_bill_status(bill.netsuite_bill_id)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    
+                    if status_result['success']:
+                        new_status = status_result.get('approval_status', 'PENDING')
+                        
+                        # Log the check
+                        tracker.log_event(
+                            direction='INBOUND',
+                            event_type='bill_approval_sync',
+                            event_category='BILL',
+                            status='SUCCESS',
+                            entity_type='invoice',
+                            entity_id=bill.invoice_id,
+                            netsuite_id=bill.netsuite_bill_id,
+                            action='SYNC',
+                            response_data={'approval_status': new_status},
+                            duration_ms=duration_ms
+                        )
+                        
+                        # Update stats
+                        stats['checked'] += 1
+                        if 'approved' in new_status.lower():
+                            stats['approved'] += 1
+                        elif 'rejected' in new_status.lower():
+                            stats['rejected'] += 1
+                        else:
+                            stats['pending'] += 1
+                        
+                        # Update BigQuery if status changed
+                        if new_status != bill.netsuite_approval_status:
+                            update_query = f"""
+                            UPDATE `invoicereader-477008.vendors_ai.invoices`
+                            SET 
+                                netsuite_approval_status = '{new_status}',
+                                netsuite_last_sync = CURRENT_TIMESTAMP()
+                            WHERE invoice_id = '{bill.invoice_id}'
+                            """
+                            bigquery_service.client.query(update_query).result()
+                            stats['updated'] += 1
+                            
+                            # Log status change
+                            tracker.log_event(
+                                direction='INBOUND',
+                                event_type='bill_approval_status_change',
+                                event_category='BILL',
+                                status='SUCCESS',
+                                entity_type='invoice',
+                                entity_id=bill.invoice_id,
+                                netsuite_id=bill.netsuite_bill_id,
+                                action='UPDATE',
+                                metadata={
+                                    'old_status': bill.netsuite_approval_status,
+                                    'new_status': new_status
+                                }
+                            )
+                    else:
+                        stats['failed'] += 1
+                        tracker.log_event(
+                            direction='INBOUND',
+                            event_type='bill_approval_sync',
+                            event_category='BILL',
+                            status='FAILED',
+                            entity_type='invoice',
+                            entity_id=bill.invoice_id,
+                            netsuite_id=bill.netsuite_bill_id,
+                            error_message=status_result.get('error'),
+                            duration_ms=duration_ms
+                        )
+                    
+                    # Send progress
+                    yield f"data: {json.dumps({
+                        'step': idx + 1,
+                        'total': total_bills,
+                        'message': f'Checked bill {bill.invoice_id}: {new_status if status_result["success"] else "Failed"}',
+                        'stats': stats
+                    })}\n\n"
+                    
+                except Exception as bill_error:
+                    stats['failed'] += 1
+                    print(f"Error checking bill {bill.invoice_id}: {bill_error}")
+                    tracker.log_event(
+                        direction='INBOUND',
+                        event_type='bill_approval_sync',
+                        event_category='BILL',
+                        status='FAILED',
+                        entity_type='invoice',
+                        entity_id=bill.invoice_id,
+                        netsuite_id=bill.netsuite_bill_id,
+                        error_message=str(bill_error)
+                    )
+            
+            # Final summary
+            yield f"data: {json.dumps({
+                'message': 'Bill approval sync completed!',
+                'stats': stats,
+                'complete': True
+            })}\n\n"
+            
+        except Exception as e:
+            error_msg = f"Error during approval sync: {str(e)}"
+            print(f"❌ {error_msg}")
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
 @app.route('/api/netsuite/payments/status/<invoice_id>', methods=['GET'])
 def get_invoice_payment_status(invoice_id):
     """
