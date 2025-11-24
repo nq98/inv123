@@ -99,7 +99,7 @@
                     <span class="nav-icon">🔧</span>
                     <span class="nav-text">API</span>
                 </a>
-                <a href="/api/netsuite/events/dashboard" class="nav-link" target="_blank">
+                <a href="/#netsuite-events" class="nav-link" data-tab="netsuite-events">
                     <span class="nav-icon">📊</span>
                     <span class="nav-text">NetSuite Events</span>
                 </a>
@@ -1591,6 +1591,17 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
                 </div>
             </section>
             
+        </div>
+        
+        <!-- ==================== NETSUITE EVENTS TAB ==================== -->
+        <div class="tab-content" id="tab-netsuite-events">
+            <section class="card" style="padding: 0; height: calc(100vh - 100px);">
+                <iframe 
+                    src="/api/netsuite/events/dashboard" 
+                    style="width: 100%; height: 100%; border: none; border-radius: 8px;"
+                    title="NetSuite Events Dashboard">
+                </iframe>
+            </section>
         </div>
         
     </main>
