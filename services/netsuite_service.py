@@ -291,10 +291,11 @@ class NetSuiteService:
         
         # Build the full URL with query parameters if provided
         if params:
-            # Convert params to URL query string
-            # Use quote_plus=False to keep spaces as %20 not +
-            query_string = urlencode(params, quote_via=quote)
-            full_url = f"{url}?{query_string}"
+            # FIX: Don't encode here - let requests do it once
+            # We only need the full URL for OAuth signature generation
+            # Build URL with raw params for signature
+            raw_query = '&'.join([f"{k}={v}" for k, v in params.items()])
+            full_url = f"{url}?{raw_query}"
         else:
             full_url = url
         
