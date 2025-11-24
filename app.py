@@ -1209,7 +1209,9 @@ def upload_invoice():
         
         if vendor_match_result:
             verdict = vendor_match_result.get('verdict', 'NEW_VENDOR')
-            vendor_id = vendor_match_result.get('vendor_id')
+            # CRITICAL FIX: Supreme Judge returns 'selected_vendor_id', not just 'vendor_id'
+            vendor_id = vendor_match_result.get('selected_vendor_id') or vendor_match_result.get('vendor_id')
+            print(f"🔍 DEBUG: Final vendor_id for BigQuery = {vendor_id} (verdict={verdict})")
             
             if verdict == 'MATCH':
                 status = 'matched'

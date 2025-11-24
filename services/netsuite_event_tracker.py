@@ -4,15 +4,29 @@ Comprehensive bidirectional event tracking between our system and NetSuite
 """
 
 from google.cloud import bigquery
+from google.oauth2 import service_account
 from datetime import datetime, timedelta
 import json
+import os
 from typing import Dict, List, Optional, Any
 import traceback
 
 class NetSuiteEventTracker:
     def __init__(self, project_id='invoicereader-477008'):
         self.project_id = project_id
-        self.client = bigquery.Client(project=project_id)
+        
+        # Use explicit credentials from secrets for Replit environment
+        if os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON'):
+            try:
+                credentials_json = json.loads(os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON'))
+                credentials = service_account.Credentials.from_service_account_info(credentials_json)
+                self.client = bigquery.Client(project=project_id, credentials=credentials)
+            except Exception as e:
+                print(f"⚠️ Failed to load credentials from JSON: {e}, falling back to default")
+                self.client = bigquery.Client(project=project_id)
+        else:
+            self.client = bigquery.Client(project=project_id)
+            
         self.events_table = f"{project_id}.vendors_ai.netsuite_events"
         self._ensure_events_table()
     
