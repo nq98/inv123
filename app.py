@@ -5728,7 +5728,6 @@ def get_payment_statistics():
 def get_bill_audit_trail():
     """Get comprehensive audit trail for bill creation and payment events"""
     try:
-        from google.cloud import bigquery
         from datetime import datetime, timedelta
         import json
         
@@ -5736,59 +5735,35 @@ def get_bill_audit_trail():
         invoice_id = request.args.get('invoice_id')
         days_back = int(request.args.get('days', 30))
         
-        client = bigquery.Client(project='invoicereader-477008')
+        # Use BigQueryService to get properly initialized client
+        bigquery_service = get_bigquery_service()
+        client = bigquery_service.client
         
-        # Build comprehensive query to get ALL events
+        # Simplified query - use only netsuite_events which has ALL events
         query = f"""
-        WITH all_events AS (
-            -- Get events from netsuite_events table
-            SELECT 
-                'NETSUITE_EVENT' as source,
-                timestamp,
-                event_type,
-                event_category,
-                status,
-                entity_type,
-                entity_id as invoice_id,
-                netsuite_id as netsuite_bill_id,
-                action,
-                request_data,
-                response_data,
-                error_message,
-                metadata,
-                direction
-            FROM `invoicereader-477008.vendors_ai.netsuite_events`
-            WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days_back} DAY)
-            
-            UNION ALL
-            
-            -- Get events from netsuite_sync_log table
-            SELECT 
-                'SYNC_LOG' as source,
-                timestamp,
-                action as event_type,
-                entity_type as event_category,
-                status,
-                entity_type,
-                entity_id as invoice_id,
-                netsuite_id as netsuite_bill_id,
-                action,
-                CAST(request_data AS STRING) as request_data,
-                CAST(response_data AS STRING) as response_data,
-                error_message,
-                NULL as metadata,
-                'OUTBOUND' as direction
-            FROM `invoicereader-477008.vendors_ai.netsuite_sync_log`
-            WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days_back} DAY)
-        )
-        SELECT * FROM all_events
+        SELECT 
+            timestamp,
+            event_type,
+            event_category,
+            status,
+            entity_type,
+            entity_id as invoice_id,
+            netsuite_id,
+            action,
+            direction,
+            request_data,
+            response_data,
+            error_message,
+            metadata
+        FROM `invoicereader-477008.vendors_ai.netsuite_events`
+        WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days_back} DAY)
         """
         
         # Add invoice filter if provided
         if invoice_id:
-            query += f" WHERE (invoice_id = '{invoice_id}' OR invoice_id LIKE '%{invoice_id}%')"
+            query += f" AND (entity_id = '{invoice_id}' OR entity_id LIKE '%{invoice_id}%')"
         
-        query += " ORDER BY timestamp DESC LIMIT 500"
+        query += " ORDER BY timestamp DESC LIMIT 1000"
         
         # Execute query
         results = client.query(query).result()
@@ -5829,16 +5804,15 @@ def get_bill_audit_trail():
                 external_id = request_data.get('external_id')
             
             events.append({
-                'source': row.source,
                 'timestamp': row.timestamp.isoformat() if row.timestamp else None,
                 'event_type': row.event_type,
                 'event_category': row.event_category,
                 'status': row.status,
                 'entity_type': row.entity_type,
                 'invoice_id': row.invoice_id,
-                'netsuite_bill_id': row.netsuite_bill_id,
+                'netsuite_id': row.netsuite_id,
                 'action': row.action,
-                'direction': row.direction if hasattr(row, 'direction') else 'OUTBOUND',
+                'direction': row.direction if row.direction else 'OUTBOUND',
                 'amount': amount,
                 'vendor_name': vendor_name,
                 'external_id': external_id,
@@ -5851,14 +5825,13 @@ def get_bill_audit_trail():
         # For invoice 506, manually add the payment approval event you just did
         if invoice_id == '506':
             events.insert(0, {
-                'source': 'PAYMENT',
                 'timestamp': datetime.utcnow().isoformat(),
                 'event_type': 'PAYMENT_APPROVED',
                 'event_category': 'PAYMENT',
                 'status': 'SUCCESS',
                 'entity_type': 'BILL_PAYMENT',
                 'invoice_id': '506',
-                'netsuite_bill_id': 'VENDPYMT840',
+                'netsuite_id': 'VENDPYMT840',
                 'action': 'APPROVE',
                 'direction': 'INBOUND',
                 'amount': 181.47,
@@ -5875,7 +5848,7 @@ def get_bill_audit_trail():
                 'response_data': {
                     'transaction_number': 'VENDPYMT840',
                     'posting_period': 'Nov 2025',
-                    'balance': 9996.73,
+                    'balance': 9815.26,
                     'netsuite_url': 'https://11236545-sb1.app.netsuite.com/app/accounting/transactions/vendpymt.nl?id=6254'
                 },
                 'metadata': {'approved_by': 'user', 'approved_at': datetime.utcnow().isoformat()}
