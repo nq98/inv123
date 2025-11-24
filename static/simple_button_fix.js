@@ -32,37 +32,37 @@ async function simpleCreateBill(invoiceId) {
         const result = await response.json();
         
         if (response.ok || result.success) {
-            // Success! 
-            button.innerHTML = '✅ BILL CREATED!';
-            button.style.backgroundColor = '#10b981';
-            
-            // Reload after 2 seconds to refresh the list
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
-        } else {
-            // Check if it's because bill already exists (needs update)
-            if (result.needs_update || result.error?.includes('already exists')) {
-                // Bill already exists with wrong amount - reload to show Update button
-                button.innerHTML = '🔄 Bill exists - refreshing...';
+            // Check if it's a duplicate bill that needs update
+            if (result.needs_update || result.status === 'existing_needs_update') {
+                // Bill already exists with wrong amount - show update needed
+                button.innerHTML = '🔄 Bill exists - needs update';
                 button.style.backgroundColor = '#fbbf24';
                 
-                // Reload immediately to show the Update Bill button
+                // Reload after short delay to show the Update Bill button
                 setTimeout(() => {
                     location.reload();
                 }, 1500);
             } else {
-                // Other error
-                button.innerHTML = '❌ Failed';
-                button.style.backgroundColor = '#ef4444';
+                // Normal success - bill was created
+                button.innerHTML = '✅ BILL CREATED!';
+                button.style.backgroundColor = '#10b981';
                 
-                // Reset after 3 seconds
+                // Reload after 2 seconds to refresh the list
                 setTimeout(() => {
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                    button.style.backgroundColor = '';
-                }, 3000);
+                    location.reload();
+                }, 2000);
             }
+        } else {
+            // Error
+            button.innerHTML = '❌ Failed';
+            button.style.backgroundColor = '#ef4444';
+            
+            // Reset after 3 seconds
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.style.backgroundColor = '';
+            }, 3000);
         }
     } catch (error) {
         // Network error

@@ -875,32 +875,60 @@ def create_invoice_in_netsuite(invoice_id):
                 # Update BigQuery to reflect the existing bill that needs updating
                 from google.cloud import bigquery
                 client = bigquery_service.client
-                query = f"""
+                
+                # Use parameterized query for safety
+                update_query = f"""
                 UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
-                SET netsuite_bill_id = '{existing_bill_id}',
+                SET netsuite_bill_id = @bill_id,
                     netsuite_sync_status = 'needs_update',
                     netsuite_sync_date = CURRENT_TIMESTAMP()
-                WHERE invoice_id = '{invoice_id}'
+                WHERE invoice_id = @invoice_id
                 """
                 
-                try:
-                    client.query(query).result()
-                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID - needs update")
-                except Exception as update_error:
-                    print(f"Warning: Could not update BigQuery: {update_error}")
+                job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("bill_id", "STRING", existing_bill_id),
+                        bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                    ]
+                )
                 
-                # Return an error that indicates update is needed
+                try:
+                    update_job = client.query(update_query, job_config=job_config)
+                    update_job.result()  # Wait for the query to complete
+                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID: {existing_bill_id}")
+                    
+                    # Verify the update worked
+                    verify_query = f"""
+                    SELECT netsuite_bill_id, netsuite_sync_status 
+                    FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                    WHERE invoice_id = @invoice_id
+                    """
+                    verify_job = client.query(verify_query, job_config=bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                        ]
+                    ))
+                    results = list(verify_job.result())
+                    if results:
+                        print(f"✅ Verification: Invoice now has bill_id={results[0].netsuite_bill_id}, status={results[0].netsuite_sync_status}")
+                except Exception as update_error:
+                    print(f"❌ ERROR: Could not update BigQuery: {update_error}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # Return SUCCESS (not error) - bill exists, just needs update!
+                # This way the UI can handle it properly
                 return jsonify({
-                    'success': False,
-                    'error': 'Bill already exists with wrong amount - use Update Bill',
+                    'success': True,  # Mark as success since bill exists
+                    'message': 'Bill already exists in NetSuite - ready for update',
                     'needs_update': True,
                     'existing_bill_id': existing_bill_id,
-                    'message': 'Bill already exists in NetSuite',
                     'netsuite_bill_id': existing_bill_id,
                     'invoice_id': invoice_id,
-                    'status': 'existing',
-                    'amount': invoice_amount
-                })
+                    'status': 'existing_needs_update',
+                    'amount': invoice_amount,
+                    'warning': 'Bill exists with wrong amount - use Update Bill to fix'
+                }), 200  # Return 200 OK since this is expected behavior
             else:
                 # Re-raise if it's a different error
                 raise
