@@ -5383,12 +5383,15 @@ def sync_all_bill_approvals():
                         )
                     
                     # Send progress
-                    yield f"data: {json.dumps({
+                    status_text = new_status if status_result["success"] else "Failed"
+                    progress_message = f'Checked bill {bill.invoice_id}: {status_text}'
+                    event_data = {
                         'step': idx + 1,
                         'total': total_bills,
-                        'message': f'Checked bill {bill.invoice_id}: {new_status if status_result["success"] else "Failed"}',
+                        'message': progress_message,
                         'stats': stats
-                    })}\n\n"
+                    }
+                    yield f"data: {json.dumps(event_data)}\n\n"
                     
                 except Exception as bill_error:
                     stats['failed'] += 1
@@ -5405,11 +5408,12 @@ def sync_all_bill_approvals():
                     )
             
             # Final summary
-            yield f"data: {json.dumps({
+            final_data = {
                 'message': 'Bill approval sync completed!',
                 'stats': stats,
                 'complete': True
-            })}\n\n"
+            }
+            yield f"data: {json.dumps(final_data)}\n\n"
             
         except Exception as e:
             error_msg = f"Error during approval sync: {str(e)}"
