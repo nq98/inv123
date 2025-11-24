@@ -472,44 +472,41 @@ class NetSuiteService:
     def search_vendors(self, name: str = None, tax_id: str = None, 
                       email: str = None, limit: int = 10) -> List[Dict]:
         """
-        Search for vendors in NetSuite by various criteria
-        
-        Args:
-            name: Vendor company name
-            tax_id: VAT/Tax registration number
-            email: Vendor email address
-            limit: Maximum results to return
-            
-        Returns:
-            List of matching vendors
+        Search for vendors in NetSuite.
+        PRIORITY: Tax ID -> Email -> Name.
         """
         if not self.enabled:
             return []
         
-        # Build search query
-        query_parts = []
-        if name:
-            query_parts.append(f"companyName CONTAINS '{name}'")
+        # 1. Try Tax ID first (Best, Unique)
         if tax_id:
-            query_parts.append(f"vatRegNumber IS '{tax_id}'")
+            # Remove special chars for cleaner search
+            clean_tax = tax_id.strip()
+            params = {'q': f"vatRegNumber IS '{clean_tax}'", 'limit': limit}
+            result = self._make_request('GET', '/record/v1/vendor', params=params)
+            if result and 'items' in result and len(result['items']) > 0:
+                return result['items']
+
+        # 2. Try Email second (Safe from encoding issues, Unique)
         if email:
-            query_parts.append(f"email CONTAINS '{email}'")
-        
-        if not query_parts:
-            logger.warning("No search criteria provided")
-            return []
-        
-        query = " OR ".join(query_parts)
-        
-        params = {
-            'q': query,
-            'limit': limit
-        }
-        
-        result = self._make_request('GET', '/record/v1/vendor', params=params)
-        
-        if result and 'items' in result:
-            return result['items']
+            clean_email = email.strip()
+            params = {'q': f"email IS '{clean_email}'", 'limit': limit}
+            result = self._make_request('GET', '/record/v1/vendor', params=params)
+            if result and 'items' in result and len(result['items']) > 0:
+                return result['items']
+
+        # 3. Try Name last (Risky due to spaces/encoding)
+        if name:
+            # FIX: Use 'CONTAIN' (singular), not 'CONTAINS'
+            # Use string formatting that requests library handles better
+            clean_name = name.replace("'", "").strip() # Remove quotes to prevent breakage
+            query_string = f"companyName CONTAIN '{clean_name}'"
+            
+            params = {'q': query_string, 'limit': limit}
+            result = self._make_request('GET', '/record/v1/vendor', params=params)
+            
+            if result and 'items' in result:
+                return result['items']
         
         return []
     
