@@ -619,8 +619,18 @@ def check_vendor_in_netsuite():
         if not vendor:
             return jsonify({'success': False, 'error': 'Vendor not found'}), 404
         
-        # Check if vendor has NetSuite ID
-        netsuite_internal_id = vendor.get('netsuite_internal_id')
+        # CRITICAL FIX: Extract NetSuite ID from custom_attributes JSON
+        import json
+        custom_attrs = vendor.get('custom_attributes', {})
+        if isinstance(custom_attrs, str):
+            try:
+                custom_attrs = json.loads(custom_attrs)
+            except:
+                custom_attrs = {}
+        elif not isinstance(custom_attrs, dict):
+            custom_attrs = {}
+        
+        netsuite_internal_id = custom_attrs.get('netsuite_internal_id')
         
         if netsuite_internal_id:
             # Vendor exists in NetSuite - could check for differences
@@ -762,13 +772,29 @@ def create_invoice_in_netsuite(invoice_id):
         
         # Get vendor details
         vendor = bigquery_service.get_vendor_by_id(vendor_id)
-        if not vendor or not vendor.get('netsuite_internal_id'):
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 400
+        
+        # CRITICAL FIX: Extract NetSuite ID from custom_attributes JSON
+        import json
+        custom_attrs = vendor.get('custom_attributes', {})
+        if isinstance(custom_attrs, str):
+            try:
+                custom_attrs = json.loads(custom_attrs)
+            except:
+                custom_attrs = {}
+        elif not isinstance(custom_attrs, dict):
+            custom_attrs = {}
+        
+        netsuite_internal_id = custom_attrs.get('netsuite_internal_id')
+        
+        if not netsuite_internal_id:
             return jsonify({'success': False, 'error': 'Vendor not synced to NetSuite'}), 400
         
         # Create bill in NetSuite
         netsuite = NetSuiteService()
         result = netsuite.create_vendor_bill({
-            'vendor_id': vendor.get('netsuite_internal_id'),
+            'vendor_id': netsuite_internal_id,  # Use the extracted ID
             'invoice_number': invoice.get('invoice_id'),
             'amount': float(invoice.get('amount', 0)),
             'date': invoice.get('invoice_date'),
