@@ -67,20 +67,20 @@ async function loadAllSystemEvents() {
                         <span>${status} ${event.status}</span>
                     </div>
                     <div style="color: #666; margin-bottom: 5px;">
-                        📅 ${event.timestamp} | Type: ${event.type}
+                        📅 ${event.timestamp} | Type: ${event.event_type}
                     </div>
                     <div style="margin-bottom: 5px;">
-                        Invoice: ${event.invoice_id || 'N/A'} | Vendor: ${event.vendor_name || 'N/A'}
+                        ${event.event_category === 'BILL' ? `Invoice: ${event.invoice_id || 'N/A'}` : `Entity: ${event.entity_id || 'N/A'}`} | Vendor: ${event.vendor_name || event.request_data?.vendor_name || 'N/A'}
                     </div>
                     ${event.amount ? `<div>Amount: $${event.amount}</div>` : ''}
                     ${event.error_message ? `<div style="color: red;">Error: ${event.error_message}</div>` : ''}
-                    ${event.request_payload ? `<details style="margin-top: 10px;">
+                    ${event.request_data ? `<details style="margin-top: 10px;">
                         <summary>Request Data</summary>
-                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.request_payload, null, 2)}</pre>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.request_data, null, 2)}</pre>
                     </details>` : ''}
-                    ${event.response_payload ? `<details style="margin-top: 10px;">
+                    ${event.response_data ? `<details style="margin-top: 10px;">
                         <summary>Response Data</summary>
-                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.response_payload, null, 2)}</pre>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.response_data, null, 2)}</pre>
                     </details>` : ''}
                 </div>
             `;
