@@ -2183,6 +2183,31 @@ function renderVendorList(vendors) {
                             <div style="margin-top: 4px;"><strong>Created:</strong> ${createdAt}</div>
                         </div>
                     </div>
+                    
+                    ${!vendor.netsuite_internal_id ? `
+                        <div class="vendor-detail-section" style="background: #fff3cd; border: 1px solid #ffecb5;">
+                            <strong style="color: #856404;">⚠️ NetSuite Sync Required</strong>
+                            <div style="margin-top: 10px;">
+                                <p style="font-size: 13px; color: #856404; margin-bottom: 10px;">
+                                    This vendor has not been synced to NetSuite yet. 
+                                    You need to sync the vendor before creating bills.
+                                </p>
+                                <button onclick="syncVendorToNetSuite('${vendor.vendor_id}', '${vendor.global_name.replace(/'/g, "\\'")}')" 
+                                        class="btn btn-primary" 
+                                        id="syncBtn_${vendor.vendor_id}"
+                                        style="background: #28a745; border-color: #28a745; padding: 8px 16px;">
+                                    🔄 Sync to NetSuite
+                                </button>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="vendor-detail-section" style="background: #d4edda; border: 1px solid #c3e6cb;">
+                            <strong style="color: #155724;">✅ Synced to NetSuite</strong>
+                            <div style="margin-top: 10px; font-size: 13px; color: #155724;">
+                                NetSuite Internal ID: <code>${vendor.netsuite_internal_id}</code>
+                            </div>
+                        </div>
+                    `}
                 </div>
             </div>
         `;
@@ -2286,6 +2311,55 @@ vendorSearchInput.addEventListener('input', (e) => {
         loadVendorList(1, searchTerm);
     }, 300);
 });
+
+// Sync vendor to NetSuite
+async function syncVendorToNetSuite(vendorId, vendorName) {
+    const button = document.getElementById(`syncBtn_${vendorId}`);
+    const originalText = button ? button.innerHTML : '🔄 Sync to NetSuite';
+    
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-small"></span> Syncing...';
+    }
+    
+    try {
+        const response = await fetch(`/api/netsuite/sync/vendor/${vendorId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || `Failed to sync vendor: ${response.status}`);
+        }
+        
+        if (data.success) {
+            // Show success message
+            alert(`✅ Successfully synced vendor "${vendorName}" to NetSuite!\n\nNetSuite ID: ${data.netsuite_id || 'Created'}`);
+            
+            // Reload the vendor list to show updated sync status
+            await loadVendorList(currentPage);
+            
+            // If we're on a page with invoices, reload them too
+            if (typeof loadInvoiceHistory === 'function') {
+                await loadInvoiceHistory(1);
+            }
+        } else {
+            throw new Error(data.error || 'Sync failed');
+        }
+    } catch (error) {
+        console.error('Error syncing vendor:', error);
+        alert(`❌ Failed to sync vendor: ${error.message}`);
+        
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    }
+}
 
 // Load vendors on page load
 document.addEventListener('DOMContentLoaded', () => {
