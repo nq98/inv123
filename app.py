@@ -2969,42 +2969,57 @@ def create_invoice_in_netsuite(invoice_id):
                 netsuite_vendor_id = vendor.get('netsuite_internal_id')
                 
                 if not netsuite_vendor_id:
-                    # AUTO-SYNC VENDOR if missing
-                    print(f"⚠️ Vendor {vendor.get('global_name')} not in NetSuite. Syncing first...")
+                    # FIRST: Search NetSuite for existing vendor by name
+                    vendor_name = vendor.get('global_name', '')
+                    print(f"🔍 Searching NetSuite for vendor: {vendor_name}")
                     
-                    # Prepare vendor data for sync
-                    # Handle both List and String formats for emails/phones
-                    email_val = vendor.get('emails')
-                    primary_email = None
-                    if isinstance(email_val, list) and len(email_val) > 0:
-                        primary_email = email_val[0]
-                    elif isinstance(email_val, str) and email_val:
-                        primary_email = email_val.split(',')[0]
-                    
-                    phone_val = vendor.get('phone_numbers')
-                    primary_phone = None
-                    if isinstance(phone_val, list) and len(phone_val) > 0:
-                        primary_phone = phone_val[0]
-                    elif isinstance(phone_val, str) and phone_val:
-                        primary_phone = phone_val.split(',')[0]
-                    
-                    vendor_sync_data = {
-                        'vendor_id': vendor_id,  # BigQuery vendor ID
-                        'name': vendor.get('global_name', ''),
-                        'email': primary_email,
-                        'phone': primary_phone,
-                        'tax_id': vendor.get('tax_id'),
-                        'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
-                        'address': vendor.get('address')  # Optional address
-                    }
-                    
-                    # Use the correct sync_vendor_to_netsuite method
-                    sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
-                    if sync_result and sync_result.get('success'):
-                        netsuite_vendor_id = sync_result.get('netsuite_id')
-                        # Update BigQuery with the new ID immediately
+                    # Search NetSuite by vendor name
+                    search_results = netsuite.search_vendors(name=vendor_name)
+                    if search_results and len(search_results) > 0:
+                        # Vendor exists in NetSuite! Use the first match
+                        netsuite_vendor_id = search_results[0].get('id')
+                        print(f"✅ Found existing vendor in NetSuite with ID: {netsuite_vendor_id}")
+                        
+                        # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
-                        print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
+                        print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                    else:
+                        # Vendor doesn't exist - need to create it
+                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
+                        
+                        # Prepare vendor data for sync
+                        # Handle both List and String formats for emails/phones
+                        email_val = vendor.get('emails')
+                        primary_email = None
+                        if isinstance(email_val, list) and len(email_val) > 0:
+                            primary_email = email_val[0]
+                        elif isinstance(email_val, str) and email_val:
+                            primary_email = email_val.split(',')[0]
+                        
+                        phone_val = vendor.get('phone_numbers')
+                        primary_phone = None
+                        if isinstance(phone_val, list) and len(phone_val) > 0:
+                            primary_phone = phone_val[0]
+                        elif isinstance(phone_val, str) and phone_val:
+                            primary_phone = phone_val.split(',')[0]
+                        
+                        vendor_sync_data = {
+                            'vendor_id': vendor_id,  # BigQuery vendor ID
+                            'name': vendor.get('global_name', ''),
+                            'email': primary_email,
+                            'phone': primary_phone,
+                            'tax_id': vendor.get('tax_id'),
+                            'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
+                            'address': vendor.get('address')  # Optional address
+                        }
+                        
+                        # Use the correct sync_vendor_to_netsuite method
+                        sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
+                        if sync_result and sync_result.get('success'):
+                            netsuite_vendor_id = sync_result.get('netsuite_id')
+                            # Update BigQuery with the new ID immediately
+                            bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+                            print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         if not netsuite_vendor_id:
@@ -3099,42 +3114,57 @@ def update_invoice_in_netsuite(invoice_id):
                 netsuite_vendor_id = vendor.get('netsuite_internal_id')
                 
                 if not netsuite_vendor_id:
-                    # AUTO-SYNC VENDOR if missing
-                    print(f"⚠️ Vendor {vendor.get('global_name')} not in NetSuite. Syncing first...")
+                    # FIRST: Search NetSuite for existing vendor by name
+                    vendor_name = vendor.get('global_name', '')
+                    print(f"🔍 Searching NetSuite for vendor: {vendor_name}")
                     
-                    # Prepare vendor data for sync
-                    # Handle both List and String formats for emails/phones
-                    email_val = vendor.get('emails')
-                    primary_email = None
-                    if isinstance(email_val, list) and len(email_val) > 0:
-                        primary_email = email_val[0]
-                    elif isinstance(email_val, str) and email_val:
-                        primary_email = email_val.split(',')[0]
-                    
-                    phone_val = vendor.get('phone_numbers')
-                    primary_phone = None
-                    if isinstance(phone_val, list) and len(phone_val) > 0:
-                        primary_phone = phone_val[0]
-                    elif isinstance(phone_val, str) and phone_val:
-                        primary_phone = phone_val.split(',')[0]
-                    
-                    vendor_sync_data = {
-                        'vendor_id': vendor_id,  # BigQuery vendor ID
-                        'name': vendor.get('global_name', ''),
-                        'email': primary_email,
-                        'phone': primary_phone,
-                        'tax_id': vendor.get('tax_id'),
-                        'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
-                        'address': vendor.get('address')  # Optional address
-                    }
-                    
-                    # Use the correct sync_vendor_to_netsuite method
-                    sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
-                    if sync_result and sync_result.get('success'):
-                        netsuite_vendor_id = sync_result.get('netsuite_id')
-                        # Update BigQuery with the new ID immediately
+                    # Search NetSuite by vendor name
+                    search_results = netsuite.search_vendors(name=vendor_name)
+                    if search_results and len(search_results) > 0:
+                        # Vendor exists in NetSuite! Use the first match
+                        netsuite_vendor_id = search_results[0].get('id')
+                        print(f"✅ Found existing vendor in NetSuite with ID: {netsuite_vendor_id}")
+                        
+                        # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
-                        print(f"✅ Vendor auto-synced successfully with ID: {netsuite_vendor_id}")
+                        print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                    else:
+                        # Vendor doesn't exist - need to create it
+                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
+                        
+                        # Prepare vendor data for sync
+                        # Handle both List and String formats for emails/phones
+                        email_val = vendor.get('emails')
+                        primary_email = None
+                        if isinstance(email_val, list) and len(email_val) > 0:
+                            primary_email = email_val[0]
+                        elif isinstance(email_val, str) and email_val:
+                            primary_email = email_val.split(',')[0]
+                        
+                        phone_val = vendor.get('phone_numbers')
+                        primary_phone = None
+                        if isinstance(phone_val, list) and len(phone_val) > 0:
+                            primary_phone = phone_val[0]
+                        elif isinstance(phone_val, str) and phone_val:
+                            primary_phone = phone_val.split(',')[0]
+                        
+                        vendor_sync_data = {
+                            'vendor_id': vendor_id,  # BigQuery vendor ID
+                            'name': vendor.get('global_name', ''),
+                            'email': primary_email,
+                            'phone': primary_phone,
+                            'tax_id': vendor.get('tax_id'),
+                            'external_id': f"VENDOR_{vendor_id}",  # Unique external ID
+                            'address': vendor.get('address')  # Optional address
+                        }
+                        
+                        # Use the correct sync_vendor_to_netsuite method
+                        sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
+                        if sync_result and sync_result.get('success'):
+                            netsuite_vendor_id = sync_result.get('netsuite_id')
+                            # Update BigQuery with the new ID immediately
+                            bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+                            print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         if not netsuite_vendor_id:
