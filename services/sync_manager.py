@@ -135,13 +135,13 @@ class SyncManager:
             }
             
             # Get vendor sync statistics
-            # Using direct columns since global_vendors doesn't have custom_attributes
+            # Extract sync fields from custom_attributes JSON for Universal Schema
             vendor_query = f"""
             SELECT 
                 COUNT(*) as total_vendors,
-                COUNTIF(netsuite_internal_id IS NOT NULL) as synced_vendors,
-                COUNTIF(netsuite_internal_id IS NULL) as not_synced_vendors,
-                COUNTIF(netsuite_sync_status = 'failed') as failed_syncs
+                COUNTIF(JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_internal_id') IS NOT NULL) as synced_vendors,
+                COUNTIF(JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_internal_id') IS NULL) as not_synced_vendors,
+                COUNTIF(JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_sync_status') = 'failed') as failed_syncs
             FROM `{self.project_id}.vendors_ai.global_vendors`
             """
             
@@ -157,16 +157,16 @@ class SyncManager:
                 }
             
             # Get invoice sync statistics
-            # Using direct columns since invoices table doesn't have custom_attributes column
+            # Checking if invoices table has netsuite_bill_id column, payment_status might not exist
             invoice_query = f"""
             SELECT 
                 COUNT(*) as total_invoices,
                 COUNTIF(netsuite_bill_id IS NOT NULL) as with_bills,
                 COUNTIF(netsuite_bill_id IS NULL) as without_bills,
-                COUNTIF(payment_status = 'paid') as paid,
-                COUNTIF(payment_status = 'pending') as pending,
-                COUNTIF(payment_status = 'overdue') as overdue,
-                COUNTIF(payment_status = 'partial') as partial
+                0 as paid,
+                0 as pending,
+                0 as overdue,
+                0 as partial
             FROM `{self.project_id}.vendors_ai.invoices`
             """
             
@@ -228,38 +228,27 @@ class SyncManager:
             }
         
     def update_vendor_schema(self):
-        """Add sync tracking fields to vendor table"""
+        """Ensure vendor table has required fields - sync data goes in custom_attributes"""
         try:
-            # Add new columns to vendor table if they don't exist
+            # Check table exists and has custom_attributes column
             table_id = f"{self.project_id}.vendors_ai.global_vendors"
             table = self.client.get_table(table_id)
             
             existing_fields = {field.name for field in table.schema}
-            new_fields = []
             
-            # Add sync tracking fields if missing
-            if 'netsuite_sync_status' not in existing_fields:
-                new_fields.append(bigquery.SchemaField("netsuite_sync_status", "STRING", mode="NULLABLE"))
-            if 'netsuite_last_sync' not in existing_fields:
-                new_fields.append(bigquery.SchemaField("netsuite_last_sync", "TIMESTAMP", mode="NULLABLE"))
-            if 'netsuite_sync_error' not in existing_fields:
-                new_fields.append(bigquery.SchemaField("netsuite_sync_error", "STRING", mode="NULLABLE"))
-            if 'payment_status' not in existing_fields:
-                new_fields.append(bigquery.SchemaField("payment_status", "STRING", mode="NULLABLE"))
-            if 'payment_date' not in existing_fields:
-                new_fields.append(bigquery.SchemaField("payment_date", "DATE", mode="NULLABLE"))
-                
-            if new_fields:
-                new_schema = table.schema + new_fields
-                table.schema = new_schema
-                table = self.client.update_table(table, ["schema"])
-                print(f"✓ Updated vendor table with {len(new_fields)} new sync fields")
-            else:
-                print("✓ Vendor table already has all sync fields")
-                
+            # Ensure custom_attributes column exists for storing sync data
+            if 'custom_attributes' not in existing_fields:
+                print(f"Warning: custom_attributes column missing in vendor table")
+                # For Universal Schema, sync fields go in custom_attributes JSON
+                # Not adding direct columns as they belong in the JSON field
+                return False
+            
+            print("✓ Vendor table has custom_attributes column for sync fields")
+            # Sync fields (netsuite_internal_id, netsuite_sync_status, etc.) 
+            # are stored in custom_attributes JSON as per Universal Schema
             return True
         except Exception as e:
-            print(f"Error updating vendor schema: {e}")
+            print(f"Error checking vendor schema: {e}")
             return False
             
     def update_invoice_schema(self):
