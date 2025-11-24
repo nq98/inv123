@@ -62,6 +62,63 @@
             </div>
         </div>
     </div>
+
+    <!-- ==================== WORKFLOW MODAL (for Create Bill button) ==================== -->
+    <div id="workflowModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeWorkflowModal()">&times;</span>
+            <h2>📋 NetSuite Bill Creation Workflow</h2>
+            
+            <div class="workflow-steps">
+                <div class="workflow-step">
+                    <span id="match-status">⏳</span> Vendor Matching
+                    <div id="match-message"></div>
+                </div>
+                <div class="workflow-step">
+                    <span id="netsuite-check-status">⏳</span> NetSuite Vendor Check
+                    <div id="netsuite-check-message"></div>
+                </div>
+                <div class="workflow-step">
+                    <span id="create-status">⏳</span> Create Bill in NetSuite
+                    <div id="create-message"></div>
+                </div>
+            </div>
+            
+            <div id="workflowMessage"></div>
+            <div id="workflowResult"></div>
+        </div>
+    </div>
+    
+    <!-- ==================== VENDOR MATCH MODAL (for invoice workflow) ==================== -->
+    <div id="vendorMatchModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeVendorModal()">&times;</span>
+            <h2>🔍 Vendor Matching Required</h2>
+            
+            <div id="vendorMatchContent">
+                <p>This invoice needs to be matched to a vendor before it can be synced to NetSuite.</p>
+                
+                <div class="vendor-search-section">
+                    <h3>Search for Existing Vendor</h3>
+                    <input type="text" id="vendorSearch" placeholder="Search vendors..." onkeyup="searchVendorsForMatch(this.value)">
+                    <div id="vendorSearchResults"></div>
+                </div>
+                
+                <div class="vendor-create-section">
+                    <h3>Or Create New Vendor</h3>
+                    <button onclick="showCreateVendorForm()" class="btn btn-secondary">Create New Vendor</button>
+                    
+                    <div id="createVendorForm" style="display: none;">
+                        <input type="text" id="newVendorName" placeholder="Vendor Name">
+                        <input type="email" id="newVendorEmail" placeholder="Email">
+                        <input type="tel" id="newVendorPhone" placeholder="Phone">
+                        <input type="text" id="newVendorTaxId" placeholder="Tax ID">
+                        <button onclick="createVendorForInvoice()" class="btn btn-primary">Create Vendor</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Main Navigation Header -->
     <header class="main-navigation">
