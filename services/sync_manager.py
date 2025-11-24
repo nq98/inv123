@@ -63,7 +63,7 @@ class SyncManager:
                 "entity_id": entity_id,
                 "status": status,
                 "timestamp": datetime.utcnow().isoformat(),
-                "details": details or {},
+                "details": json.dumps(details) if details else None,  # Convert dict to JSON string
                 "error_message": error_message,
                 "duration_seconds": duration_seconds
             }
@@ -304,11 +304,28 @@ class SyncManager:
                     }
             
             # Sync to NetSuite
+            # FIX: Handle both string and list formats for emails and phone_numbers
+            emails_val = vendor.get('emails')
+            if isinstance(emails_val, list) and len(emails_val) > 0:
+                primary_email = emails_val[0]
+            elif isinstance(emails_val, str) and emails_val:
+                primary_email = emails_val  # It's already a string, use it directly
+            else:
+                primary_email = None
+
+            phones_val = vendor.get('phone_numbers')
+            if isinstance(phones_val, list) and len(phones_val) > 0:
+                primary_phone = phones_val[0]
+            elif isinstance(phones_val, str) and phones_val:
+                primary_phone = phones_val  # It's already a string, use it directly
+            else:
+                primary_phone = None
+            
             sync_data = {
                 'vendor_id': vendor_id,
                 'name': vendor.get('global_name', ''),
-                'email': vendor.get('emails')[0] if vendor.get('emails') else None,
-                'phone': vendor.get('phone_numbers')[0] if vendor.get('phone_numbers') else None,
+                'email': primary_email,
+                'phone': primary_phone,
                 'tax_id': vendor.get('tax_id'),
                 'address': vendor.get('address'),
                 'external_id': f"VENDOR_{vendor_id}"
