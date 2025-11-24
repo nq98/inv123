@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetSuite Sync Events Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .dashboard-header {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .dashboard-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        
+        .sync-status {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #4a5568;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #48bb78;
+        }
+        
+        .status-dot.error {
+            background: #f56565;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #718096;
+        }
+        
+        .stat-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            margin-top: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .stat-trend.up {
+            color: #48bb78;
+            background: #f0fff4;
+        }
+        
+        .stat-trend.down {
+            color: #f56565;
+            background: #fff5f5;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .events-section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: white;
+            color: #4a5568;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn:hover {
+            background: #f7fafc;
+            border-color: #cbd5e0;
+        }
+        
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .event-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .event-item {
+            border-left: 3px solid transparent;
+            padding: 15px;
+            margin-bottom: 12px;
+            background: #f7fafc;
+            border-radius: 8px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .event-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .event-item.outbound {
+            border-left-color: #667eea;
+        }
+        
+        .event-item.inbound {
+            border-left-color: #48bb78;
+        }
+        
+        .event-item.failed {
+            border-left-color: #f56565;
+            background: #fff5f5;
+        }
+        
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .event-type {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 14px;
+        }
+        
+        .event-time {
+            font-size: 12px;
+            color: #718096;
+        }
+        
+        .event-details {
+            display: flex;
+            gap: 15px;
+            font-size: 13px;
+            color: #4a5568;
+        }
+        
+        .event-detail {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .detail-label {
+            font-weight: 500;
+            color: #718096;
+        }
+        
+        .badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge.success {
+            background: #f0fff4;
+            color: #48bb78;
+        }
+        
+        .badge.failed {
+            background: #fff5f5;
+            color: #f56565;
+        }
+        
+        .badge.pending {
+            background: #fef5e7;
+            color: #f6ad55;
+        }
+        
+        .supported-events {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .event-category {
+            margin-bottom: 20px;
+        }
+        
+        .category-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .event-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+        }
+        
+        .supported-event {
+            padding: 10px;
+            background: #f7fafc;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .supported-event-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+        
+        .supported-event-desc {
+            font-size: 12px;
+            color: #718096;
+        }
+        
+        .direction-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .direction-indicator.outbound {
+            background: #e6f4ff;
+            color: #667eea;
+        }
+        
+        .direction-indicator.inbound {
+            background: #f0fff4;
+            color: #48bb78;
+        }
+        
+        .refresh-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            color: #c53030;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: none;
+            background: #f7fafc;
+            cursor: pointer;
+            font-size: 18px;
+            color: #4a5568;
+        }
+        
+        .modal-close:hover {
+            background: #e2e8f0;
+        }
+        
+        .json-viewer {
+            background: #1a202c;
+            color: #a0aec0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <h1 class="dashboard-title">NetSuite Sync Events Dashboard</h1>
+            <div class="sync-status">
+                <div class="status-indicator">
+                    <div class="status-dot connected" id="connectionStatus"></div>
+                    <span id="connectionText">Connected to NetSuite</span>
+                </div>
+                <div class="status-indicator">
+                    <span id="lastSyncTime">Last sync: --</span>
+                </div>
+                <button class="refresh-btn" onclick="refreshDashboard()">
+                    <span id="refreshIcon">🔄</span> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalEvents">0</div>
+                <div class="stat-label">Total Events (24h)</div>
+                <div class="stat-trend up">▲ Active</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="outboundCount">0</div>
+                <div class="stat-label">To NetSuite</div>
+                <div class="stat-trend up" id="outboundTrend">→ Outbound</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="inboundCount">0</div>
+                <div class="stat-label">From NetSuite</div>
+                <div class="stat-trend up" id="inboundTrend">← Inbound</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="successRate">0%</div>
+                <div class="stat-label">Success Rate</div>
+                <div class="stat-trend" id="successTrend">✓ Health</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="failedCount">0</div>
+                <div class="stat-label">Failed Events</div>
+                <div class="stat-trend down" id="failedTrend">⚠ Errors</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avgDuration">0ms</div>
+                <div class="stat-label">Avg Duration</div>
+                <div class="stat-trend up">⚡ Speed</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Outbound Events -->
+            <div class="events-section">
+                <div class="section-header">
+                    <h2 class="section-title">📤 To NetSuite</h2>
+                    <span class="direction-indicator outbound">OUTBOUND</span>
+                </div>
+                <div class="filter-controls">
+                    <button class="filter-btn active" onclick="filterEvents('outbound', 'all')">All</button>
+                    <button class="filter-btn" onclick="filterEvents('outbound', 'vendor')">Vendors</button>
+                    <button class="filter-btn" onclick="filterEvents('outbound', 'bill')">Bills</button>
+                    <button class="filter-btn" onclick="filterEvents('outbound', 'payment')">Payments</button>
+                </div>
+                <div class="event-list" id="outboundEvents">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No outbound events yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inbound Events -->
+            <div class="events-section">
+                <div class="section-header">
+                    <h2 class="section-title">📥 From NetSuite</h2>
+                    <span class="direction-indicator inbound">INBOUND</span>
+                </div>
+                <div class="filter-controls">
+                    <button class="filter-btn active" onclick="filterEvents('inbound', 'all')">All</button>
+                    <button class="filter-btn" onclick="filterEvents('inbound', 'vendor')">Vendors</button>
+                    <button class="filter-btn" onclick="filterEvents('inbound', 'bill')">Bills</button>
+                    <button class="filter-btn" onclick="filterEvents('inbound', 'payment')">Payments</button>
+                </div>
+                <div class="event-list" id="inboundEvents">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No inbound events yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Supported Events -->
+        <div class="supported-events">
+            <h2 class="section-title">🔌 Supported Event Types</h2>
+            
+            <div class="event-category">
+                <h3 class="category-title">
+                    <span class="direction-indicator outbound">→</span>
+                    Outbound Events (Us to NetSuite)
+                </h3>
+                <div class="event-grid" id="outboundSupported">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="event-category">
+                <h3 class="category-title">
+                    <span class="direction-indicator inbound">←</span>
+                    Inbound Events (NetSuite to Us)
+                </h3>
+                <div class="event-grid" id="inboundSupported">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event Details Modal -->
+    <div class="modal" id="eventModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <h2 id="modalTitle">Event Details</h2>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        let allEvents = [];
+        let currentFilter = { outbound: 'all', inbound: 'all' };
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('NetSuite Events Dashboard initialized');
+            loadDashboard();
+            setInterval(loadDashboard, 30000); // Auto-refresh every 30 seconds
+        });
+        
+        async function loadDashboard() {
+            try {
+                // Load statistics
+                const statsResponse = await fetch('/api/netsuite/events/stats');
+                const stats = await statsResponse.json();
+                updateStatistics(stats);
+                
+                // Load events
+                const eventsResponse = await fetch('/api/netsuite/events?limit=100');
+                const events = await eventsResponse.json();
+                allEvents = events.events || [];
+                renderEvents();
+                
+                // Load supported events
+                const supportedResponse = await fetch('/api/netsuite/events/supported');
+                const supported = await supportedResponse.json();
+                renderSupportedEvents(supported);
+                
+                // Update last sync time
+                document.getElementById('lastSyncTime').textContent = 
+                    'Last sync: ' + new Date().toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                showError('Failed to load dashboard data');
+            }
+        }
+        
+        function updateStatistics(stats) {
+            document.getElementById('totalEvents').textContent = stats.total_events || 0;
+            document.getElementById('outboundCount').textContent = stats.outbound_count || 0;
+            document.getElementById('inboundCount').textContent = stats.inbound_count || 0;
+            document.getElementById('failedCount').textContent = stats.failed_count || 0;
+            document.getElementById('avgDuration').textContent = (stats.avg_duration_ms || 0) + 'ms';
+            
+            // Calculate success rate
+            const total = stats.total_events || 0;
+            const success = stats.success_count || 0;
+            const rate = total > 0 ? Math.round((success / total) * 100) : 0;
+            document.getElementById('successRate').textContent = rate + '%';
+            
+            // Update trend indicators
+            const successTrend = document.getElementById('successTrend');
+            if (rate >= 90) {
+                successTrend.className = 'stat-trend up';
+                successTrend.innerHTML = '✓ Healthy';
+            } else if (rate >= 70) {
+                successTrend.className = 'stat-trend';
+                successTrend.innerHTML = '⚠ Warning';
+            } else {
+                successTrend.className = 'stat-trend down';
+                successTrend.innerHTML = '✗ Critical';
+            }
+            
+            // Update connection status
+            const connectionDot = document.getElementById('connectionStatus');
+            const connectionText = document.getElementById('connectionText');
+            if (stats.last_event_time) {
+                connectionDot.className = 'status-dot connected';
+                connectionText.textContent = 'Connected to NetSuite';
+            } else {
+                connectionDot.className = 'status-dot error';
+                connectionText.textContent = 'No recent activity';
+            }
+        }
+        
+        function renderEvents() {
+            const outboundEvents = allEvents.filter(e => e.direction === 'OUTBOUND');
+            const inboundEvents = allEvents.filter(e => e.direction === 'INBOUND');
+            
+            renderEventList('outboundEvents', outboundEvents, currentFilter.outbound);
+            renderEventList('inboundEvents', inboundEvents, currentFilter.inbound);
+        }
+        
+        function renderEventList(containerId, events, filter) {
+            const container = document.getElementById(containerId);
+            
+            // Filter events
+            let filteredEvents = events;
+            if (filter !== 'all') {
+                filteredEvents = events.filter(e => 
+                    e.event_category && e.event_category.toLowerCase() === filter
+                );
+            }
+            
+            if (filteredEvents.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No ${filter === 'all' ? '' : filter + ' '}events</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filteredEvents.slice(0, 50).map(event => `
+                <div class="event-item ${event.direction.toLowerCase()} ${event.status === 'FAILED' ? 'failed' : ''}" 
+                     onclick="showEventDetails('${event.event_id}')">
+                    <div class="event-header">
+                        <span class="event-type">${event.event_type}</span>
+                        <span class="event-time">${formatTime(event.timestamp)}</span>
+                    </div>
+                    <div class="event-details">
+                        <div class="event-detail">
+                            <span class="detail-label">Category:</span>
+                            <span>${event.event_category || 'N/A'}</span>
+                        </div>
+                        <div class="event-detail">
+                            <span class="detail-label">Entity:</span>
+                            <span>${event.entity_id || 'N/A'}</span>
+                        </div>
+                        <div class="event-detail">
+                            <span class="badge ${event.status.toLowerCase()}">${event.status}</span>
+                        </div>
+                        ${event.duration_ms ? `
+                            <div class="event-detail">
+                                <span class="detail-label">Duration:</span>
+                                <span>${event.duration_ms}ms</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${event.error_message ? `
+                        <div style="margin-top: 8px; color: #e53e3e; font-size: 12px;">
+                            Error: ${event.error_message}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+        
+        function renderSupportedEvents(supported) {
+            // Render outbound events
+            const outboundContainer = document.getElementById('outboundSupported');
+            if (supported.outbound) {
+                outboundContainer.innerHTML = Object.entries(supported.outbound).map(([category, events]) => 
+                    events.map(event => `
+                        <div class="supported-event">
+                            <div class="supported-event-name">${event.type}</div>
+                            <div class="supported-event-desc">${event.description}</div>
+                        </div>
+                    `).join('')
+                ).join('');
+            }
+            
+            // Render inbound events
+            const inboundContainer = document.getElementById('inboundSupported');
+            if (supported.inbound) {
+                inboundContainer.innerHTML = Object.entries(supported.inbound).map(([category, events]) => 
+                    events.map(event => `
+                        <div class="supported-event">
+                            <div class="supported-event-name">${event.type}</div>
+                            <div class="supported-event-desc">${event.description}</div>
+                        </div>
+                    `).join('')
+                ).join('');
+            }
+        }
+        
+        function filterEvents(direction, category) {
+            // Update filter state
+            currentFilter[direction] = category;
+            
+            // Update button states
+            const buttons = document.querySelectorAll(`.events-section:has(#${direction}Events) .filter-btn`);
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.toLowerCase() === category || 
+                    (category === 'all' && btn.textContent === 'All')) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // Re-render events
+            renderEvents();
+        }
+        
+        function showEventDetails(eventId) {
+            const event = allEvents.find(e => e.event_id === eventId);
+            if (!event) return;
+            
+            const modal = document.getElementById('eventModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            
+            modalTitle.textContent = event.event_type;
+            
+            modalBody.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <strong>Event ID:</strong> ${event.event_id}<br>
+                    <strong>Timestamp:</strong> ${new Date(event.timestamp).toLocaleString()}<br>
+                    <strong>Direction:</strong> <span class="badge">${event.direction}</span><br>
+                    <strong>Category:</strong> ${event.event_category || 'N/A'}<br>
+                    <strong>Status:</strong> <span class="badge ${event.status.toLowerCase()}">${event.status}</span><br>
+                    <strong>Duration:</strong> ${event.duration_ms || 0}ms<br>
+                    ${event.entity_id ? `<strong>Entity ID:</strong> ${event.entity_id}<br>` : ''}
+                    ${event.netsuite_id ? `<strong>NetSuite ID:</strong> ${event.netsuite_id}<br>` : ''}
+                    ${event.user ? `<strong>User:</strong> ${event.user}<br>` : ''}
+                </div>
+                
+                ${event.error_message ? `
+                    <div style="background: #fff5f5; padding: 10px; border-radius: 6px; margin-bottom: 20px;">
+                        <strong style="color: #c53030;">Error:</strong><br>
+                        ${event.error_message}
+                    </div>
+                ` : ''}
+                
+                ${event.request_data ? `
+                    <div style="margin-bottom: 20px;">
+                        <strong>Request Data:</strong>
+                        <div class="json-viewer">${JSON.stringify(event.request_data, null, 2)}</div>
+                    </div>
+                ` : ''}
+                
+                ${event.response_data ? `
+                    <div style="margin-bottom: 20px;">
+                        <strong>Response Data:</strong>
+                        <div class="json-viewer">${JSON.stringify(event.response_data, null, 2)}</div>
+                    </div>
+                ` : ''}
+                
+                ${event.metadata ? `
+                    <div style="margin-bottom: 20px;">
+                        <strong>Metadata:</strong>
+                        <div class="json-viewer">${JSON.stringify(event.metadata, null, 2)}</div>
+                    </div>
+                ` : ''}
+            `;
+            
+            modal.classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('eventModal').classList.remove('active');
+        }
+        
+        function refreshDashboard() {
+            const refreshIcon = document.getElementById('refreshIcon');
+            refreshIcon.style.animation = 'spin 1s linear';
+            loadDashboard();
+            setTimeout(() => {
+                refreshIcon.style.animation = '';
+            }, 1000);
+        }
+        
+        function formatTime(timestamp) {
+            if (!timestamp) return '--';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + ' hours ago';
+            return date.toLocaleDateString();
+        }
+        
+        function showError(message) {
+            console.error(message);
+            // You can add a toast notification here
+        }
+        
+        // Handle escape key for modal
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
