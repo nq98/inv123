@@ -160,6 +160,10 @@
                     <span class="nav-icon">📊</span>
                     <span class="nav-text">NetSuite Events</span>
                 </a>
+                <a href="/#bill-audit" class="nav-link" data-tab="bill-audit">
+                    <span class="nav-icon">📜</span>
+                    <span class="nav-text">Bill Audit</span>
+                </a>
             </nav>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
                 <svg class="nav-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -1652,29 +1656,34 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
         
         <!-- ==================== NETSUITE EVENTS TAB ==================== -->
         <div class="tab-content" id="tab-netsuite-events">
-            <section class="card">
-                <div style="padding: 20px; border-bottom: 1px solid #e5e7eb;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h2 style="margin: 0; font-size: 20px; color: #1f2937;">NetSuite Events Dashboard</h2>
-                        <div style="display: flex; gap: 10px;">
-                            <button onclick="window.open('/api/netsuite/bills/audit', '_blank')" 
-                                    style="padding: 10px 20px; background: #4f46e5; color: white; border: none; 
-                                           border-radius: 6px; cursor: pointer; font-weight: 600;">
-                                📋 View Bill Audit Trail
-                            </button>
-                            <button onclick="window.open('/api/netsuite/bills/audit-trail?invoice_id=506', '_blank')" 
-                                    style="padding: 10px 20px; background: #10b981; color: white; border: none; 
-                                           border-radius: 6px; cursor: pointer; font-weight: 600;">
-                                📊 Invoice 506 Timeline (Raw)
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            <section class="card" style="padding: 0; height: calc(100vh - 100px);">
                 <iframe 
                     src="/api/netsuite/events/dashboard" 
-                    style="width: 100%; height: calc(100vh - 200px); border: none; border-radius: 0 0 8px 8px;"
+                    style="width: 100%; height: 100%; border: none; border-radius: 8px;"
                     title="NetSuite Events Dashboard">
                 </iframe>
+            </section>
+        </div>
+        
+        <!-- ==================== BILL AUDIT TAB ==================== -->
+        <div class="tab-content" id="tab-bill-audit">
+            <section class="card">
+                <h2>📜 All System Events Timeline</h2>
+                <p class="subtitle">Raw timeline of ALL events - System → NetSuite and NetSuite → System</p>
+                
+                <!-- Simple Refresh Button -->
+                <div style="margin-bottom: 20px;">
+                    <button onclick="loadAllSystemEvents()" class="btn btn-primary">
+                        🔄 Refresh Timeline
+                    </button>
+                </div>
+                
+                <!-- Timeline Container -->
+                <div id="allEventsTimeline" style="max-height: calc(100vh - 250px); overflow-y: auto; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                    <div style="text-align: center; color: #6b7280;">
+                        Loading all system events...
+                    </div>
+                </div>
             </section>
         </div>
         

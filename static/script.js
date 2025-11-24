@@ -1,3 +1,62 @@
+// Function to load all system events for the Bill Audit tab
+async function loadAllSystemEvents() {
+    const timeline = document.getElementById('allEventsTimeline');
+    if (!timeline) return;
+    
+    timeline.innerHTML = '<div style="text-align: center; color: #6b7280;">Loading all system events...</div>';
+    
+    try {
+        // Fetch the audit trail data
+        const response = await fetch('/api/netsuite/bills/audit-trail');
+        const data = await response.json();
+        
+        if (!data.success || !data.events || data.events.length === 0) {
+            timeline.innerHTML = '<div style="color: #6b7280;">No events found</div>';
+            return;
+        }
+        
+        // Create timeline HTML
+        let html = '<div style="font-family: monospace; font-size: 12px;">';
+        
+        data.events.forEach(event => {
+            const direction = event.direction === 'inbound' ? '← NetSuite → System' : '→ System → NetSuite';
+            const status = event.status === 'SUCCESS' ? '✅' : '❌';
+            
+            html += `
+                <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: white;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <strong>${direction}</strong>
+                        <span>${status} ${event.status}</span>
+                    </div>
+                    <div style="color: #666; margin-bottom: 5px;">
+                        📅 ${event.timestamp} | Type: ${event.type}
+                    </div>
+                    <div style="margin-bottom: 5px;">
+                        Invoice: ${event.invoice_id || 'N/A'} | Vendor: ${event.vendor_name || 'N/A'}
+                    </div>
+                    ${event.amount ? `<div>Amount: $${event.amount}</div>` : ''}
+                    ${event.error_message ? `<div style="color: red;">Error: ${event.error_message}</div>` : ''}
+                    ${event.request_payload ? `<details style="margin-top: 10px;">
+                        <summary>Request Data</summary>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.request_payload, null, 2)}</pre>
+                    </details>` : ''}
+                    ${event.response_payload ? `<details style="margin-top: 10px;">
+                        <summary>Response Data</summary>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.response_payload, null, 2)}</pre>
+                    </details>` : ''}
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        timeline.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading system events:', error);
+        timeline.innerHTML = '<div style="color: red;">Error loading events. Please try again.</div>';
+    }
+}
+
 // ==================== TAB NAVIGATION ====================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 DOM Content Loaded - Initializing Invoice AI...');
@@ -39,6 +98,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (tabName === 'invoices') {
                 // Force refresh to get latest data (no cache)
                 loadInvoiceList(currentInvoiceListPage || 1); // Reload current page or first page
+            }
+            
+            // Initialize Bill Audit tab if selected
+            if (tabName === 'bill-audit') {
+                loadAllSystemEvents();
             }
             
             // Close mobile menu after selection
