@@ -1,5 +1,17 @@
 // Invoice actions with proper duplicate detection and confirmation
 
+// Function to check bill status from NetSuite
+async function checkBillStatus(externalId) {
+    try {
+        const response = await fetch(`/api/netsuite/bill/${externalId}/status`);
+        const result = await response.json();
+        return result;
+    } catch (error) {
+        console.error('Error checking bill status:', error);
+        return null;
+    }
+}
+
 async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpdate = false) {
     // Find the button that was clicked
     const button = document.querySelector(`button[onclick*="createBillInNetSuite('${invoiceId}')"]`);
@@ -215,46 +227,117 @@ async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpd
             
             // Check if it's a duplicate bill
             if (createResponse.status === 409 && result.duplicate) {
-                // Bill already exists - show confirmation dialog
-                button.innerHTML = '⚠️ DUPLICATE DETECTED';
+                // Bill already exists - check its status from NetSuite
+                button.innerHTML = '⏳ CHECKING STATUS...';
                 button.style.backgroundColor = '#f59e0b';
                 button.style.animation = 'none';
-                statusBadge.textContent = result.message;
+                statusBadge.textContent = 'Checking bill approval status...';
                 statusBadge.style.backgroundColor = '#f59e0b';
                 
-                // Show confirmation dialog
-                const userChoice = await showDuplicateConfirmation(
-                    'Bill Already Exists',
-                    result.message,
-                    `Do you want to update the existing bill with amount $${result.invoice_amount}?`
-                );
+                // Check bill status from NetSuite
+                const externalId = result.netsuite_bill_id || `INV_${invoiceId}`;
+                const billStatus = await checkBillStatus(externalId);
                 
-                if (userChoice) {
-                    // User wants to update - recurse with forceUpdate=true
-                    statusBadge.remove();
-                    button.innerHTML = originalText;
-                    button.style.backgroundColor = originalBg;
-                    button.style.color = '';
-                    button.style.fontWeight = '';
-                    button.disabled = false;
+                if (billStatus && billStatus.success && billStatus.found) {
+                    const { approval_status, can_modify } = billStatus;
                     
-                    // Call again with forceUpdate flag
-                    return createBillInNetSuite(invoiceId, true, true);
+                    if (approval_status === 'Approved' || !can_modify) {
+                        // Bill is approved and cannot be modified
+                        button.innerHTML = '❌ BILL APPROVED';
+                        button.style.backgroundColor = '#ef4444';
+                        button.style.color = 'white';
+                        statusBadge.textContent = 'Bill is approved in NetSuite and cannot be modified';
+                        statusBadge.style.backgroundColor = '#ef4444';
+                        
+                        console.error('Cannot modify bill: Bill is approved in NetSuite');
+                        
+                        // Show more detailed message
+                        const detailMsg = `Bill ${billStatus.bill_details.transaction_number} is ${approval_status}. ` +
+                                        `Amount: $${billStatus.bill_details.amounts.total}`;
+                        console.log(detailMsg);
+                        
+                        setTimeout(() => {
+                            button.innerHTML = '✓ Bill Approved';
+                            button.style.backgroundColor = '#10b981';
+                            button.style.color = 'white';
+                            button.disabled = true;
+                            statusBadge.textContent = 'Approved bills cannot be modified';
+                            statusBadge.style.backgroundColor = '#10b981';
+                        }, 3000);
+                        
+                        return;
+                    } else {
+                        // Bill exists but can be modified - show confirmation dialog
+                        button.innerHTML = '⚠️ DUPLICATE DETECTED';
+                        statusBadge.textContent = `Bill is ${approval_status} - can be updated`;
+                        
+                        // Show confirmation dialog
+                        const userChoice = await showDuplicateConfirmation(
+                            'Bill Already Exists',
+                            `Bill is currently ${approval_status} in NetSuite.`,
+                            `Do you want to update the existing bill with amount $${result.invoice_amount}?`
+                        );
+                        
+                        if (userChoice) {
+                            // User wants to update - recurse with forceUpdate=true
+                            statusBadge.remove();
+                            button.innerHTML = originalText;
+                            button.style.backgroundColor = originalBg;
+                            button.style.color = '';
+                            button.style.fontWeight = '';
+                            button.disabled = false;
+                            
+                            // Call again with forceUpdate flag
+                            return createBillInNetSuite(invoiceId, true, true);
+                        } else {
+                            // User cancelled
+                            button.innerHTML = '❌ CANCELLED';
+                            button.style.backgroundColor = '#6b7280';
+                            statusBadge.textContent = 'Update cancelled by user';
+                            statusBadge.style.backgroundColor = '#6b7280';
+                            
+                            setTimeout(() => {
+                                button.innerHTML = originalText;
+                                button.style.backgroundColor = originalBg;
+                                button.style.color = '';
+                                button.style.fontWeight = '';
+                                button.disabled = false;
+                                statusBadge.remove();
+                            }, 3000);
+                        }
+                    }
                 } else {
-                    // User cancelled
-                    button.innerHTML = '❌ CANCELLED';
-                    button.style.backgroundColor = '#6b7280';
-                    statusBadge.textContent = 'Update cancelled by user';
-                    statusBadge.style.backgroundColor = '#6b7280';
+                    // Could not check status, show generic confirmation
+                    const userChoice = await showDuplicateConfirmation(
+                        'Bill Already Exists',
+                        result.message,
+                        `Do you want to update the existing bill with amount $${result.invoice_amount}?`
+                    );
                     
-                    setTimeout(() => {
+                    if (userChoice) {
+                        statusBadge.remove();
                         button.innerHTML = originalText;
                         button.style.backgroundColor = originalBg;
                         button.style.color = '';
                         button.style.fontWeight = '';
                         button.disabled = false;
-                        statusBadge.remove();
-                    }, 3000);
+                        
+                        return createBillInNetSuite(invoiceId, true, true);
+                    } else {
+                        button.innerHTML = '❌ CANCELLED';
+                        button.style.backgroundColor = '#6b7280';
+                        statusBadge.textContent = 'Update cancelled by user';
+                        statusBadge.style.backgroundColor = '#6b7280';
+                        
+                        setTimeout(() => {
+                            button.innerHTML = originalText;
+                            button.style.backgroundColor = originalBg;
+                            button.style.color = '';
+                            button.style.fontWeight = '';
+                            button.disabled = false;
+                            statusBadge.remove();
+                        }, 3000);
+                    }
                 }
             } else if (createResponse.ok && result.success) {
                 // SUCCESS - Show very clear success state
@@ -477,7 +560,122 @@ async function updateBillInNetSuite(invoiceId) {
     }
 }
 
+// Function to update button display based on bill status
+async function updateBillButtonStatus(invoiceId, netsuiteBillId) {
+    if (!netsuiteBillId) return;
+    
+    const button = document.querySelector(`button[onclick*="createBillInNetSuite('${invoiceId}')"]`);
+    if (!button) return;
+    
+    try {
+        // Check bill status from NetSuite
+        const externalId = netsuiteBillId.startsWith('INV_') ? netsuiteBillId : `INV_${invoiceId}`;
+        const billStatus = await checkBillStatus(externalId);
+        
+        if (billStatus && billStatus.success && billStatus.found) {
+            const { approval_status, can_modify, bill_details } = billStatus;
+            
+            // Create status badge
+            const statusBadge = document.createElement('span');
+            statusBadge.style.marginLeft = '10px';
+            statusBadge.style.padding = '2px 8px';
+            statusBadge.style.borderRadius = '4px';
+            statusBadge.style.fontSize = '11px';
+            statusBadge.style.fontWeight = 'bold';
+            
+            if (approval_status === 'Approved') {
+                // Bill is approved - show as disabled button
+                button.innerHTML = '✓ Bill Approved';
+                button.style.backgroundColor = '#10b981';
+                button.style.color = 'white';
+                button.disabled = true;
+                button.title = 'Approved bills cannot be modified';
+                
+                statusBadge.innerHTML = 'APPROVED';
+                statusBadge.style.background = '#10b981';
+                statusBadge.style.color = 'white';
+            } else if (approval_status === 'Pending Approval') {
+                // Bill is pending approval
+                button.innerHTML = '⏳ Pending Approval';
+                button.style.backgroundColor = '#f59e0b';
+                button.style.color = 'white';
+                button.disabled = true;
+                button.title = 'Bills pending approval cannot be modified';
+                
+                statusBadge.innerHTML = 'PENDING';
+                statusBadge.style.background = '#f59e0b';
+                statusBadge.style.color = 'white';
+            } else if (approval_status === 'Rejected') {
+                // Bill was rejected - can be updated
+                button.innerHTML = '↻ Update Bill';
+                button.style.backgroundColor = '#3b82f6';
+                button.style.color = 'white';
+                button.title = 'Click to update the rejected bill';
+                
+                statusBadge.innerHTML = 'REJECTED';
+                statusBadge.style.background = '#ef4444';
+                statusBadge.style.color = 'white';
+            } else {
+                // Bill is open - can be updated
+                button.innerHTML = '↻ Update Bill';
+                button.style.backgroundColor = '#3b82f6';
+                button.style.color = 'white';
+                button.title = 'Click to update the bill';
+                
+                statusBadge.innerHTML = 'OPEN';
+                statusBadge.style.background = '#6b7280';
+                statusBadge.style.color = 'white';
+            }
+            
+            // Add status badge next to button
+            if (button.parentElement) {
+                const existingBadge = button.parentElement.querySelector('.status-badge-inline');
+                if (existingBadge) existingBadge.remove();
+                statusBadge.className = 'status-badge-inline';
+                button.parentElement.appendChild(statusBadge);
+            }
+            
+            // Show bill amount if available
+            if (bill_details && bill_details.amounts) {
+                const amountText = document.createElement('div');
+                amountText.style.fontSize = '11px';
+                amountText.style.color = '#666';
+                amountText.style.marginTop = '5px';
+                amountText.innerHTML = `Amount: $${bill_details.amounts.total}`;
+                if (button.parentElement) {
+                    button.parentElement.appendChild(amountText);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error checking bill status:', error);
+    }
+}
+
+// Function to check all invoice bill statuses on page load
+async function checkAllBillStatuses() {
+    // Find all invoice rows with NetSuite bill IDs
+    const invoiceRows = document.querySelectorAll('[data-invoice-id][data-netsuite-bill-id]');
+    
+    for (const row of invoiceRows) {
+        const invoiceId = row.getAttribute('data-invoice-id');
+        const netsuiteBillId = row.getAttribute('data-netsuite-bill-id');
+        
+        if (netsuiteBillId && netsuiteBillId !== 'null' && netsuiteBillId !== '') {
+            await updateBillButtonStatus(invoiceId, netsuiteBillId);
+        }
+    }
+}
+
+// Call on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Check bill statuses after a small delay to ensure DOM is ready
+    setTimeout(checkAllBillStatuses, 500);
+});
+
 // Export functions for use
 window.createBillInNetSuite = createBillInNetSuite;
 window.updateBillInNetSuite = updateBillInNetSuite;
 window.viewInvoiceDetails = viewInvoiceDetails;
+window.checkBillStatus = checkBillStatus;
+window.updateBillButtonStatus = updateBillButtonStatus;

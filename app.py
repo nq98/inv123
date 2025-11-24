@@ -6130,6 +6130,58 @@ def bill_audit_page():
     """Serve the bill audit trail page"""
     return render_template('bill_audit.html')
 
+@app.route('/api/netsuite/bill/<external_id>/status', methods=['GET'])
+def get_netsuite_bill_status(external_id):
+    """
+    Get bill status and details from NetSuite by external ID
+    Returns approval status, payment status, and whether the bill can be modified
+    """
+    try:
+        # Initialize NetSuite service
+        netsuite = get_netsuite_service()
+        
+        if not netsuite or not netsuite.enabled:
+            return jsonify({
+                'success': False,
+                'error': 'NetSuite integration not enabled'
+            }), 503
+        
+        # Get bill status from NetSuite
+        result = netsuite.get_bill_status(external_id)
+        
+        if not result['success']:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to get bill status')
+            }), 500
+        
+        if not result['found']:
+            return jsonify({
+                'success': True,
+                'found': False,
+                'external_id': external_id,
+                'message': 'Bill not found in NetSuite'
+            })
+        
+        # Return the bill status and details
+        return jsonify({
+            'success': True,
+            'found': True,
+            'external_id': result['external_id'],
+            'internal_id': result['internal_id'],
+            'approval_status': result['approval_status'],
+            'payment_status': result['payment_status'],
+            'can_modify': result['can_modify'],
+            'bill_details': result['bill_details']
+        })
+        
+    except Exception as e:
+        print(f"Error getting NetSuite bill status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'

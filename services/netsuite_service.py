@@ -1329,6 +1329,144 @@ class NetSuiteService:
         result = self._make_request('GET', f'/record/v1/vendorbill/{bill_id}')
         return result
     
+    def get_bill_status(self, external_id: str) -> Dict:
+        """
+        Get bill status and details from NetSuite by external ID
+        
+        Args:
+            external_id: External ID of the bill (e.g., 'INV_506')
+            
+        Returns:
+            Dict with bill status, approval status, and other details
+        """
+        if not self.enabled:
+            return {
+                'success': False,
+                'error': 'NetSuite integration not enabled',
+                'found': False
+            }
+        
+        try:
+            # Search for the bill by external ID
+            logger.info(f"Searching for bill with external ID: {external_id}")
+            
+            # First try to find the bill by external ID using search
+            search_params = {
+                'q': f'externalId IS "{external_id}"',
+                'limit': 1
+            }
+            
+            search_result = self._make_request('GET', '/record/v1/vendorbill', params=search_params)
+            
+            if not search_result or not search_result.get('items'):
+                logger.info(f"Bill not found with external ID: {external_id}")
+                return {
+                    'success': True,
+                    'found': False,
+                    'external_id': external_id
+                }
+            
+            # Get the internal ID from search results
+            bill_summary = search_result['items'][0]
+            internal_id = bill_summary.get('id')
+            
+            # Now get full bill details using internal ID
+            logger.info(f"Found bill with internal ID: {internal_id}, fetching full details")
+            bill_details = self._make_request('GET', f'/record/v1/vendorbill/{internal_id}')
+            
+            if not bill_details:
+                return {
+                    'success': False,
+                    'error': 'Failed to fetch bill details',
+                    'found': True,
+                    'external_id': external_id
+                }
+            
+            # Extract relevant status information
+            approval_status = bill_details.get('approvalstatus', {})
+            
+            # Determine approval status value
+            # NetSuite approval statuses: 1=Pending Approval, 2=Approved, 3=Rejected
+            approval_status_value = 'Unknown'
+            can_modify = True
+            
+            if isinstance(approval_status, dict):
+                status_id = approval_status.get('id', '')
+                status_ref = approval_status.get('refName', '')
+                
+                # Map NetSuite approval status IDs to readable values
+                if status_id == '2' or 'approved' in str(status_ref).lower():
+                    approval_status_value = 'Approved'
+                    can_modify = False  # Cannot modify approved bills
+                elif status_id == '1' or 'pending' in str(status_ref).lower():
+                    approval_status_value = 'Pending Approval'
+                    can_modify = False  # Cannot modify bills pending approval
+                elif status_id == '3' or 'rejected' in str(status_ref).lower():
+                    approval_status_value = 'Rejected'
+                    can_modify = True  # Can modify rejected bills
+                else:
+                    approval_status_value = 'Open'
+                    can_modify = True  # Can modify open bills
+            else:
+                # No approval status means it's Open/Draft
+                approval_status_value = 'Open'
+                can_modify = True
+            
+            # Get bill amount and other details
+            total_amount = float(bill_details.get('usertotal', 0) or bill_details.get('total', 0))
+            amount_paid = float(bill_details.get('amountpaid', 0))
+            amount_remaining = float(bill_details.get('amountremaining', total_amount))
+            
+            # Determine payment status
+            payment_status = 'Unpaid'
+            if amount_paid > 0:
+                if amount_remaining > 0:
+                    payment_status = 'Partially Paid'
+                else:
+                    payment_status = 'Fully Paid'
+                    can_modify = False  # Cannot modify paid bills
+            
+            # Build response
+            response = {
+                'success': True,
+                'found': True,
+                'external_id': external_id,
+                'internal_id': internal_id,
+                'approval_status': approval_status_value,
+                'payment_status': payment_status,
+                'can_modify': can_modify,
+                'bill_details': {
+                    'transaction_number': bill_details.get('tranId', ''),
+                    'vendor': {
+                        'id': bill_details.get('entity', {}).get('id', ''),
+                        'name': bill_details.get('entity', {}).get('refName', '')
+                    },
+                    'date': bill_details.get('trandate', ''),
+                    'due_date': bill_details.get('duedate', ''),
+                    'memo': bill_details.get('memo', ''),
+                    'currency': bill_details.get('currency', {}).get('refName', 'USD'),
+                    'amounts': {
+                        'total': total_amount,
+                        'paid': amount_paid,
+                        'remaining': amount_remaining
+                    },
+                    'status': bill_details.get('status', {}).get('refName', 'Unknown'),
+                    'netsuite_url': f"https://{self.account_id_url}.app.netsuite.com/app/accounting/transactions/vendbill.nl?id={internal_id}"
+                }
+            }
+            
+            logger.info(f"Bill status retrieved - Approval: {approval_status_value}, Payment: {payment_status}, Can Modify: {can_modify}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error fetching bill status: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'found': False,
+                'external_id': external_id
+            }
+    
     def sync_vendor_to_netsuite(self, vendor_data: Dict) -> Dict:
         """
         Sync a vendor from our system to NetSuite
