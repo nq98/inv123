@@ -3415,6 +3415,11 @@ def create_invoice_in_netsuite_new(invoice_id):
                         # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                        
+                        # CRITICAL FIX: Update the local vendor dict with the NetSuite ID
+                        vendor['netsuite_internal_id'] = netsuite_vendor_id
+                        print(f"✅ Updated local vendor dict with NetSuite ID: {netsuite_vendor_id}")
+                        
                         # CRITICAL: Ensure we keep using this ID for invoice creation
                         print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
@@ -3455,6 +3460,10 @@ def create_invoice_in_netsuite_new(invoice_id):
                             # Update BigQuery with the new ID immediately
                             bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                             print(f"✅ Vendor AUTO-CREATED in NetSuite with ID: {netsuite_vendor_id}")
+                            
+                            # CRITICAL FIX: Update the local vendor dict with the NetSuite ID
+                            vendor['netsuite_internal_id'] = netsuite_vendor_id
+                            print(f"✅ Updated local vendor dict with auto-created NetSuite ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
@@ -3567,6 +3576,11 @@ def update_invoice_in_netsuite(invoice_id):
                         # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                        
+                        # CRITICAL FIX: Update the local vendor dict with the NetSuite ID
+                        vendor['netsuite_internal_id'] = netsuite_vendor_id
+                        print(f"✅ Updated local vendor dict with NetSuite ID: {netsuite_vendor_id}")
+                        
                         # CRITICAL: Ensure we keep using this ID for invoice creation
                         print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
@@ -3607,6 +3621,10 @@ def update_invoice_in_netsuite(invoice_id):
                             # Update BigQuery with the new ID immediately
                             bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                             print(f"✅ Vendor AUTO-CREATED in NetSuite with ID: {netsuite_vendor_id}")
+                            
+                            # CRITICAL FIX: Update the local vendor dict with the NetSuite ID
+                            vendor['netsuite_internal_id'] = netsuite_vendor_id
+                            print(f"✅ Updated local vendor dict with auto-created NetSuite ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
