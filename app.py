@@ -3975,10 +3975,8 @@ def get_all_invoices_with_sync_status():
         
         invoices = []
         for row in result:
-            # Since amounts are all 0 in DB, generate a placeholder amount for demo purposes
-            # In production, this should be fixed in the invoice extraction process
-            import random
-            placeholder_amount = random.uniform(100, 5000) if row.amount == 0 else float(row.amount)
+            # Use actual amount from database - no placeholders
+            actual_amount = float(row.amount) if row.amount else 0.0
             
             invoices.append({
                 'invoice_id': row.invoice_id,
@@ -3986,7 +3984,7 @@ def get_all_invoices_with_sync_status():
                 'vendor_name': row.vendor_name,
                 'vendor_id': row.vendor_id,
                 'invoice_date': row.invoice_date.isoformat() if row.invoice_date else None,
-                'total_amount': placeholder_amount,  # Use placeholder since DB amounts are 0
+                'total_amount': actual_amount,  # Use actual DB amount
                 'currency': row.currency or 'USD',
                 'netsuite_bill_id': None,  # NetSuite sync not yet tracked in this table
                 'sync_status': 'not-synced',
