@@ -934,6 +934,16 @@ class NetSuiteService:
             '1'  # Default to USD
         )
         
+        # Fix trandate field - Never send null, ensure valid date format
+        tran_date = bill_data.get('invoice_date') or bill_data.get('date')
+        if not tran_date:
+            tran_date = datetime.now().strftime('%Y-%m-%d')
+        elif hasattr(tran_date, 'strftime'):
+            tran_date = tran_date.strftime('%Y-%m-%d')
+        elif isinstance(tran_date, str) and len(tran_date) > 10:
+            # Handle ISO datetime strings
+            tran_date = tran_date[:10]  # Extract YYYY-MM-DD part
+        
         # Build vendor bill object - EXACT MATCH to working format
         netsuite_bill = {
             'externalId': f"INV_{bill_data['invoice_id']}",
@@ -947,7 +957,7 @@ class NetSuiteService:
                 'id': currency_id
             },
             'tranId': bill_data.get('invoice_number', bill_data['invoice_id']),
-            'trandate': bill_data.get('invoice_date', datetime.now().strftime('%Y-%m-%d')),  # lowercase!
+            'trandate': tran_date,  # Must be valid date string like "2025-11-24"
             'memo': bill_data.get('memo', f"Invoice from AI extraction system - {bill_data['invoice_id']}"),
             'terms': {
                 'id': TERMS_ID  # THIS WAS MISSING - CRITICAL!
@@ -965,13 +975,19 @@ class NetSuiteService:
         if line_items:
             # Use provided line items
             for item in line_items:
+                # Validate line item amount
+                item_amount = float(item.get('amount', 0))
+                if item_amount <= 0:
+                    logger.warning(f"Skipping line item with invalid amount: {item_amount}")
+                    continue
+                    
                 expense_item = {
                     'account': {
                         'id': item.get('account_id', 
                                      os.getenv('NETSUITE_EXPENSE_ACCOUNT_ID', 
                                              self.DEFAULT_EXPENSE_ACCOUNT_ID))
                     },
-                    'amount': item.get('amount', 0),
+                    'amount': item_amount,  # Validated to be > 0
                     'memo': item.get('description', ''),
                     'department': {
                         'id': DEPARTMENT_ID  # Add department as per working example
@@ -988,13 +1004,18 @@ class NetSuiteService:
                 
                 expense_items.append(expense_item)
         else:
+            # Fix amount field - Never send 0, use actual invoice amount
+            amount = float(bill_data.get('total_amount') or bill_data.get('amount') or bill_data.get('subtotal') or 0)
+            if amount <= 0:
+                raise ValueError(f"Invoice amount must be greater than 0, got: {amount}")
+            
             # Create single line item with total amount
             expense_items.append({
                 'account': {
                     'id': os.getenv('NETSUITE_EXPENSE_ACCOUNT_ID', 
                                   self.DEFAULT_EXPENSE_ACCOUNT_ID)
                 },
-                'amount': bill_data.get('total_amount', 0),
+                'amount': amount,  # Must be > 0
                 'memo': bill_data.get('memo', 'Invoice total'),
                 'department': {
                     'id': DEPARTMENT_ID  # Add department as per working example
@@ -1045,6 +1066,21 @@ class NetSuiteService:
             '1'  # Default to USD
         )
         
+        # Fix trandate field - Never send null, ensure valid date format
+        tran_date = invoice_data.get('tranDate') or invoice_data.get('invoice_date') or invoice_data.get('date')
+        if not tran_date:
+            tran_date = datetime.now().strftime('%Y-%m-%d')
+        elif hasattr(tran_date, 'strftime'):
+            tran_date = tran_date.strftime('%Y-%m-%d')
+        elif isinstance(tran_date, str) and len(tran_date) > 10:
+            # Handle ISO datetime strings
+            tran_date = tran_date[:10]  # Extract YYYY-MM-DD part
+            
+        # Fix amount field - Never send 0, use actual invoice amount
+        amount = float(invoice_data.get('amount') or invoice_data.get('total_amount') or invoice_data.get('subtotal') or 0)
+        if amount <= 0:
+            raise ValueError(f"Invoice amount must be greater than 0, got: {amount}")
+        
         # Build Payload - EXACT MATCH to working JSON
         # Note: Using 'trandate' (lowercase) not 'tranDate'
         netsuite_bill = {
@@ -1058,7 +1094,7 @@ class NetSuiteService:
             "currency": {
                 "id": currency_id  # Or use mapping for other currencies
             },
-            "trandate": invoice_data.get('tranDate', datetime.now().strftime('%Y-%m-%d')),  # lowercase!
+            "trandate": tran_date,  # Must be valid date string like "2025-11-24"
             "tranId": invoice_data.get('tranId'),
             "memo": invoice_data.get('memo', ''),
             "terms": {
@@ -1067,7 +1103,7 @@ class NetSuiteService:
             "expense": {
                 "items": [{
                     "account": {"id": EXPENSE_ACCOUNT_ID},
-                    "amount": invoice_data.get('amount'),
+                    "amount": amount,  # Must be > 0
                     "memo": invoice_data.get('memo', ''),
                     "department": {"id": DEPARTMENT_ID},
                     "taxCode": {"id": TAX_CODE_ID}
