@@ -489,11 +489,11 @@ class NetSuiteService:
         # Build search query
         query_parts = []
         if name:
-            query_parts.append(f"companyName CONTAIN '{name}'")
+            query_parts.append(f"companyName CONTAINS '{name}'")
         if tax_id:
             query_parts.append(f"vatRegNumber IS '{tax_id}'")
         if email:
-            query_parts.append(f"email CONTAIN '{email}'")
+            query_parts.append(f"email CONTAINS '{email}'")
         
         if not query_parts:
             logger.warning("No search criteria provided")
