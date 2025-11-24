@@ -1403,3 +1403,262 @@ class NetSuiteService:
                                    action='create')
         return result
     
+    def get_bill_payment_status(self, bill_id: str) -> Dict:
+        """
+        Get payment status and details for a vendor bill
+        
+        Args:
+            bill_id: NetSuite vendor bill internal ID
+            
+        Returns:
+            Dict with payment status details:
+                - status: 'paid', 'partial', 'pending', 'overdue'
+                - payment_amount: Amount paid
+                - payment_date: Date of last payment
+                - amount_due: Remaining amount due
+                - is_fully_paid: Boolean
+        """
+        if not self.enabled:
+            return {
+                'success': False,
+                'error': 'NetSuite service not enabled',
+                'status': 'pending'
+            }
+        
+        try:
+            # Get vendor bill details
+            bill = self._make_request('GET', f'/record/v1/vendorbill/{bill_id}')
+            if not bill:
+                return {
+                    'success': False,
+                    'error': f'Bill {bill_id} not found',
+                    'status': 'pending'
+                }
+            
+            # Extract payment information
+            total_amount = float(bill.get('total', 0))
+            amount_paid = float(bill.get('amountpaid', 0))
+            amount_remaining = float(bill.get('amountremaining', total_amount))
+            
+            # Parse dates
+            due_date = bill.get('duedate')
+            tran_date = bill.get('trandate')
+            
+            # Check payment records for this bill
+            payment_date = None
+            payment_records = self.get_bill_payments(bill_id)
+            if payment_records and payment_records.get('items'):
+                # Get the most recent payment date
+                payments = payment_records.get('items', [])
+                if payments:
+                    # Sort by date and get the latest
+                    payment_dates = [p.get('trandate') for p in payments if p.get('trandate')]
+                    if payment_dates:
+                        payment_date = sorted(payment_dates)[-1]
+            
+            # Determine payment status
+            is_fully_paid = amount_remaining <= 0 and amount_paid >= total_amount
+            
+            if is_fully_paid:
+                status = 'paid'
+            elif amount_paid > 0 and amount_paid < total_amount:
+                status = 'partial'
+            elif due_date:
+                # Check if overdue
+                from datetime import datetime
+                due_datetime = datetime.strptime(due_date, '%Y-%m-%d') if isinstance(due_date, str) else due_date
+                if datetime.now() > due_datetime:
+                    status = 'overdue'
+                else:
+                    status = 'pending'
+            else:
+                status = 'pending'
+            
+            return {
+                'success': True,
+                'bill_id': bill_id,
+                'status': status,
+                'payment_amount': amount_paid,
+                'payment_date': payment_date,
+                'amount_due': amount_remaining,
+                'total_amount': total_amount,
+                'is_fully_paid': is_fully_paid,
+                'due_date': due_date,
+                'transaction_date': tran_date
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting bill payment status: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'status': 'pending'
+            }
+    
+    def get_bill_payments(self, bill_id: str) -> Dict:
+        """
+        Get payment records for a specific vendor bill
+        
+        Args:
+            bill_id: NetSuite vendor bill internal ID
+            
+        Returns:
+            Dict with payment records
+        """
+        if not self.enabled:
+            return {'success': False, 'error': 'NetSuite not enabled', 'items': []}
+        
+        try:
+            # Search for vendor payments linked to this bill
+            # Using SuiteQL query to find related payment records
+            query = f"""
+            SELECT 
+                p.id,
+                p.trandate,
+                p.tranid,
+                p.total,
+                p.memo
+            FROM vendorpayment p
+            INNER JOIN vendorpaymentapply pa ON pa.vendorpayment = p.id
+            WHERE pa.doc = '{bill_id}'
+            ORDER BY p.trandate DESC
+            """
+            
+            result = self._make_request('POST', '/query/v1/suiteql', 
+                                       data={'q': query})
+            
+            if result and result.get('items'):
+                return {
+                    'success': True,
+                    'items': result.get('items', [])
+                }
+            
+            return {
+                'success': True,
+                'items': []
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting bill payments: {e}")
+            # Fallback to empty list if SuiteQL is not available
+            return {
+                'success': False,
+                'error': str(e),
+                'items': []
+            }
+    
+    def search_unpaid_bills(self, limit: int = 100, offset: int = 0) -> Dict:
+        """
+        Search for unpaid or partially paid vendor bills
+        
+        Args:
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            Dict with list of unpaid bills
+        """
+        if not self.enabled:
+            return {'success': False, 'error': 'NetSuite not enabled', 'items': []}
+        
+        try:
+            # Use SuiteQL to find unpaid bills
+            query = f"""
+            SELECT 
+                vb.id,
+                vb.tranid,
+                vb.entity,
+                vb.trandate,
+                vb.duedate,
+                vb.total,
+                vb.amountpaid,
+                vb.amountremaining,
+                v.companyname as vendor_name
+            FROM vendorbill vb
+            LEFT JOIN vendor v ON v.id = vb.entity
+            WHERE vb.amountremaining > 0
+            ORDER BY vb.duedate ASC
+            LIMIT {limit}
+            OFFSET {offset}
+            """
+            
+            result = self._make_request('POST', '/query/v1/suiteql', 
+                                       data={'q': query})
+            
+            if result and result.get('items'):
+                # Process results to add status
+                items = []
+                for bill in result.get('items', []):
+                    amount_remaining = float(bill.get('amountremaining', 0))
+                    amount_paid = float(bill.get('amountpaid', 0))
+                    total = float(bill.get('total', 0))
+                    
+                    # Determine status
+                    if amount_paid > 0 and amount_remaining > 0:
+                        status = 'partial'
+                    elif bill.get('duedate'):
+                        from datetime import datetime
+                        due_date = datetime.strptime(bill['duedate'], '%Y-%m-%d')
+                        if datetime.now() > due_date:
+                            status = 'overdue'
+                        else:
+                            status = 'pending'
+                    else:
+                        status = 'pending'
+                    
+                    bill['payment_status'] = status
+                    items.append(bill)
+                
+                return {
+                    'success': True,
+                    'items': items,
+                    'total_count': len(items)
+                }
+            
+            return {
+                'success': True,
+                'items': []
+            }
+            
+        except Exception as e:
+            logger.error(f"Error searching unpaid bills: {e}")
+            # Fallback to REST API search if SuiteQL fails
+            return self._search_unpaid_bills_rest(limit, offset)
+    
+    def _search_unpaid_bills_rest(self, limit: int = 100, offset: int = 0) -> Dict:
+        """
+        Fallback method to search unpaid bills using REST API
+        """
+        try:
+            # Use REST API search with filters
+            result = self._make_request('GET', f'/record/v1/vendorbill?limit={limit}&offset={offset}')
+            
+            if result and result.get('items'):
+                # Filter for unpaid bills
+                unpaid_bills = []
+                for bill in result.get('items', []):
+                    # Get full bill details to check payment status
+                    bill_details = self.get_vendor_bill(bill.get('id'))
+                    if bill_details:
+                        amount_remaining = float(bill_details.get('amountremaining', 0))
+                        if amount_remaining > 0:
+                            unpaid_bills.append(bill_details)
+                
+                return {
+                    'success': True,
+                    'items': unpaid_bills
+                }
+            
+            return {
+                'success': True,
+                'items': []
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in REST search for unpaid bills: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'items': []
+            }
+    

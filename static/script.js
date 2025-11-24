@@ -2519,10 +2519,12 @@ function renderInvoiceMatches(data) {
     
     data.invoices.forEach(invoice => {
         const statusBadge = getStatusBadge(invoice.status);
+        const paymentBadge = getPaymentStatusBadge(invoice.payment_status);
         const confidence = invoice.match_confidence || 'N/A';
         const reasoning = invoice.match_reasoning || 'No reasoning available';
         const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'N/A';
         const createdAt = invoice.created_at ? new Date(invoice.created_at).toLocaleString() : 'N/A';
+        const paymentDate = invoice.payment_date ? new Date(invoice.payment_date).toLocaleDateString() : null;
         
         html += `
             <div class="invoice-card">
@@ -2530,6 +2532,7 @@ function renderInvoiceMatches(data) {
                     <div class="invoice-card-title">
                         <strong>${invoice.invoice_id}</strong>
                         ${statusBadge}
+                        ${paymentBadge}
                     </div>
                     <div class="invoice-card-amount">
                         ${invoice.amount.toLocaleString()} ${invoice.currency}
@@ -2554,6 +2557,18 @@ function renderInvoiceMatches(data) {
                             <span class="invoice-info-label">Confidence:</span>
                             <span class="invoice-info-value">${confidence}</span>
                         </div>
+                        ${paymentDate ? `
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Payment Date:</span>
+                            <span class="invoice-info-value">${paymentDate}</span>
+                        </div>
+                        ` : ''}
+                        ${invoice.payment_amount ? `
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label">Amount Paid:</span>
+                            <span class="invoice-info-value">${invoice.payment_amount.toLocaleString()} ${invoice.currency}</span>
+                        </div>
+                        ` : ''}
                     </div>
                     
                     <details class="invoice-details">
@@ -2583,6 +2598,20 @@ function getStatusBadge(status) {
     };
     
     return badges[status] || '<span class="status-badge status-unknown">UNKNOWN</span>';
+}
+
+/**
+ * Get payment status badge HTML
+ */
+function getPaymentStatusBadge(paymentStatus) {
+    const badges = {
+        'paid': '<span class="payment-badge payment-paid">💰 PAID</span>',
+        'partial': '<span class="payment-badge payment-partial">⚠️ PARTIAL</span>',
+        'pending': '<span class="payment-badge payment-pending">⏳ PENDING</span>',
+        'overdue': '<span class="payment-badge payment-overdue">🔴 OVERDUE</span>'
+    };
+    
+    return badges[paymentStatus] || '';
 }
 
 /**

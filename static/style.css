@@ -2281,6 +2281,44 @@ button {
     border: 1px solid var(--gray-300);
 }
 
+/* Payment Status Badges */
+.payment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-left: 8px;
+}
+
+.payment-paid {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+    border: 1px solid #059669;
+}
+
+.payment-partial {
+    background: rgba(251, 191, 36, 0.1);
+    color: #d97706;
+    border: 1px solid #d97706;
+}
+
+.payment-pending {
+    background: rgba(59, 130, 246, 0.1);
+    color: #2563eb;
+    border: 1px solid #2563eb;
+}
+
+.payment-overdue {
+    background: rgba(239, 68, 68, 0.1);
+    color: #dc2626;
+    border: 1px solid #dc2626;
+}
+
 /* Invoice Details (Expandable) */
 .invoice-details {
     margin-top: 12px;

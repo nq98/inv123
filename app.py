@@ -4709,6 +4709,246 @@ def bulk_sync_invoices():
             'error': str(e)
         }), 500
 
+@app.route('/api/netsuite/payments/sync', methods=['POST'])
+def sync_payment_status():
+    """
+    Sync payment status for all invoices with NetSuite bills
+    Streams progress via Server-Sent Events (SSE)
+    """
+    def generate():
+        try:
+            sync_manager = SyncManager()
+            
+            # Progress callback function
+            def progress_callback(step, total, message, data):
+                event_data = {
+                    'step': step,
+                    'total': total,
+                    'message': message,
+                    'stats': data
+                }
+                yield f"data: {json.dumps(event_data)}\n\n"
+            
+            # Start sync process
+            yield f"data: {json.dumps({'message': 'Starting payment status sync...'})}\n\n"
+            
+            # Run the sync with progress callback
+            results = sync_manager.sync_all_payment_status(progress_callback)
+            
+            # Send final results
+            yield f"data: {json.dumps({'message': 'Payment sync completed!', 'results': results, 'complete': True})}\n\n"
+            
+        except Exception as e:
+            error_msg = f"Error during payment sync: {str(e)}"
+            print(f"❌ {error_msg}")
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+@app.route('/api/netsuite/payments/sweep', methods=['POST'])
+def sweep_unpaid_bills():
+    """
+    Sweep NetSuite for all unpaid bills and update payment status in BigQuery
+    Can be scheduled to run daily or triggered on-demand
+    """
+    def generate():
+        try:
+            sync_manager = SyncManager()
+            
+            # Progress callback function
+            def progress_callback(step, total, message, data):
+                event_data = {
+                    'step': step,
+                    'total': total,
+                    'message': message,
+                    'stats': data
+                }
+                yield f"data: {json.dumps(event_data)}\n\n"
+            
+            # Start sweep process
+            yield f"data: {json.dumps({'message': 'Starting unpaid bills sweep...'})}\n\n"
+            
+            # Run the sweep with progress callback
+            results = sync_manager.sweep_unpaid_bills(progress_callback)
+            
+            # Send final results
+            yield f"data: {json.dumps({'message': 'Payment sweep completed!', 'results': results, 'complete': True})}\n\n"
+            
+        except Exception as e:
+            error_msg = f"Error during payment sweep: {str(e)}"
+            print(f"❌ {error_msg}")
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+@app.route('/api/netsuite/payments/status/<invoice_id>', methods=['GET'])
+def get_invoice_payment_status(invoice_id):
+    """
+    Get payment status for a specific invoice from NetSuite
+    """
+    try:
+        # Get invoice from BigQuery
+        bigquery_service = BigQueryService()
+        query = f"""
+        SELECT netsuite_bill_id, payment_status, payment_date, payment_amount
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        WHERE invoice_id = @invoice_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+            ]
+        )
+        
+        result = bigquery_service.client.query(query, job_config=job_config).result()
+        rows = list(result)
+        
+        if not rows:
+            return jsonify({
+                'success': False,
+                'error': 'Invoice not found'
+            }), 404
+        
+        invoice = dict(rows[0])
+        
+        # If no NetSuite bill, return current status
+        if not invoice.get('netsuite_bill_id'):
+            return jsonify({
+                'success': True,
+                'payment_status': invoice.get('payment_status', 'pending'),
+                'payment_date': invoice.get('payment_date'),
+                'payment_amount': invoice.get('payment_amount', 0),
+                'synced': False
+            })
+        
+        # Get fresh payment status from NetSuite
+        netsuite = NetSuiteService()
+        payment_info = netsuite.get_bill_payment_status(invoice['netsuite_bill_id'])
+        
+        if payment_info.get('success'):
+            # Update BigQuery with fresh data
+            update_query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+            SET 
+                payment_status = @payment_status,
+                payment_date = @payment_date,
+                payment_amount = @payment_amount,
+                payment_sync_date = CURRENT_TIMESTAMP()
+            WHERE invoice_id = @invoice_id
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                    bigquery.ScalarQueryParameter("payment_status", "STRING", payment_info.get('status')),
+                    bigquery.ScalarQueryParameter("payment_date", "DATE", payment_info.get('payment_date')),
+                    bigquery.ScalarQueryParameter("payment_amount", "FLOAT64", payment_info.get('payment_amount', 0))
+                ]
+            )
+            
+            bigquery_service.client.query(update_query, job_config=job_config).result()
+            
+            return jsonify({
+                'success': True,
+                'payment_status': payment_info.get('status'),
+                'payment_date': payment_info.get('payment_date'),
+                'payment_amount': payment_info.get('payment_amount'),
+                'amount_due': payment_info.get('amount_due'),
+                'total_amount': payment_info.get('total_amount'),
+                'is_fully_paid': payment_info.get('is_fully_paid'),
+                'due_date': payment_info.get('due_date'),
+                'synced': True
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': payment_info.get('error', 'Failed to get payment status from NetSuite')
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ Error getting payment status: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/payments/statistics', methods=['GET'])
+def get_payment_statistics():
+    """
+    Get payment statistics across all invoices
+    """
+    try:
+        bigquery_service = BigQueryService()
+        
+        # Get payment statistics
+        query = f"""
+        SELECT 
+            COUNT(*) as total_invoices,
+            COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) as paid_count,
+            COUNT(CASE WHEN payment_status = 'partial' THEN 1 END) as partial_count,
+            COUNT(CASE WHEN payment_status = 'pending' THEN 1 END) as pending_count,
+            COUNT(CASE WHEN payment_status = 'overdue' THEN 1 END) as overdue_count,
+            SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END) as paid_amount,
+            SUM(CASE WHEN payment_status IN ('pending', 'partial', 'overdue') THEN total_amount ELSE 0 END) as unpaid_amount,
+            AVG(CASE WHEN payment_status = 'paid' THEN DATE_DIFF(payment_date, invoice_date, DAY) END) as avg_payment_days
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        WHERE netsuite_bill_id IS NOT NULL
+        """
+        
+        result = bigquery_service.client.query(query).result()
+        
+        stats = {}
+        for row in result:
+            stats = {
+                'total_invoices': row.total_invoices,
+                'paid': {
+                    'count': row.paid_count,
+                    'amount': row.paid_amount,
+                    'percentage': (row.paid_count / row.total_invoices * 100) if row.total_invoices > 0 else 0
+                },
+                'partial': {
+                    'count': row.partial_count,
+                    'percentage': (row.partial_count / row.total_invoices * 100) if row.total_invoices > 0 else 0
+                },
+                'pending': {
+                    'count': row.pending_count,
+                    'percentage': (row.pending_count / row.total_invoices * 100) if row.total_invoices > 0 else 0
+                },
+                'overdue': {
+                    'count': row.overdue_count,
+                    'percentage': (row.overdue_count / row.total_invoices * 100) if row.total_invoices > 0 else 0
+                },
+                'unpaid_amount': row.unpaid_amount,
+                'avg_payment_days': round(row.avg_payment_days, 1) if row.avg_payment_days else None
+            }
+        
+        return jsonify({
+            'success': True,
+            'statistics': stats
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting payment statistics: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'

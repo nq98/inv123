@@ -634,6 +634,266 @@ class SyncManager:
             print(f"Error syncing payment status: {e}")
             return {'success': False, 'error': str(e)}
     
+    def sync_all_payment_status(self, progress_callback=None) -> Dict:
+        """
+        Sync payment status for all invoices that have NetSuite bills
+        
+        Args:
+            progress_callback: Optional callback function(step, total, message, data)
+        
+        Returns:
+            Dict with sync statistics
+        """
+        stats = {
+            'start_time': datetime.now(),
+            'total_invoices': 0,
+            'synced': 0,
+            'paid': 0,
+            'partial': 0,
+            'pending': 0,
+            'overdue': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        try:
+            # Step 1: Get all invoices with NetSuite bills
+            if progress_callback:
+                progress_callback(1, 5, "Fetching invoices with NetSuite bills...", stats)
+            
+            query = f"""
+            SELECT 
+                invoice_id,
+                netsuite_bill_id,
+                vendor_id,
+                invoice_number,
+                total_amount,
+                payment_status,
+                payment_date
+            FROM `{self.project_id}.vendors_ai.invoices`
+            WHERE netsuite_bill_id IS NOT NULL
+            """
+            
+            invoices = list(self.client.query(query).result())
+            stats['total_invoices'] = len(invoices)
+            
+            if progress_callback:
+                progress_callback(2, 5, f"Found {len(invoices)} invoices to sync", stats)
+            
+            # Step 2: Process each invoice
+            for idx, invoice in enumerate(invoices):
+                try:
+                    if progress_callback and idx % 10 == 0:
+                        progress_callback(
+                            3, 5, 
+                            f"Processing invoice {idx + 1}/{len(invoices)}...", 
+                            stats
+                        )
+                    
+                    # Get payment status from NetSuite
+                    payment_info = self.netsuite.get_bill_payment_status(invoice['netsuite_bill_id'])
+                    
+                    if payment_info.get('success'):
+                        # Update invoice with payment information
+                        status = payment_info.get('status', 'pending')
+                        payment_date = payment_info.get('payment_date')
+                        payment_amount = payment_info.get('payment_amount', 0)
+                        
+                        # Update BigQuery
+                        update_query = f"""
+                        UPDATE `{self.project_id}.vendors_ai.invoices`
+                        SET 
+                            payment_status = @payment_status,
+                            payment_date = @payment_date,
+                            payment_amount = @payment_amount,
+                            payment_sync_date = CURRENT_TIMESTAMP()
+                        WHERE invoice_id = @invoice_id
+                        """
+                        
+                        job_config = bigquery.QueryJobConfig(
+                            query_parameters=[
+                                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice['invoice_id']),
+                                bigquery.ScalarQueryParameter("payment_status", "STRING", status),
+                                bigquery.ScalarQueryParameter("payment_date", "DATE", payment_date),
+                                bigquery.ScalarQueryParameter("payment_amount", "FLOAT64", payment_amount)
+                            ]
+                        )
+                        
+                        self.client.query(update_query, job_config=job_config).result()
+                        
+                        # Update statistics
+                        stats['synced'] += 1
+                        if status == 'paid':
+                            stats['paid'] += 1
+                        elif status == 'partial':
+                            stats['partial'] += 1
+                        elif status == 'pending':
+                            stats['pending'] += 1
+                        elif status == 'overdue':
+                            stats['overdue'] += 1
+                    else:
+                        stats['failed'] += 1
+                        stats['errors'].append(f"Invoice {invoice['invoice_number']}: {payment_info.get('error')}")
+                        
+                except Exception as e:
+                    stats['failed'] += 1
+                    stats['errors'].append(f"Invoice {invoice.get('invoice_number', 'Unknown')}: {str(e)}")
+            
+            # Step 3: Final statistics
+            if progress_callback:
+                progress_callback(4, 5, "Calculating final statistics...", stats)
+            
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            stats['sync_rate'] = (stats['synced'] / stats['total_invoices'] * 100) if stats['total_invoices'] > 0 else 0
+            
+            # Log sync activity
+            if self.bigquery:
+                self.bigquery.log_netsuite_sync({
+                    'entity_type': 'payment_status_bulk',
+                    'entity_id': 'BULK_PAYMENT_SYNC',
+                    'action': 'sync_all',
+                    'status': 'success',
+                    'details': {
+                        'total_invoices': stats['total_invoices'],
+                        'synced': stats['synced'],
+                        'paid': stats['paid'],
+                        'partial': stats['partial'],
+                        'pending': stats['pending'],
+                        'overdue': stats['overdue'],
+                        'failed': stats['failed']
+                    }
+                })
+            
+            if progress_callback:
+                progress_callback(5, 5, "Payment sync completed!", stats)
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Critical error in payment sync: {e}")
+            stats['errors'].append(f"Critical error: {str(e)}")
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            if progress_callback:
+                progress_callback(5, 5, f"Sync failed: {str(e)}", stats)
+            
+            return stats
+    
+    def sweep_unpaid_bills(self, progress_callback=None) -> Dict:
+        """
+        Sweep NetSuite for all unpaid bills and update their payment status
+        
+        Args:
+            progress_callback: Optional callback function(step, total, message, data)
+            
+        Returns:
+            Dict with sweep statistics
+        """
+        stats = {
+            'start_time': datetime.now(),
+            'total_bills': 0,
+            'matched_invoices': 0,
+            'updated': 0,
+            'new_unpaid': 0,
+            'errors': []
+        }
+        
+        try:
+            # Step 1: Fetch unpaid bills from NetSuite
+            if progress_callback:
+                progress_callback(1, 4, "Fetching unpaid bills from NetSuite...", stats)
+            
+            unpaid_bills = self.netsuite.search_unpaid_bills(limit=1000)
+            
+            if not unpaid_bills.get('success'):
+                stats['errors'].append(f"Failed to fetch unpaid bills: {unpaid_bills.get('error')}")
+                return stats
+            
+            bills = unpaid_bills.get('items', [])
+            stats['total_bills'] = len(bills)
+            
+            if progress_callback:
+                progress_callback(2, 4, f"Found {len(bills)} unpaid bills", stats)
+            
+            # Step 2: Match bills to invoices and update payment status
+            for idx, bill in enumerate(bills):
+                try:
+                    if progress_callback and idx % 10 == 0:
+                        progress_callback(
+                            3, 4,
+                            f"Processing bill {idx + 1}/{len(bills)}...",
+                            stats
+                        )
+                    
+                    # Find invoice by NetSuite bill ID
+                    query = f"""
+                    SELECT invoice_id, payment_status
+                    FROM `{self.project_id}.vendors_ai.invoices`
+                    WHERE netsuite_bill_id = @bill_id
+                    LIMIT 1
+                    """
+                    
+                    job_config = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("bill_id", "STRING", str(bill.get('id')))
+                        ]
+                    )
+                    
+                    results = list(self.client.query(query, job_config=job_config).result())
+                    
+                    if results:
+                        invoice = dict(results[0])
+                        stats['matched_invoices'] += 1
+                        
+                        # Update payment status
+                        payment_status = bill.get('payment_status', 'pending')
+                        
+                        update_query = f"""
+                        UPDATE `{self.project_id}.vendors_ai.invoices`
+                        SET 
+                            payment_status = @payment_status,
+                            payment_sync_date = CURRENT_TIMESTAMP()
+                        WHERE invoice_id = @invoice_id
+                        """
+                        
+                        job_config = bigquery.QueryJobConfig(
+                            query_parameters=[
+                                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice['invoice_id']),
+                                bigquery.ScalarQueryParameter("payment_status", "STRING", payment_status)
+                            ]
+                        )
+                        
+                        self.client.query(update_query, job_config=job_config).result()
+                        stats['updated'] += 1
+                        
+                        if invoice.get('payment_status') != payment_status:
+                            stats['new_unpaid'] += 1
+                            
+                except Exception as e:
+                    stats['errors'].append(f"Bill {bill.get('tranid', 'Unknown')}: {str(e)}")
+            
+            # Step 3: Final report
+            if progress_callback:
+                progress_callback(4, 4, "Payment sweep completed!", stats)
+            
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Critical error in payment sweep: {e}")
+            stats['errors'].append(f"Critical error: {str(e)}")
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            if progress_callback:
+                progress_callback(4, 4, f"Sweep failed: {str(e)}", stats)
+            
+            return stats
+    
     def get_sync_status(self, entity_type: str = None) -> Dict:
         """
         Get overall sync status and statistics
@@ -664,7 +924,7 @@ class SyncManager:
                         'last_sync': row.last_sync.isoformat() if row.last_sync else None
                     }
             
-            # Invoice sync stats
+            # Invoice sync stats with payment status breakdown
             if not entity_type or entity_type == 'invoice':
                 invoice_query = f"""
                 SELECT 
@@ -672,8 +932,11 @@ class SyncManager:
                     COUNT(netsuite_bill_id) as synced,
                     COUNT(CASE WHEN netsuite_sync_status = 'failed' THEN 1 END) as failed,
                     COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) as paid,
-                    COUNT(CASE WHEN payment_status = 'unpaid' THEN 1 END) as unpaid,
-                    MAX(netsuite_sync_date) as last_sync
+                    COUNT(CASE WHEN payment_status = 'partial' THEN 1 END) as partial,
+                    COUNT(CASE WHEN payment_status = 'pending' THEN 1 END) as pending,
+                    COUNT(CASE WHEN payment_status = 'overdue' THEN 1 END) as overdue,
+                    MAX(netsuite_sync_date) as last_sync,
+                    MAX(payment_sync_date) as last_payment_sync
                 FROM `{self.project_id}.vendors_ai.invoices`
                 """
                 
@@ -684,9 +947,12 @@ class SyncManager:
                         'synced': row.synced,
                         'failed': row.failed,
                         'paid': row.paid,
-                        'unpaid': row.unpaid,
+                        'partial': row.partial,
+                        'pending': row.pending,
+                        'overdue': row.overdue,
                         'sync_percentage': (row.synced / row.total * 100) if row.total > 0 else 0,
-                        'last_sync': row.last_sync.isoformat() if row.last_sync else None
+                        'last_sync': row.last_sync.isoformat() if row.last_sync else None,
+                        'last_payment_sync': row.last_payment_sync.isoformat() if row.last_payment_sync else None
                     }
             
             return {'success': True, 'stats': stats}
