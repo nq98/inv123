@@ -1071,24 +1071,11 @@ class BigQueryService:
             True if successful, False otherwise
         """
         try:
-            # First, set the netsuite_internal_id column directly (if it exists)
-            # And update custom_attributes as a JSON object (not using JSON_SET which may not be available)
+            # Update netsuite_internal_id column directly and keep custom_attributes as is
+            # Don't try to update custom_attributes if it's causing type errors
             query = f"""
             UPDATE `{self.full_table_id}`
             SET netsuite_internal_id = @netsuite_id,
-                custom_attributes = PARSE_JSON(
-                    JSON_OBJECT(
-                        'netsuite_internal_id', @netsuite_id,
-                        'netsuite_sync_status', 'synced',
-                        'netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING),
-                        'source', IFNULL(JSON_VALUE(custom_attributes, '$.source'), 'API'),
-                        'address', IFNULL(JSON_VALUE(custom_attributes, '$.address'), ''),
-                        'email', IFNULL(JSON_VALUE(custom_attributes, '$.email'), ''),
-                        'phone', IFNULL(JSON_VALUE(custom_attributes, '$.phone'), ''),
-                        'tax_id', IFNULL(JSON_VALUE(custom_attributes, '$.tax_id'), ''),
-                        'external_id', IFNULL(JSON_VALUE(custom_attributes, '$.external_id'), '')
-                    )
-                ),
                 last_updated = CURRENT_TIMESTAMP()
             WHERE vendor_id = @vendor_id
             """
