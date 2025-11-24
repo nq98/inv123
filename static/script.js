@@ -60,6 +60,11 @@ async function loadAllSystemEvents() {
             const direction = event.direction === 'inbound' ? '← NetSuite → System' : '→ System → NetSuite';
             const status = event.status === 'SUCCESS' ? '✅' : '❌';
             
+            // Extract NetSuite details for easy access
+            const nsUrl = event.response_data?.netsuite_url || '';
+            const nsId = event.netsuite_id || event.response_data?.netsuite_id || '';
+            const billNumber = event.response_data?.bill_number || event.response_data?.transaction_number || '';
+            
             html += `
                 <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: white;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
@@ -69,18 +74,33 @@ async function loadAllSystemEvents() {
                     <div style="color: #666; margin-bottom: 5px;">
                         📅 ${event.timestamp} | Type: ${event.event_type}
                     </div>
+                    
+                    <!-- NetSuite Search Information (Highlighted) -->
+                    ${nsId || billNumber || nsUrl ? `
+                    <div style="background: #e3f2fd; border: 2px solid #1976d2; border-radius: 5px; padding: 10px; margin: 10px 0;">
+                        <strong style="color: #1976d2;">🔍 NetSuite Search Details:</strong>
+                        ${nsId ? `<div style="margin-top: 5px;"><strong>NetSuite ID:</strong> <span style="font-family: monospace; background: white; padding: 2px 5px; border-radius: 3px;">${nsId}</span></div>` : ''}
+                        ${billNumber ? `<div style="margin-top: 5px;"><strong>Bill/Transaction #:</strong> <span style="font-family: monospace; background: white; padding: 2px 5px; border-radius: 3px;">${billNumber}</span></div>` : ''}
+                        ${nsUrl ? `<div style="margin-top: 5px;"><strong>Direct Link:</strong> <a href="${nsUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">Open in NetSuite →</a></div>` : ''}
+                        ${event.event_category === 'VENDOR' ? `<div style="margin-top: 5px; color: #666; font-size: 12px;">💡 Search in NetSuite: Vendors → List → Search for ID "${nsId}"</div>` : ''}
+                        ${event.event_category === 'BILL' ? `<div style="margin-top: 5px; color: #666; font-size: 12px;">💡 Search in NetSuite: Transactions → Bills → Search for "${billNumber || nsId}"</div>` : ''}
+                    </div>
+                    ` : ''}
+                    
                     <div style="margin-bottom: 5px;">
                         ${event.event_category === 'BILL' ? `Invoice: ${event.invoice_id || 'N/A'}` : `Entity: ${event.entity_id || 'N/A'}`} | Vendor: ${event.vendor_name || event.request_data?.vendor_name || 'N/A'}
                     </div>
                     ${event.amount ? `<div>Amount: $${event.amount}</div>` : ''}
                     ${event.error_message ? `<div style="color: red;">Error: ${event.error_message}</div>` : ''}
+                    
+                    <!-- Additional Details (Collapsible) -->
                     ${event.request_data ? `<details style="margin-top: 10px;">
-                        <summary>Request Data</summary>
-                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.request_data, null, 2)}</pre>
+                        <summary style="cursor: pointer; color: #666;">📥 Request Details</summary>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px; margin-top: 5px;">${JSON.stringify(event.request_data, null, 2)}</pre>
                     </details>` : ''}
                     ${event.response_data ? `<details style="margin-top: 10px;">
-                        <summary>Response Data</summary>
-                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">${JSON.stringify(event.response_data, null, 2)}</pre>
+                        <summary style="cursor: pointer; color: #666;">📤 Response Details</summary>
+                        <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px; margin-top: 5px;">${JSON.stringify(event.response_data, null, 2)}</pre>
                     </details>` : ''}
                 </div>
             `;
