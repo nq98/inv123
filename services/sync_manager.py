@@ -558,7 +558,7 @@ class SyncManager:
                             "emails": [email] if email else [],
                             "domains": [],  # Can extract from email if needed
                             "countries": [],  # Can extract from address if available
-                            "addresses": [address] if address else [],
+                            # NOTE: addresses field removed - it's stored in custom_attributes instead
                             "custom_attributes": json.dumps(custom_attrs),  # Pack everything else here!
                             "source_system": "NETSUITE",
                             "created_at": datetime.now(),
