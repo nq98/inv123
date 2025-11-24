@@ -366,6 +366,7 @@ class SyncManager:
             )
             
             # Update sync status in BigQuery using proper BigQuery JSON syntax
+            # Note: Only update columns that exist - netsuite_internal_id, custom_attributes, last_updated
             if result.get('success'):
                 # Build JSON object for successful sync
                 update_query = f"""
@@ -383,13 +384,11 @@ class SyncManager:
                         CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync
                     ))),
                     netsuite_internal_id = @netsuite_id,
-                    netsuite_sync_status = 'synced',
-                    netsuite_last_sync = CURRENT_TIMESTAMP(),
                     last_updated = CURRENT_TIMESTAMP()
                 WHERE vendor_id = @vendor_id
                 """
             else:
-                # Build JSON object for failed sync
+                # Build JSON object for failed sync - only update existing columns
                 update_query = f"""
                 UPDATE `{self.project_id}.vendors_ai.global_vendors`
                 SET 
@@ -405,9 +404,6 @@ class SyncManager:
                         CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync,
                         @sync_error AS netsuite_sync_error
                     ))),
-                    netsuite_sync_status = 'failed',
-                    netsuite_sync_error = @sync_error,
-                    netsuite_last_sync = CURRENT_TIMESTAMP(),
                     last_updated = CURRENT_TIMESTAMP()
                 WHERE vendor_id = @vendor_id
                 """
