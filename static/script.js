@@ -2636,7 +2636,7 @@ function renderInvoiceListView(invoices) {
                         </button>
                     ` : ''}
                     ${!invoice.netsuite_bill_id ? `
-                        <button onclick="initiateInvoiceWorkflow('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
+                        <button onclick="createBillInNetSuite('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
                             📋 Create Bill
                         </button>
                     ` : `
