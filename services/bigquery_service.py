@@ -1208,6 +1208,9 @@ class BigQueryService:
             created_at as updated_at  -- Using created_at as updated_at fallback
         FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
         WHERE invoice_id = @invoice_id
+        ORDER BY 
+            CASE WHEN vendor_id IS NOT NULL THEN 0 ELSE 1 END,  -- Prioritize rows with vendor_id
+            created_at DESC  -- Then most recent
         LIMIT 1
         """
         
