@@ -3984,6 +3984,123 @@ let currentInvoiceId = null;
 let currentInvoiceData = null;
 
 /**
+ * Initiate invoice workflow - Main entry point for Create Bill button
+ */
+async function initiateInvoiceWorkflow(invoiceId) {
+    console.log(`🚀 Starting invoice workflow for ${invoiceId}`);
+    
+    try {
+        // Get invoice details from BigQuery
+        const response = await fetch(`/api/invoices/${invoiceId}`);
+        if (!response.ok) {
+            alert('Failed to fetch invoice details');
+            return;
+        }
+        
+        const invoice = await response.json();
+        console.log('📄 Invoice details:', invoice);
+        
+        // Check if vendor is matched
+        if (!invoice.vendor_id || invoice.status === 'unmatched') {
+            console.log('❌ No vendor match found - showing matching modal');
+            
+            // Prepare invoice data for matching modal
+            const invoiceData = {
+                invoice_id: invoice.invoice_id,
+                vendor_name: invoice.vendor_name,
+                amount: invoice.amount,
+                currency: invoice.currency || 'USD',
+                invoice_date: invoice.invoice_date
+            };
+            
+            // Show vendor matching modal
+            showVendorMatchingModal(invoiceData);
+            alert('This invoice needs vendor matching first. Please select or create a vendor.');
+            return;
+        }
+        
+        // Vendor is matched - proceed with NetSuite bill creation
+        console.log(`✅ Vendor matched: ${invoice.vendor_id}`);
+        
+        // Show workflow modal
+        showWorkflowModal('matching');
+        updateWorkflowStep('match', '✅', 'Vendor already matched');
+        
+        // Check if vendor exists in NetSuite
+        updateWorkflowStep('netsuite-check', '🔄', 'Checking vendor in NetSuite...');
+        
+        const checkResponse = await fetch(`/api/netsuite/vendor/check/${invoice.vendor_id}`);
+        const checkResult = await checkResponse.json();
+        
+        if (!checkResult.exists) {
+            console.log('⚠️ Vendor not in NetSuite - syncing first...');
+            updateWorkflowStep('netsuite-check', '🔄', 'Syncing vendor to NetSuite...');
+            
+            // Sync vendor to NetSuite first
+            const syncResponse = await fetch('/api/netsuite/vendor/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    vendor_id: invoice.vendor_id,
+                    force_resync: false
+                })
+            });
+            
+            const syncResult = await syncResponse.json();
+            
+            if (!syncResult.success) {
+                updateWorkflowStep('netsuite-check', '❌', 'Failed to sync vendor to NetSuite');
+                updateWorkflowStep('create', '❌', syncResult.error || 'Cannot create bill without vendor');
+                return;
+            }
+            
+            console.log(`✅ Vendor synced to NetSuite: ${syncResult.netsuite_id}`);
+            updateWorkflowStep('netsuite-check', '✅', 'Vendor synced to NetSuite');
+        } else {
+            console.log('✅ Vendor exists in NetSuite');
+            updateWorkflowStep('netsuite-check', '✅', 'Vendor found in NetSuite');
+        }
+        
+        // Create bill in NetSuite
+        updateWorkflowStep('create', '🔄', 'Creating bill in NetSuite...');
+        
+        const billResponse = await fetch(`/api/netsuite/invoice/${invoiceId}/create`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const billResult = await billResponse.json();
+        
+        if (billResult.success) {
+            updateWorkflowStep('create', '✅', `Bill created! ID: ${billResult.netsuite_bill_id}`);
+            
+            // Update UI
+            document.getElementById('workflowActions').innerHTML = `
+                <button onclick="closeWorkflowModal(); location.reload();" class="btn btn-primary">Done</button>
+                <button onclick="window.open('https://system.netsuite.com/app/accounting/transactions/vendbill.nl?id=${billResult.netsuite_bill_id}', '_blank')" class="btn btn-secondary">View in NetSuite</button>
+            `;
+            
+            // Refresh the invoice list after successful creation
+            setTimeout(() => {
+                if (typeof renderInvoiceListView === 'function') {
+                    renderInvoiceListView();
+                }
+            }, 2000);
+        } else {
+            updateWorkflowStep('create', '❌', billResult.error || 'Failed to create bill');
+            document.getElementById('workflowActions').innerHTML = `
+                <button onclick="closeWorkflowModal()" class="btn btn-secondary">Close</button>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error in invoice workflow:', error);
+        alert(`Error: ${error.message}`);
+        closeWorkflowModal();
+    }
+}
+
+/**
  * Show vendor matching modal when invoice doesn't have a vendor
  */
 function showVendorMatchingModal(invoiceData) {

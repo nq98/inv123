@@ -722,6 +722,28 @@ def add_vendor():
             'error': str(e)
         }), 500
 
+@app.route('/api/invoices/<invoice_id>', methods=['GET'])
+def get_invoice_details(invoice_id):
+    """Get invoice details by ID"""
+    try:
+        bigquery_service = BigQueryService()
+        invoice = bigquery_service.get_invoice_details(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+        
+        # Add status based on vendor matching
+        if invoice.get('vendor_id'):
+            invoice['status'] = 'matched'
+        else:
+            invoice['status'] = 'unmatched'
+            
+        return jsonify(invoice), 200
+        
+    except Exception as e:
+        print(f"Error getting invoice details: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/netsuite/invoice/<invoice_id>/create', methods=['POST'])
 def create_invoice_in_netsuite(invoice_id):
     """Create invoice/bill in NetSuite"""
@@ -1265,6 +1287,7 @@ def match_vendor():
         }), 500
 
 @app.route('/api/invoices/matches', methods=['GET'])
+@app.route('/api/invoices/list', methods=['GET'])  # Alias for compatibility
 def get_invoice_matches():
     """
     Get invoice match history with pagination and filtering
@@ -2539,8 +2562,8 @@ def get_vendor_details(vendor_id):
 # ENDPOINT 3: Get Invoice Details
 @app.route('/api/agent/invoice/<invoice_id>', methods=['GET'])
 @require_agent_auth
-def get_invoice_details(invoice_id):
-    """Get detailed invoice information"""
+def get_agent_invoice_details(invoice_id):
+    """Get detailed invoice information for agent"""
     bq = get_bigquery_service()
     
     query = """
