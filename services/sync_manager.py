@@ -519,51 +519,62 @@ class SyncManager:
                         )
                     
                     # Extract vendor data from NetSuite format
-                    vendor_data = {
-                        'name': ns_vendor.get('companyName', ''),
-                        'email': ns_vendor.get('email', ''),
-                        'phone': ns_vendor.get('phone', ''),
-                        'tax_id': ns_vendor.get('defaultTaxReg', ''),
-                        'address': self._format_netsuite_address(ns_vendor.get('defaultAddress', {})),
-                        'netsuite_internal_id': str(ns_vendor.get('id', '')),
-                        'external_id': ns_vendor.get('externalId', ''),
-                        'source_system': 'NETSUITE'
-                    }
+                    ns_id = str(ns_vendor.get('id', ''))
+                    company_name = ns_vendor.get('companyName', '')
+                    email = ns_vendor.get('email', '')
+                    phone = ns_vendor.get('phone', '')
+                    tax_id = ns_vendor.get('defaultTaxReg', '')
+                    address = self._format_netsuite_address(ns_vendor.get('defaultAddress', {}))
+                    external_id = ns_vendor.get('externalId', '')
                     
                     # Check if vendor exists in BigQuery
                     existing_vendor = None
                     
                     # Try to find by tax ID first
-                    if vendor_data['tax_id']:
-                        existing_vendor = self._find_vendor_by_tax_id(vendor_data['tax_id'])
+                    if tax_id:
+                        existing_vendor = self._find_vendor_by_tax_id(tax_id)
                     
                     # If not found by tax ID, try by name
-                    if not existing_vendor and vendor_data['name']:
-                        existing_vendor = self._find_vendor_by_name(vendor_data['name'])
+                    if not existing_vendor and company_name:
+                        existing_vendor = self._find_vendor_by_name(company_name)
                     
                     if existing_vendor:
                         # Update existing vendor with NetSuite info
                         self._update_vendor_netsuite_fields(
                             existing_vendor['vendor_id'],
-                            vendor_data['netsuite_internal_id'],
-                            vendor_data['external_id']
+                            ns_id,
+                            external_id
                         )
                         stats['updated_vendors'] += 1
                     else:
-                        # Create new vendor
-                        new_vendor_id = str(uuid.uuid4())
-                        vendor_data['vendor_id'] = new_vendor_id
-                        vendor_data['global_name'] = vendor_data['name']
-                        vendor_data['created_at'] = datetime.now()
-                        vendor_data['last_updated'] = datetime.now()
-                        vendor_data['netsuite_sync_status'] = 'synced'
-                        vendor_data['netsuite_last_sync'] = datetime.now()
+                        # Create new vendor following Universal Schema
+                        # 1. Prepare Custom Attributes (Flexible Bucket)
+                        custom_attrs = {
+                            "address": address,
+                            "phone": phone,
+                            "tax_id": tax_id,
+                            "email": email,
+                            "external_id": external_id,
+                            "netsuite_internal_id": ns_id,
+                            "netsuite_sync_status": "synced",
+                            "netsuite_last_sync": datetime.now().isoformat(),
+                            "source": "NetSuite Import"
+                        }
                         
-                        # Format for BigQuery
-                        vendor_data['emails'] = [vendor_data['email']] if vendor_data['email'] else []
-                        vendor_data['phone_numbers'] = [vendor_data['phone']] if vendor_data['phone'] else []
-                        del vendor_data['email']
-                        del vendor_data['phone']
+                        # 2. Prepare the Row (Matching BigQuery Universal Schema)
+                        vendor_data = {
+                            "vendor_id": f"NETSUITE_{ns_id}",  # Generate a unique ID
+                            "global_name": company_name,        # Map 'name' to 'global_name'  
+                            "normalized_name": company_name.lower() if company_name else "",
+                            "emails": [email] if email else [],
+                            "domains": [],  # Can extract from email if needed
+                            "countries": [],  # Can extract from address if available
+                            "addresses": [address] if address else [],
+                            "custom_attributes": json.dumps(custom_attrs),  # Pack everything else here!
+                            "source_system": "NETSUITE",
+                            "created_at": datetime.now(),
+                            "last_updated": datetime.now()
+                        }
                         
                         # Insert into BigQuery
                         self._insert_vendor_to_bigquery(vendor_data)
