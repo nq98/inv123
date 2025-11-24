@@ -2909,6 +2909,10 @@ function renderInvoiceListView(invoices) {
                         <button onclick="createBillInNetSuite('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
                             📋 Create Bill
                         </button>
+                    ` : (invoice.amount === 0 || invoice.amount === 0.0) ? `
+                        <button onclick="updateBillInNetSuite('${invoice.invoice_id}')" class="btn btn-warning btn-sm">
+                            🔄 Update Bill
+                        </button>
                     ` : `
                         <button class="btn btn-success btn-sm" disabled>
                             ✅ Bill Created

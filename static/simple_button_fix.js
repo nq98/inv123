@@ -66,8 +66,75 @@ async function simpleCreateBill(invoiceId) {
     }
 }
 
-// Override the existing function
+// Ultra-simple Update Bill function
+async function simpleUpdateBill(invoiceId) {
+    // Get the button
+    const button = event.target;
+    const originalText = button.innerHTML;
+    
+    // Show loading state
+    button.innerHTML = '⏳ Updating...';
+    button.disabled = true;
+    button.style.backgroundColor = '#fbbf24';
+    
+    try {
+        // Call the update API endpoint
+        const response = await fetch(`/api/netsuite/invoice/${invoiceId}/update-bill`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok || result.success) {
+            // Success! 
+            button.innerHTML = '✅ BILL UPDATED!';
+            button.style.backgroundColor = '#10b981';
+            
+            // Show the updated amount
+            if (result.amount) {
+                button.innerHTML = `✅ Updated to $${result.amount}`;
+            }
+            
+            // Reload after 2 seconds to refresh the list
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        } else {
+            // Error - show the message
+            button.innerHTML = '❌ Failed';
+            button.style.backgroundColor = '#ef4444';
+            
+            // Show error message if available
+            if (result.error) {
+                alert(`Update failed: ${result.error}`);
+            }
+            
+            // Reset after 3 seconds
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.style.backgroundColor = '';
+            }, 3000);
+        }
+    } catch (error) {
+        // Network error
+        button.innerHTML = '❌ Error';
+        button.style.backgroundColor = '#ef4444';
+        alert(`Network error: ${error.message}`);
+        
+        // Reset after 3 seconds
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            button.style.backgroundColor = '';
+        }, 3000);
+    }
+}
+
+// Override the existing functions
 window.createBillInNetSuite = simpleCreateBill;
+window.updateBillInNetSuite = simpleUpdateBill;
 
 // Fix all buttons on page load
 document.addEventListener('DOMContentLoaded', function() {

@@ -939,6 +939,138 @@ def create_invoice_in_netsuite(invoice_id):
         print(f"Error creating NetSuite bill: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/netsuite/invoice/<invoice_id>/update-bill', methods=['POST'])
+def update_bill_in_netsuite(invoice_id):
+    """Update existing bill in NetSuite with correct amount"""
+    try:
+        # Get invoice details from BigQuery
+        bigquery_service = BigQueryService()
+        invoice = bigquery_service.get_invoice_details(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+        
+        # Check if bill exists in NetSuite
+        netsuite_bill_id = invoice.get('netsuite_bill_id')
+        if not netsuite_bill_id:
+            return jsonify({'success': False, 'error': 'No bill exists to update. Please create bill first'}), 400
+        
+        # Get the correct amount from validated_data
+        metadata = invoice.get('metadata', {})
+        if isinstance(metadata, str):
+            import json
+            metadata = json.loads(metadata)
+        
+        validated_data = metadata.get('validated_data', {})
+        
+        # Extract the correct amount
+        total_amount = validated_data.get('totalAmount', 0)
+        if total_amount == 0:
+            # Fallback to totals object
+            totals = validated_data.get('totals', {})
+            total_amount = totals.get('total', 0)
+        
+        if total_amount == 0:
+            # Last fallback - use the stored amount
+            total_amount = float(invoice.get('amount', 0))
+        
+        print(f"💰 Updating bill {netsuite_bill_id} with correct amount: ${total_amount}")
+        
+        # Get vendor NetSuite ID
+        vendor_id = invoice.get('vendor_id')
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'Invoice has no vendor matched'}), 400
+        
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 400
+        
+        # Extract NetSuite vendor ID
+        netsuite_vendor_id = vendor.get('netsuite_internal_id')
+        if not netsuite_vendor_id:
+            custom_attrs = vendor.get('custom_attributes', {})
+            if isinstance(custom_attrs, str):
+                import json
+                custom_attrs = json.loads(custom_attrs)
+            netsuite_vendor_id = custom_attrs.get('netsuite_internal_id') if isinstance(custom_attrs, dict) else None
+        
+        if not netsuite_vendor_id:
+            return jsonify({'success': False, 'error': 'Vendor not synced to NetSuite'}), 400
+        
+        # Prepare line items with correct amount
+        line_items = []
+        
+        # Try to use extracted line items
+        if validated_data.get('lineItems'):
+            for item in validated_data['lineItems']:
+                item_amount = float(item.get('amount', 0))
+                if item_amount > 0:
+                    line_items.append({
+                        'description': item.get('description', 'Invoice line item'),
+                        'amount': item_amount,
+                        'account_id': '351'
+                    })
+        
+        # If no line items, create single line with total
+        if not line_items:
+            line_items.append({
+                'description': f"Invoice {invoice_id} - {invoice.get('vendor_name', 'Vendor')} - Updated Amount",
+                'amount': total_amount,
+                'account_id': '351'
+            })
+        
+        # Update bill in NetSuite
+        netsuite = NetSuiteService()
+        
+        bill_update_data = {
+            'netsuite_bill_id': netsuite_bill_id,
+            'invoice_id': invoice_id,
+            'vendor_netsuite_id': netsuite_vendor_id,
+            'total_amount': total_amount,
+            'line_items': line_items,
+            'memo': f"Updated from invoice {invoice_id} - Correct Amount: ${total_amount}"
+        }
+        
+        result = netsuite.update_vendor_bill(bill_update_data)
+        
+        if result and result.get('success'):
+            # Update BigQuery to reflect the update
+            from google.cloud import bigquery
+            client = bigquery_service.client
+            
+            # Also update the amount in the database
+            query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+            SET amount = {total_amount},
+                netsuite_sync_date = CURRENT_TIMESTAMP()
+            WHERE invoice_id = '{invoice_id}'
+            """
+            
+            try:
+                client.query(query).result()
+                print(f"✅ Updated invoice {invoice_id} with correct amount ${total_amount}")
+            except Exception as bq_error:
+                # BigQuery update failed but NetSuite succeeded
+                print(f"⚠️ Warning: Could not update BigQuery: {bq_error}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Bill updated successfully with correct amount ${total_amount}',
+                'netsuite_bill_id': netsuite_bill_id,
+                'amount': total_amount
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to update bill in NetSuite')
+            }), 400
+            
+    except Exception as e:
+        print(f"❌ Error updating NetSuite bill: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/netsuite/vendor/create', methods=['POST'])
 def create_vendor_in_netsuite():
     """Create vendor in NetSuite using SyncManager"""

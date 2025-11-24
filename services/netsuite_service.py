@@ -1156,6 +1156,144 @@ class NetSuiteService:
             logger.error(f"NetSuite Create Failed: {e}")
             return None
     
+    def update_vendor_bill(self, bill_data: Dict) -> Dict:
+        """
+        Update an existing vendor bill in NetSuite with correct amount
+        
+        Args:
+            bill_data: Bill update data with fields:
+                - netsuite_bill_id: NetSuite internal bill ID or external ID
+                - invoice_id: Our invoice ID 
+                - vendor_netsuite_id: NetSuite vendor internal ID
+                - total_amount: Corrected total invoice amount
+                - line_items: Updated line items with corrected amounts
+                - memo: Updated memo/notes
+                
+        Returns:
+            Dict with success status and updated bill details
+        """
+        if not self.enabled:
+            return {'success': False, 'error': 'NetSuite integration not enabled'}
+        
+        try:
+            # Get the bill ID - it might be internal ID or external ID
+            netsuite_bill_id = bill_data['netsuite_bill_id']
+            
+            # If it's an external ID like INV_XXX, we need to find the internal ID
+            if netsuite_bill_id.startswith('INV_'):
+                # Try to get the bill by external ID first
+                external_id = netsuite_bill_id
+            else:
+                # Use the invoice ID to construct external ID
+                external_id = f"INV_{bill_data['invoice_id']}"
+            
+            # Build update payload
+            update_payload = {
+                'memo': bill_data.get('memo', f"Updated from invoice {bill_data['invoice_id']} - Correct Amount: ${bill_data['total_amount']}")
+            }
+            
+            # Build updated expense lines
+            expense_items = []
+            line_items = bill_data.get('line_items', [])
+            
+            for item in line_items:
+                item_amount = float(item.get('amount', 0))
+                if item_amount <= 0:
+                    continue
+                    
+                expense_item = {
+                    'account': {
+                        'id': item.get('account_id', self.DEFAULT_EXPENSE_ACCOUNT_ID)
+                    },
+                    'amount': item_amount,
+                    'memo': item.get('description', ''),
+                    'department': {
+                        'id': '115'  # Default department ID
+                    },
+                    'taxCode': {
+                        'id': os.getenv('NETSUITE_TAX_CODE_ID', self.DEFAULT_TAX_CODE_ID)
+                    }
+                }
+                expense_items.append(expense_item)
+            
+            # Only update expense lines if we have new ones
+            if expense_items:
+                update_payload['expense'] = {
+                    'items': expense_items,
+                    'replaceAll': True  # Replace all existing lines with new ones
+                }
+            
+            logger.info(f"Updating vendor bill with external ID: {external_id}")
+            logger.info(f"Update payload: {json.dumps(update_payload, indent=2)}")
+            
+            # Try to update by external ID using PATCH
+            # NetSuite REST API uses PATCH for updates
+            endpoint = f"/record/v1/vendorbill/{external_id}"
+            
+            # Make the PATCH request
+            response = self._make_request(
+                method='PATCH',
+                endpoint=endpoint, 
+                json_data=update_payload
+            )
+            
+            if response:
+                logger.info(f"Successfully updated vendor bill {external_id}")
+                
+                # Track the update event
+                self.track_event(
+                    entity_type='bill',
+                    entity_id=bill_data['invoice_id'],
+                    netsuite_id=external_id,
+                    action='UPDATE',
+                    response_data={
+                        'message': 'Bill updated successfully',
+                        'amount': bill_data['total_amount']
+                    }
+                )
+                
+                return {
+                    'success': True,
+                    'bill_id': external_id,
+                    'message': 'Bill updated successfully',
+                    'amount': bill_data['total_amount']
+                }
+            else:
+                error_msg = 'Failed to update vendor bill - no response from NetSuite'
+                logger.error(error_msg)
+                
+                # Track the failure
+                self.track_event(
+                    entity_type='bill',
+                    entity_id=bill_data['invoice_id'],
+                    netsuite_id=external_id,
+                    action='UPDATE',
+                    error_message=error_msg
+                )
+                
+                return {
+                    'success': False,
+                    'error': error_msg
+                }
+                
+        except Exception as e:
+            error_msg = f"Failed to update vendor bill: {str(e)}"
+            logger.error(error_msg)
+            
+            # Track the error
+            self.track_event(
+                entity_type='bill',
+                entity_id=bill_data.get('invoice_id'),
+                netsuite_id=bill_data.get('netsuite_bill_id'),
+                action='UPDATE',
+                error_message=str(e)
+            )
+            
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def get_vendor_bill(self, bill_id: str) -> Optional[Dict]:
         """
         Get vendor bill details by NetSuite internal ID
