@@ -497,6 +497,93 @@
             </div>
         </div>
 
+        <!-- Supported Event Types -->
+        <div class="stats-container" style="margin-bottom: 30px;">
+            <h2 style="color: #2d3748; margin-bottom: 20px;">🔧 Supported Event Types</h2>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Outbound Events -->
+                <div class="stat-card" style="padding: 20px;">
+                    <h3 style="color: #667eea; margin-bottom: 15px;">📤 Outbound Events (Us → NetSuite)</h3>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">👥 Vendor Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>vendor_create</code> - Create new vendor</li>
+                            <li><code>vendor_update</code> - Update existing vendor</li>
+                            <li><code>vendor_sync</code> - Sync vendor data</li>
+                            <li><code>vendor_validate</code> - Validate vendor</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">📄 Invoice/Bill Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>invoice_create</code> - Create vendor bill</li>
+                            <li><code>invoice_update</code> - Update vendor bill</li>
+                            <li><code>invoice_sync</code> - Sync invoice</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">💰 Payment Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>payment_create</code> - Create bill payment</li>
+                            <li><code>payment_apply</code> - Apply payment to bill</li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <strong style="color: #4a5568;">🔍 Query Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>metadata_fetch</code> - Fetch metadata catalog</li>
+                            <li><code>vendor_search</code> - Search vendors</li>
+                            <li><code>bill_status</code> - Check bill status</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Inbound Events -->
+                <div class="stat-card" style="padding: 20px;">
+                    <h3 style="color: #48bb78; margin-bottom: 15px;">📥 Inbound Events (NetSuite → Us)</h3>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">👥 Vendor Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>vendor_import</code> - Import vendors from NetSuite</li>
+                            <li><code>vendor_webhook</code> - Vendor update webhook</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">📋 Bill Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>bill_approved</code> - Bill approved ✅</li>
+                            <li><code>bill_rejected</code> - Bill rejected ❌</li>
+                            <li><code>bill_paid</code> - Bill payment received 💰</li>
+                            <li><code>bill_status_change</code> - Status changed 🔄</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #4a5568;">💳 Payment Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>payment_received</code> - Payment received</li>
+                            <li><code>payment_reversed</code> - Payment reversed</li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <strong style="color: #4a5568;">🔄 Sync Events</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px; color: #718096;">
+                            <li><code>bulk_sync</code> - Bulk data sync</li>
+                            <li><code>scheduled_pull</code> - Scheduled data pull</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Content -->
         <div class="main-content">
             <!-- Outbound Events -->
