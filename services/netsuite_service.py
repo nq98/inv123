@@ -1986,3 +1986,124 @@ class NetSuiteService:
                 'items': []
             }
     
+    def search_vendor_bills(self, limit: int = 100, days_back: int = 30) -> Dict:
+        """
+        Search for vendor bills in NetSuite
+        
+        Args:
+            limit: Maximum number of results
+            days_back: Number of days to look back
+            
+        Returns:
+            Dict with vendor bill records
+        """
+        if not self.enabled:
+            logger.warning("NetSuite service is disabled")
+            return {}
+        
+        try:
+            # Use REST API to get vendor bills
+            endpoint = f"/record/v1/vendorbill"
+            
+            # Add query parameters for recent bills
+            params = {
+                'limit': limit,
+                'orderBy': 'lastModifiedDate:desc'
+            }
+            
+            # Make request
+            response = self._make_request('GET', endpoint, params=params)
+            
+            if response:
+                return response
+            else:
+                logger.error(f"Failed to search vendor bills: No response")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error searching vendor bills: {e}")
+            return {}
+    
+    def search_vendor_payments(self, limit: int = 100, days_back: int = 30) -> Dict:
+        """
+        Search for vendor payments in NetSuite
+        
+        Args:
+            limit: Maximum number of results
+            days_back: Number of days to look back
+            
+        Returns:
+            Dict with vendor payment records
+        """
+        if not self.enabled:
+            logger.warning("NetSuite service is disabled")
+            return {}
+        
+        try:
+            # Use REST API to get vendor payments
+            endpoint = f"/record/v1/vendorpayment"
+            
+            # Add query parameters for recent payments
+            params = {
+                'limit': limit,
+                'orderBy': 'lastModifiedDate:desc'
+            }
+            
+            # Make request
+            response = self._make_request('GET', endpoint, params=params)
+            
+            if response:
+                return response
+            else:
+                logger.error(f"Failed to search vendor payments: No response")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error searching vendor payments: {e}")
+            return {}
+    
+    def search_vendor_bills_by_invoice(self, invoice_id: str) -> List[Dict]:
+        """
+        Search for vendor bills by invoice ID
+        
+        Args:
+            invoice_id: The invoice ID to search for
+            
+        Returns:
+            List of matching vendor bill records
+        """
+        if not self.enabled:
+            logger.warning("NetSuite service is disabled")
+            return []
+        
+        try:
+            # Try searching by external ID first
+            external_id = f"INV_{invoice_id}"
+            
+            # Search using REST API with external ID
+            endpoint = f"/record/v1/vendorbill"
+            params = {
+                'q': f'externalId IS "{external_id}"'
+            }
+            
+            result = self._make_request('GET', endpoint, params=params)
+            
+            if result and result.get('items'):
+                return result['items']
+            
+            # If not found by external ID, try searching in memo field
+            params = {
+                'q': f'memo CONTAINS "{invoice_id}"'
+            }
+            
+            result = self._make_request('GET', endpoint, params=params)
+            
+            if result and result.get('items'):
+                return result['items']
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error searching vendor bills by invoice {invoice_id}: {e}")
+            return []
+    

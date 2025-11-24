@@ -1,4 +1,125 @@
-// Function to load all system events for the Bill Audit tab
+// Function to get the TRUTH about an invoice's NetSuite bill status - NO FAKE DATA
+async function getInvoiceTruth(invoiceId) {
+    try {
+        const response = await fetch(`/api/netsuite/invoice/${invoiceId}/truth`);
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log(`✅ Truth for invoice ${invoiceId}:`, data.truth);
+            return data.truth;
+        } else {
+            console.error(`❌ Failed to get truth for invoice ${invoiceId}:`, data.error);
+            return null;
+        }
+    } catch (error) {
+        console.error(`❌ Error getting truth for invoice ${invoiceId}:`, error);
+        return null;
+    }
+}
+
+// Function to update invoice button based on REAL NetSuite truth
+function updateInvoiceButtonWithTruth(invoiceId, truth) {
+    // Find the button container for this invoice
+    const invoiceCards = document.querySelectorAll('.invoice-card');
+    
+    invoiceCards.forEach(card => {
+        if (card.innerHTML.includes(invoiceId)) {
+            const buttonContainer = card.querySelector('.invoice-card-actions') || card.querySelector('div[style*="display: flex; gap: 8px"]');
+            if (buttonContainer) {
+                // Remove existing NetSuite-related buttons
+                const existingButtons = buttonContainer.querySelectorAll('button');
+                existingButtons.forEach(btn => {
+                    if (btn.innerHTML.includes('Bill') || btn.innerHTML.includes('Payment')) {
+                        btn.remove();
+                    }
+                });
+                
+                // Add the truth-based button
+                const button = document.createElement('button');
+                button.className = 'btn btn-sm';
+                button.disabled = truth.button_disabled;
+                button.innerHTML = truth.button_text;
+                button.title = truth.status_message;
+                
+                // Set button styling and action based on state
+                switch (truth.button_state) {
+                    case 'CREATE_BILL':
+                        button.className += ' btn-primary';
+                        button.onclick = () => createBillInNetSuite(invoiceId);
+                        break;
+                    case 'BILL_PENDING':
+                        button.className += ' btn-warning';
+                        button.style.cursor = 'not-allowed';
+                        break;
+                    case 'BILL_APPROVED':
+                        button.className += ' btn-success';
+                        button.style.cursor = 'not-allowed';
+                        break;
+                    case 'BILL_PAID':
+                        button.className += ' btn-success';
+                        button.style.cursor = 'not-allowed';
+                        break;
+                    case 'UPDATE_BILL':
+                        button.className += ' btn-warning';
+                        button.onclick = () => updateBillInNetSuite(invoiceId);
+                        break;
+                }
+                
+                buttonContainer.appendChild(button);
+            }
+        }
+    });
+}
+
+// Function to check and update all invoice statuses on the page
+async function checkAllInvoiceStatuses() {
+    // Find all invoice IDs on the page
+    const invoiceCards = document.querySelectorAll('.invoice-card');
+    const invoiceIds = new Set();
+    
+    invoiceCards.forEach(card => {
+        // Extract invoice ID from the card content
+        const idMatch = card.innerHTML.match(/📄\s*(\d+)/);
+        if (idMatch) {
+            invoiceIds.add(idMatch[1]);
+        }
+    });
+    
+    console.log(`Checking truth for ${invoiceIds.size} invoices...`);
+    
+    // Check truth for each invoice
+    for (const invoiceId of invoiceIds) {
+        const truth = await getInvoiceTruth(invoiceId);
+        if (truth) {
+            updateInvoiceButtonWithTruth(invoiceId, truth);
+        }
+    }
+}
+
+// Function to sync audit data from NetSuite
+async function syncAuditData() {
+    try {
+        const response = await fetch('/api/netsuite/sync/audit', {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('✅ Audit data synced:', data.summary);
+            alert(data.message);
+            // Reload the audit trail
+            loadAllSystemEvents();
+        } else {
+            console.error('❌ Failed to sync audit data:', data.error);
+            alert('Failed to sync audit data: ' + data.error);
+        }
+    } catch (error) {
+        console.error('❌ Error syncing audit data:', error);
+        alert('Error syncing audit data');
+    }
+}
+
+// Function to load all system events for the Bill Audit tab - REAL DATA ONLY
 async function loadAllSystemEvents() {
     const timeline = document.getElementById('allEventsTimeline');
     if (!timeline) {
@@ -6,15 +127,15 @@ async function loadAllSystemEvents() {
         return;
     }
     
-    console.log('Loading all system events...');
-    timeline.innerHTML = '<div style="text-align: center; color: #6b7280;">Loading all system events...</div>';
+    console.log('Loading REAL system events from NetSuite...');
+    timeline.innerHTML = '<div style="text-align: center; color: #6b7280;">Loading REAL NetSuite events...</div>';
     
     try {
-        // Fetch the audit trail data - include all events
+        // Fetch the REAL audit trail data - NO FAKE DATA
         const response = await fetch('/api/netsuite/bills/audit-trail?days=90');
         const data = await response.json();
         
-        console.log('Received events data:', data);
+        console.log('Received REAL events data:', data);
         
         if (!data.success) {
             timeline.innerHTML = '<div style="color: red;">Error loading events: ' + (data.error || 'Unknown error') + '</div>';
@@ -22,35 +143,16 @@ async function loadAllSystemEvents() {
         }
         
         if (!data.events || data.events.length === 0) {
-            // Show hardcoded payment approval event for invoice 506
-            const hardcodedEvents = [{
-                timestamp: new Date().toISOString(),
-                event_type: 'PAYMENT_APPROVED',
-                event_category: 'PAYMENT',
-                status: 'SUCCESS',
-                entity_type: 'BILL_PAYMENT',
-                invoice_id: '506',
-                netsuite_id: 'VENDPYMT840',
-                action: 'APPROVE',
-                direction: 'INBOUND',
-                amount: 181.47,
-                vendor_name: 'Nick DeMatteo',
-                error_message: null,
-                request_data: {
-                    payment_date: '2025-11-24',
-                    amount: 181.47,
-                    vendor: 'Nick DeMatteo',
-                    payment_method: 'IL MR Bill Payment',
-                    posting_period: 'Nov 2025'
-                },
-                response_data: {
-                    transaction_number: 'VENDPYMT840',
-                    posting_period: 'Nov 2025',
-                    balance: 9815.26,
-                    netsuite_url: 'https://11236545-sb1.app.netsuite.com/app/accounting/transactions/vendpymt.nl?id=6254'
-                }
-            }];
-            data.events = hardcodedEvents;
+            // NO FAKE DATA - Show real message with sync button
+            timeline.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="color: #6b7280; margin-bottom: 10px;">No NetSuite transactions found in the audit trail.</div>
+                    <button onclick="syncAuditData()" class="btn btn-primary">
+                        🔄 Sync Audit Data from NetSuite
+                    </button>
+                </div>
+            `;
+            return;
         }
         
         // Create timeline HTML
@@ -2921,6 +3023,11 @@ function renderInvoiceListView(invoices) {
     
     html += '</div>';
     invoiceList.innerHTML = html;
+    
+    // Check truth for all displayed invoices - REAL DATA ONLY
+    setTimeout(() => {
+        checkAllInvoiceStatuses();
+    }, 100);
 }
 
 /**

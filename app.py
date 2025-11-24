@@ -23,6 +23,7 @@ from services.pdf_generator import PDFInvoiceGenerator
 from services.invoice_composer import InvoiceComposer
 from services.netsuite_service import NetSuiteService
 from services.sync_manager import SyncManager
+from services.audit_sync_manager import AuditSyncManager
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -5979,140 +5980,90 @@ def get_payment_statistics():
 
 @app.route('/api/netsuite/bills/audit-trail', methods=['GET'])
 def get_bill_audit_trail():
-    """Get comprehensive audit trail for bill creation and payment events"""
+    """Get REAL audit trail for bill creation and payment events - NO FAKE DATA"""
     try:
-        from datetime import datetime, timedelta
-        import json
-        
         # Get query parameters
         invoice_id = request.args.get('invoice_id')
         days_back = int(request.args.get('days', 30))
         
-        # Use BigQueryService to get properly initialized client
-        bigquery_service = get_bigquery_service()
-        client = bigquery_service.client
+        # Initialize the REAL audit sync manager
+        audit_manager = AuditSyncManager()
         
-        # Simplified query - use only netsuite_events which has ALL events
-        query = f"""
-        SELECT 
-            timestamp,
-            event_type,
-            event_category,
-            status,
-            entity_type,
-            entity_id as invoice_id,
-            netsuite_id,
-            action,
-            direction,
-            request_data,
-            response_data,
-            error_message,
-            metadata
-        FROM `invoicereader-477008.vendors_ai.netsuite_events`
-        WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days_back} DAY)
-        """
+        # Get REAL audit trail from BigQuery (no fake data!)
+        audit_trail = audit_manager.get_audit_trail(days=days_back, invoice_id=invoice_id)
         
-        # Add invoice filter if provided
-        if invoice_id:
-            query += f" AND (entity_id = '{invoice_id}' OR entity_id LIKE '%{invoice_id}%')"
-        
-        query += " ORDER BY timestamp DESC LIMIT 1000"
-        
-        # Execute query
-        results = client.query(query).result()
-        
+        # Format events for frontend
         events = []
-        for row in results:
-            # Parse JSON data safely
-            request_data = {}
-            response_data = {}
-            metadata = {}
+        for record in audit_trail:
+            # Determine event category and type based on transaction type
+            if record['transaction_type'] == 'BILL_CREATE':
+                event_category = 'BILL'
+                event_type = 'BILL_CREATED'
+                entity_type = 'VENDOR_BILL'
+                action = 'CREATE'
+            elif record['transaction_type'] == 'BILL_PAYMENT':
+                event_category = 'PAYMENT'
+                event_type = 'PAYMENT_APPROVED'
+                entity_type = 'BILL_PAYMENT'
+                action = 'APPROVE'
+            elif record['transaction_type'] == 'BILL_UPDATE':
+                event_category = 'BILL'
+                event_type = 'BILL_UPDATED'
+                entity_type = 'VENDOR_BILL'
+                action = 'UPDATE'
+            else:
+                event_category = 'OTHER'
+                event_type = record['transaction_type']
+                entity_type = 'UNKNOWN'
+                action = 'UNKNOWN'
             
-            try:
-                if row.request_data:
-                    request_data = json.loads(row.request_data) if isinstance(row.request_data, str) else row.request_data
-            except:
-                request_data = {'raw': str(row.request_data)}
+            # Determine direction - all audit records are from NetSuite so INBOUND
+            direction = 'INBOUND'
             
-            try:
-                if row.response_data:
-                    response_data = json.loads(row.response_data) if isinstance(row.response_data, str) else row.response_data
-            except:
-                response_data = {'raw': str(row.response_data)}
-            
-            try:
-                if row.metadata:
-                    metadata = json.loads(row.metadata) if isinstance(row.metadata, str) else row.metadata
-            except:
-                metadata = {'raw': str(row.metadata)}
-            
-            # Extract key information
-            amount = None
-            vendor_name = None
-            external_id = None
-            
-            if request_data and isinstance(request_data, dict):
-                amount = request_data.get('amount') or request_data.get('total_amount')
-                vendor_name = request_data.get('vendor_name')
-                external_id = request_data.get('external_id')
-            
+            # Format the event for frontend compatibility
             events.append({
-                'timestamp': row.timestamp.isoformat() if row.timestamp else None,
-                'event_type': row.event_type,
-                'event_category': row.event_category,
-                'status': row.status,
-                'entity_type': row.entity_type,
-                'invoice_id': row.invoice_id,
-                'netsuite_id': row.netsuite_id,
-                'action': row.action,
-                'direction': row.direction if row.direction else 'OUTBOUND',
-                'amount': amount,
-                'vendor_name': vendor_name,
-                'external_id': external_id,
-                'error_message': row.error_message,
-                'request_data': request_data,
-                'response_data': response_data,
-                'metadata': metadata
-            })
-        
-        # For invoice 506, manually add the payment approval event you just did
-        if invoice_id == '506':
-            events.insert(0, {
-                'timestamp': datetime.utcnow().isoformat(),
-                'event_type': 'PAYMENT_APPROVED',
-                'event_category': 'PAYMENT',
-                'status': 'SUCCESS',
-                'entity_type': 'BILL_PAYMENT',
-                'invoice_id': '506',
-                'netsuite_id': 'VENDPYMT840',
-                'action': 'APPROVE',
-                'direction': 'INBOUND',
-                'amount': 181.47,
-                'vendor_name': 'Nick DeMatteo',
-                'external_id': 'INV_506_FIXED',
-                'error_message': None,
+                'timestamp': record['timestamp'],
+                'event_type': event_type,
+                'event_category': event_category,
+                'status': 'SUCCESS' if not record['error_message'] else 'FAILED',
+                'entity_type': entity_type,
+                'invoice_id': record['invoice_id'],
+                'netsuite_id': record['netsuite_id'],
+                'action': action,
+                'direction': direction,
+                'amount': record['amount'],
+                'vendor_name': record['vendor_name'],
+                'external_id': f"INV_{record['invoice_id']}" if record['invoice_id'] else None,
+                'error_message': record['error_message'],
                 'request_data': {
-                    'payment_date': '2025-11-24',
-                    'amount': 181.47,
-                    'vendor': 'Nick DeMatteo',
-                    'payment_method': 'IL MR Bill Payment',
-                    'posting_period': 'Nov 2025'
+                    'amount': record['amount'],
+                    'vendor_name': record['vendor_name'],
+                    'currency': record['currency'],
+                    'transaction_number': record['transaction_number'],
+                    'posting_period': record['posting_period']
                 },
                 'response_data': {
-                    'transaction_number': 'VENDPYMT840',
-                    'posting_period': 'Nov 2025',
-                    'balance': 9815.26,
-                    'netsuite_url': 'https://11236545-sb1.app.netsuite.com/app/accounting/transactions/vendpymt.nl?id=6254'
+                    'transaction_number': record['transaction_number'],
+                    'approval_status': record['approval_status'],
+                    'netsuite_url': record['netsuite_url'],
+                    'created_date': record['created_date'],
+                    'payment_date': record['payment_date'],
+                    'payment_method': record['payment_method']
                 },
-                'metadata': {'approved_by': 'user', 'approved_at': datetime.utcnow().isoformat()}
+                'metadata': {
+                    'sync_source': record['sync_source'],
+                    'raw_payload': record['raw_payload']
+                }
             })
         
+        # NO FAKE DATA - Return only real events from NetSuite
         return jsonify({
             'success': True,
             'events': events,
             'total': len(events),
             'invoice_id': invoice_id,
-            'days_back': days_back
+            'days_back': days_back,
+            'source': 'REAL_NETSUITE_DATA'  # Mark as real data
         })
         
     except Exception as e:
@@ -6123,6 +6074,61 @@ def get_bill_audit_trail():
             'success': False,
             'error': str(e),
             'events': []
+        }), 500
+
+@app.route('/api/netsuite/invoice/<invoice_id>/truth', methods=['GET'])
+def get_invoice_truth(invoice_id):
+    """
+    Get the ABSOLUTE TRUTH about an invoice's NetSuite bill status
+    NO FAKE DATA - only real NetSuite information
+    """
+    try:
+        # Initialize the audit sync manager to get truth
+        audit_manager = AuditSyncManager()
+        
+        # Get the real truth about this invoice
+        truth = audit_manager.get_bill_truth(invoice_id)
+        
+        # Return the truth to the frontend
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_id,
+            'truth': truth,
+            'source': 'REAL_NETSUITE_DATA'
+        })
+        
+    except Exception as e:
+        print(f"Error getting invoice truth: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'invoice_id': invoice_id
+        }), 500
+
+@app.route('/api/netsuite/sync/audit', methods=['POST'])
+def sync_audit_data():
+    """
+    Trigger a manual sync of NetSuite audit data
+    Polls NetSuite for real bills and payments
+    """
+    try:
+        # Initialize the audit sync manager
+        audit_manager = AuditSyncManager()
+        
+        # Perform the sync
+        summary = audit_manager.sync_all_transactions()
+        
+        return jsonify({
+            'success': True,
+            'summary': summary,
+            'message': f"Synced {summary['bills_synced']} bills and {summary['payments_synced']} payments from NetSuite"
+        })
+        
+    except Exception as e:
+        print(f"Error syncing audit data: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 @app.route('/api/netsuite/bills/audit')
