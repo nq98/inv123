@@ -774,7 +774,7 @@ Use these principles to think like a human accountant:
 {{
     "verdict": "MATCH" | "NEW_VENDOR" | "AMBIGUOUS",
     "match_details": {{
-        "selected_vendor_id": "string (ID from DB Candidate) or null",
+        "selected_vendor_id": "string (the 'candidate_id' field from the matching DB Candidate) or null",
         "confidence_score": 0.0-1.0,
         "match_reasoning": "Explain specifically: 'Matched via Tax ID', 'Matched via Corporate Domain + Fuzzy Name', etc.",
         "risk_analysis": "NONE | LOW | HIGH (e.g. 'Name matches but domain is gmail.com')",
@@ -828,6 +828,9 @@ Use these principles to think like a human accountant:
 3. If you are 70%+ confident of a match, VERDICT = **MATCH**
 4. ALWAYS provide detailed match_reasoning explaining your decision
 5. Return ONLY valid JSON, no markdown, no commentary
+6. **CRITICAL for MATCH verdict**: Copy the exact "candidate_id" value from the matching candidate and return it as "selected_vendor_id"
+   Example: If matching candidate has "candidate_id": "AUTO_ARTEM_ANDREEVITCH_RE_27"
+   Then you MUST return: "selected_vendor_id": "AUTO_ARTEM_ANDREEVITCH_RE_27"
 """
         
         try:

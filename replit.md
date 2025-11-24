@@ -1,5 +1,13 @@
 # Enterprise Invoice Extraction System
 
+## Recent Changes
+
+### November 24, 2025
+- **Fixed Critical Bug**: Resolved vendor_id NULL issue in invoice storage despite successful vendor matching (95% confidence)
+  - Enhanced Supreme Judge AI prompt to correctly extract and return candidate_id as selected_vendor_id
+  - Added explicit instructions and examples for proper vendor_id extraction from matched candidates
+  - Verified fix: Invoices now correctly store vendor_id when matches are found
+
 ## Overview
 This project is an AI-first enterprise invoice extraction and vendor management system. It leverages semantic intelligence to process invoices, manage vendor data, and continuously learn. The system aims to automate and improve the accuracy of financial data extraction and vendor information management. Key capabilities include a 4-layer hybrid invoice processing architecture (Google Document AI, Multi-Currency Detector, Vertex AI Search RAG, Gemini 1.5 Pro) with a self-learning feedback loop, AI-powered CSV import for vendor data with RAG and smart deduplication into BigQuery, secure Gmail integration for invoice scanning, a semantic vendor matching engine ("Supreme Judge" AI reasoning), and an interactive web UI for uploads and data browsing. The system is designed for high accuracy and continuous improvement through AI.
 
