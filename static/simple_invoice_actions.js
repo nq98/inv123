@@ -1,6 +1,6 @@
 // Simple, direct invoice actions without ANY popups or alerts
 
-async function createBillInNetSuite(invoiceId) {
+async function createBillInNetSuite(invoiceId, skipVendorCheck = false) {
     // Find the button that was clicked
     const button = document.querySelector(`button[onclick="createBillInNetSuite('${invoiceId}')"]`);
     const originalText = button.innerHTML;
@@ -83,35 +83,58 @@ async function createBillInNetSuite(invoiceId) {
             return;
         }
         
-        // Check vendor in NetSuite
-        statusBadge.textContent = 'Checking vendor in NetSuite...';
-        const vendorCheckResponse = await fetch('/api/netsuite/vendor/check', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor_id: invoice.vendor_id })
-        });
-        
-        if (!vendorCheckResponse.ok) {
-            const errorText = await vendorCheckResponse.text();
-            throw new Error(errorText || 'Failed to check vendor in NetSuite');
-        }
-        
-        const vendorCheck = await vendorCheckResponse.json();
-        
-        if (!vendorCheck.success || !vendorCheck.exists_in_netsuite) {
-            button.innerHTML = '⚠️ CREATING VENDOR...';
-            button.style.backgroundColor = '#f59e0b';
-            button.style.color = 'white';
-            statusBadge.textContent = 'Vendor not in NetSuite, creating...';
-            statusBadge.style.backgroundColor = '#f59e0b';
+        // Skip vendor check if we just created the vendor
+        if (!skipVendorCheck) {
+            // Check vendor in NetSuite
+            statusBadge.textContent = 'Checking vendor in NetSuite...';
+            const vendorCheckResponse = await fetch('/api/netsuite/vendor/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vendor_id: invoice.vendor_id })
+            });
             
-            // NO CONFIRM - just try to create vendor automatically
-            console.log(`Creating vendor "${invoice.vendor_name}" in NetSuite...`);
-            await createVendorInNetSuite(invoice.vendor_id, button, invoiceId, statusBadge);
-            return;
+            if (!vendorCheckResponse.ok) {
+                const errorText = await vendorCheckResponse.text();
+                throw new Error(errorText || 'Failed to check vendor in NetSuite');
+            }
+            
+            const vendorCheck = await vendorCheckResponse.json();
+            
+            if (!vendorCheck.success || !vendorCheck.exists_in_netsuite) {
+                button.innerHTML = '⚠️ CREATING VENDOR...';
+                button.style.backgroundColor = '#f59e0b';
+                button.style.color = 'white';
+                statusBadge.textContent = 'Vendor not in NetSuite, creating...';
+                statusBadge.style.backgroundColor = '#f59e0b';
+                
+                // Create vendor first
+                console.log(`Creating vendor "${invoice.vendor_name}" in NetSuite...`);
+                
+                const createVendorResponse = await fetch('/api/netsuite/vendor/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vendor_id: invoice.vendor_id })
+                });
+                
+                const vendorResult = await createVendorResponse.json();
+                
+                if (!createVendorResponse.ok || !vendorResult.success) {
+                    throw new Error(vendorResult.error || 'Failed to create vendor');
+                }
+                
+                // Vendor created - show brief success
+                button.innerHTML = '✅ VENDOR CREATED!';
+                button.style.backgroundColor = '#10b981';
+                statusBadge.textContent = `Vendor ID: ${vendorResult.netsuite_id}`;
+                statusBadge.style.backgroundColor = '#10b981';
+                console.log(`Vendor created: ${vendorResult.netsuite_id}`);
+                
+                // Brief pause to show vendor success
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         }
         
-        // Create the bill
+        // Now create the bill
         statusBadge.textContent = 'Creating bill in NetSuite...';
         statusBadge.style.backgroundColor = '#3b82f6';
         button.innerHTML = '📄 CREATING BILL...';
@@ -179,83 +202,6 @@ async function createBillInNetSuite(invoiceId) {
             button.style.color = '';
             button.style.fontWeight = '';
             statusBadge.remove();
-        }, 5000);
-    }
-}
-
-async function createVendorInNetSuite(vendorId, button, invoiceId, statusBadge) {
-    const originalText = button.innerHTML;
-    const originalBg = button.style.backgroundColor;
-    
-    button.innerHTML = '👤 CREATING VENDOR...';
-    button.style.backgroundColor = '#8b5cf6';
-    button.style.color = 'white';
-    button.style.fontWeight = 'bold';
-    
-    if (statusBadge) {
-        statusBadge.textContent = 'Creating vendor in NetSuite...';
-        statusBadge.style.backgroundColor = '#8b5cf6';
-    }
-    
-    try {
-        const response = await fetch('/api/netsuite/vendor/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor_id: vendorId })
-        });
-        
-        const responseText = await response.text();
-        let result;
-        
-        try {
-            result = JSON.parse(responseText);
-        } catch (e) {
-            // If response is HTML or invalid JSON, just log it
-            console.error('Invalid JSON response:', responseText);
-            throw new Error('Server error - check logs');
-        }
-        
-        if (response.ok && result.success) {
-            // Vendor created successfully - show success briefly
-            button.innerHTML = '✅ VENDOR CREATED!';
-            button.style.backgroundColor = '#10b981';
-            
-            if (statusBadge) {
-                statusBadge.textContent = `Vendor ID: ${result.netsuite_id}`;
-                statusBadge.style.backgroundColor = '#10b981';
-            }
-            
-            console.log(`Vendor created successfully in NetSuite! NetSuite ID: ${result.netsuite_id}`);
-            
-            // Wait a moment to show success, then create the bill
-            setTimeout(async () => {
-                await createBillInNetSuite(invoiceId);
-            }, 1000);
-        } else {
-            throw new Error(result.error || 'Failed to create vendor');
-        }
-    } catch (error) {
-        console.error('Error creating vendor:', error);
-        button.innerHTML = '❌ VENDOR CREATION FAILED';
-        button.style.backgroundColor = '#ef4444';
-        button.style.color = 'white';
-        button.style.fontWeight = 'bold';
-        
-        if (statusBadge) {
-            statusBadge.textContent = error.message.substring(0, 50);
-            statusBadge.style.backgroundColor = '#ef4444';
-        }
-        
-        // NO ALERT - just console error
-        console.error('Failed to create vendor:', error.message);
-        
-        setTimeout(() => {
-            button.innerHTML = originalText;
-            button.style.backgroundColor = originalBg;
-            button.style.color = '';
-            button.style.fontWeight = '';
-            button.disabled = false;
-            if (statusBadge) statusBadge.remove();
         }, 5000);
     }
 }
