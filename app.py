@@ -902,21 +902,22 @@ def create_invoice_in_netsuite(invoice_id):
         
         # Check if result is None (NetSuite service failed)
         if result is None:
-            # Bill already exists - treat this as success since the bill is there!
-            print(f"✅ Bill already exists in NetSuite - treating as success")
+            # Bill already exists - RETURN DUPLICATE STATUS, NOT SUCCESS!
+            print(f"⚠️ Bill already exists in NetSuite - needs update")
             
-            # Return SUCCESS - the bill exists, just needs update
+            # Return DUPLICATE status - TELL THE TRUTH!
             return jsonify({
-                'success': True,  # Mark as success
-                'message': 'Bill already exists in NetSuite - ready for update',
-                'needs_update': True,
+                'success': False,  # NOT a success - bill already exists
+                'duplicate': True,  # Flag to trigger confirmation dialog
+                'message': f'Bill already exists in NetSuite (ID: INV_{invoice_id})',
                 'existing_bill_id': f'INV_{invoice_id}',
-                'netsuite_bill_id': f'INV_{invoice_id}',
+                'external_id': f'INV_{invoice_id}',
                 'invoice_id': invoice_id,
-                'status': 'existing_needs_update',
-                'amount': invoice_amount,
-                'warning': 'Bill exists with $0 - use Update Bill to fix'
-            }), 200  # Return 200 OK
+                'invoice_amount': invoice_amount,
+                'vendor_name': invoice.get('vendor_name', 'Unknown'),
+                'action_required': 'confirm_update',
+                'warning': 'Bill exists with $0 - needs update with correct amount'
+            }), 409  # Return 409 Conflict for duplicate resources
         
         if result and result.get('success'):
             # Update BigQuery with NetSuite bill ID

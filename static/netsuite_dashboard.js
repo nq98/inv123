@@ -356,12 +356,15 @@ function displayInvoices() {
             <td>${getSyncStatusBadge(invoice.sync_status)}</td>
             <td style="font-size: 12px;">${invoice.netsuite_bill_id || '-'}</td>
             <td class="actions-cell">
-                <button class="btn-create" onclick="createInNetSuite('invoice', '${invoice.invoice_id}')">
-                    Create New
-                </button>
-                <button class="btn-update" onclick="updateInNetSuite('invoice', '${invoice.invoice_id}')">
-                    Update
-                </button>
+                ${!invoice.netsuite_bill_id || invoice.netsuite_bill_id === 'null' || invoice.netsuite_bill_id === 'None' ? `
+                    <button class="btn-create" onclick="createInNetSuite('invoice', '${invoice.invoice_id}')">
+                        📋 Create Bill
+                    </button>
+                ` : `
+                    <button class="btn-update" onclick="updateInNetSuite('invoice', '${invoice.invoice_id}')">
+                        🔄 Update Bill
+                    </button>
+                `}
             </td>
         `;
         
@@ -1162,7 +1165,12 @@ async function updateInNetSuite(type, id) {
     try {
         showNotification(`Updating ${type} in NetSuite...`, 'info');
         
-        const response = await fetch(`/api/netsuite/${type}/${id}/update`, {
+        // Use update-bill endpoint for invoices, update for vendors
+        const endpoint = type === 'invoice' 
+            ? `/api/netsuite/${type}/${id}/update-bill`
+            : `/api/netsuite/${type}/${id}/update`;
+        
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
