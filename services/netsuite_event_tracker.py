@@ -162,12 +162,13 @@ class NetSuiteEventTracker:
                     'entity_id': row.entity_id,
                     'netsuite_id': row.netsuite_id,
                     'action': row.action,
-                    'request_data': json.loads(row.request_data) if row.request_data else None,
-                    'response_data': json.loads(row.response_data) if row.response_data else None,
+                    # BigQuery JSON columns already return parsed data
+                    'request_data': row.request_data if row.request_data else None,
+                    'response_data': row.response_data if row.response_data else None,
                     'error_message': row.error_message,
                     'duration_ms': row.duration_ms,
                     'user': row.user,
-                    'metadata': json.loads(row.metadata) if row.metadata else None
+                    'metadata': row.metadata if row.metadata else None
                 }
                 events.append(event)
             
@@ -177,6 +178,50 @@ class NetSuiteEventTracker:
             print(f"Error getting NetSuite events: {e}")
             traceback.print_exc()
             return []
+    
+    def track_event(self,
+                    event_type: str,
+                    entity_type: str = None,
+                    entity_id: str = None,
+                    netsuite_id: str = None,
+                    action: str = None,
+                    status: str = 'SUCCESS',
+                    request_data: Dict = None,
+                    response_data: Dict = None,
+                    error_message: str = None) -> bool:
+        """Track an event (wrapper for log_event for backward compatibility)"""
+        # Determine event category based on entity type
+        if entity_type:
+            if 'VENDOR' in entity_type.upper():
+                event_category = 'VENDOR'
+            elif 'INVOICE' in entity_type.upper() or 'BILL' in entity_type.upper():
+                event_category = 'BILL'
+            elif 'PAYMENT' in entity_type.upper():
+                event_category = 'PAYMENT'
+            else:
+                event_category = 'OTHER'
+        else:
+            event_category = 'OTHER'
+        
+        # Determine direction based on action
+        if action and any(x in action.upper() for x in ['CREATE', 'UPDATE', 'SYNC', 'SEND']):
+            direction = 'OUTBOUND'
+        else:
+            direction = 'INBOUND'
+        
+        return self.log_event(
+            direction=direction,
+            event_type=event_type,
+            event_category=event_category,
+            status=status,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            netsuite_id=netsuite_id,
+            action=action,
+            request_data=request_data,
+            response_data=response_data,
+            error_message=error_message
+        )
     
     def get_event_statistics(self) -> Dict:
         """Get statistics about NetSuite events"""
