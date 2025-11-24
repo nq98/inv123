@@ -1178,18 +1178,37 @@ class NetSuiteService:
         try:
             # Get the bill ID - it might be internal ID or external ID
             netsuite_bill_id = bill_data['netsuite_bill_id']
+            invoice_id = bill_data['invoice_id']
             
-            # If it's an external ID like INV_XXX, we need to find the internal ID
+            # First, try to find the bill by external ID to get the internal ID
+            external_id = f"INV_{invoice_id}"
+            internal_id = None
+            
+            # If the provided ID looks like an external ID, try to get the internal ID
             if netsuite_bill_id.startswith('INV_'):
-                # Try to get the bill by external ID first
-                external_id = netsuite_bill_id
+                # Try to search for the bill by external ID
+                try:
+                    search_result = self._make_request(
+                        'GET', 
+                        f'/record/v1/vendorbill',
+                        params={'q': f'externalId IS "{external_id}"'}
+                    )
+                    
+                    if search_result and search_result.get('items'):
+                        # Found the bill, get its internal ID
+                        internal_id = search_result['items'][0].get('id')
+                        logger.info(f"Found bill with external ID {external_id}, internal ID: {internal_id}")
+                except Exception as search_error:
+                    logger.warning(f"Could not search for bill by external ID: {search_error}")
+                    # Fall back to using the external ID directly
+                    internal_id = netsuite_bill_id
             else:
-                # Use the invoice ID to construct external ID
-                external_id = f"INV_{bill_data['invoice_id']}"
+                # Assume it's already an internal ID
+                internal_id = netsuite_bill_id
             
             # Build update payload
             update_payload = {
-                'memo': bill_data.get('memo', f"Updated from invoice {bill_data['invoice_id']} - Correct Amount: ${bill_data['total_amount']}")
+                'memo': bill_data.get('memo', f"Updated from invoice {invoice_id} - Correct Amount: ${bill_data['total_amount']}")
             }
             
             # Build updated expense lines
@@ -1223,12 +1242,12 @@ class NetSuiteService:
                     'replaceAll': True  # Replace all existing lines with new ones
                 }
             
-            logger.info(f"Updating vendor bill with external ID: {external_id}")
+            logger.info(f"Updating vendor bill with ID: {internal_id}")
             logger.info(f"Update payload: {json.dumps(update_payload, indent=2)}")
             
-            # Try to update by external ID using PATCH
+            # Try to update using the internal ID
             # NetSuite REST API uses PATCH for updates
-            endpoint = f"/record/v1/vendorbill/{external_id}"
+            endpoint = f"/record/v1/vendorbill/{internal_id}"
             
             # Make the PATCH request
             response = self._make_request(

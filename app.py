@@ -859,76 +859,43 @@ def create_invoice_in_netsuite(invoice_id):
             result = netsuite.create_vendor_bill(bill_data)
         except Exception as e:
             # Check if this is a "record already exists" error
-            error_msg = str(e).lower()
-            if 'already exists' in error_msg or 'duplicate' in error_msg:
-                # Bill already exists - we need to find its ID and mark it for update
-                print(f"❌ NetSuite creation failed - bill already exists with wrong amount")
+            error_msg = str(e)
+            error_lower = error_msg.lower()
+            
+            if 'already exists' in error_lower or 'duplicate' in error_lower or 'unique constraint' in error_lower:
+                # Bill already exists - extract the existing bill ID from the error if possible
+                print(f"⚠️ NetSuite bill already exists for invoice {invoice_id}")
                 
-                # Try to find the existing bill ID using the external ID
-                # NetSuite should return the existing ID in the error response
+                # Try to extract the existing NetSuite ID from the error message
+                import re
+                # Look for patterns like "record XXX already exists" or "duplicate key value: XXX"
+                existing_netsuite_id = None
+                
+                # Try to find existing bill by external ID
                 existing_bill_id = f"INV_{invoice_id}"
                 
-                # Look for the bill amount to determine if it needs updating
-                # If invoice amount is > 0 but bill was created with $0, we need update
-                needs_update = invoice_amount > 0
-                
-                # Update BigQuery to reflect the existing bill that needs updating
-                from google.cloud import bigquery
-                client = bigquery_service.client
-                
-                # Use parameterized query for safety
-                update_query = f"""
-                UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
-                SET netsuite_bill_id = @bill_id,
-                    netsuite_sync_status = 'needs_update',
-                    netsuite_sync_date = CURRENT_TIMESTAMP()
-                WHERE invoice_id = @invoice_id
-                """
-                
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("bill_id", "STRING", existing_bill_id),
-                        bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
-                    ]
-                )
-                
+                # Get the bill from NetSuite to get its internal ID
                 try:
-                    update_job = client.query(update_query, job_config=job_config)
-                    update_job.result()  # Wait for the query to complete
-                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID: {existing_bill_id}")
-                    
-                    # Verify the update worked
-                    verify_query = f"""
-                    SELECT netsuite_bill_id, netsuite_sync_status 
-                    FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
-                    WHERE invoice_id = @invoice_id
-                    """
-                    verify_job = client.query(verify_query, job_config=bigquery.QueryJobConfig(
-                        query_parameters=[
-                            bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
-                        ]
-                    ))
-                    results = list(verify_job.result())
-                    if results:
-                        print(f"✅ Verification: Invoice now has bill_id={results[0].netsuite_bill_id}, status={results[0].netsuite_sync_status}")
-                except Exception as update_error:
-                    print(f"❌ ERROR: Could not update BigQuery: {update_error}")
-                    import traceback
-                    traceback.print_exc()
+                    bill_details = netsuite.get_vendor_bill(existing_bill_id)
+                    if bill_details:
+                        existing_netsuite_id = bill_details.get('id')
+                        print(f"✅ Found existing bill in NetSuite with ID: {existing_netsuite_id}")
+                except:
+                    # If we can't get the bill details, use the external ID
+                    existing_netsuite_id = existing_bill_id
                 
-                # Return SUCCESS (not error) - bill exists, just needs update!
-                # This way the UI can handle it properly
+                # Return duplicate status with proper flags for frontend
                 return jsonify({
-                    'success': True,  # Mark as success since bill exists
-                    'message': 'Bill already exists in NetSuite - ready for update',
-                    'needs_update': True,
-                    'existing_bill_id': existing_bill_id,
-                    'netsuite_bill_id': existing_bill_id,
+                    'success': False,  # Mark as false to trigger confirmation dialog
+                    'duplicate': True,  # Flag to indicate duplicate detection
+                    'message': f'Bill already exists in NetSuite (ID: {existing_netsuite_id})',
+                    'existing_bill_id': existing_netsuite_id,
+                    'external_id': existing_bill_id,
                     'invoice_id': invoice_id,
-                    'status': 'existing_needs_update',
-                    'amount': invoice_amount,
-                    'warning': 'Bill exists with wrong amount - use Update Bill to fix'
-                }), 200  # Return 200 OK since this is expected behavior
+                    'invoice_amount': invoice_amount,
+                    'vendor_name': invoice.get('vendor_name', 'Unknown'),
+                    'action_required': 'confirm_update'  # Tell frontend to ask for confirmation
+                }), 409  # Return 409 Conflict for duplicate resources
             else:
                 # Re-raise if it's a different error
                 raise
@@ -1115,7 +1082,7 @@ def update_bill_in_netsuite(invoice_id):
 
 @app.route('/api/netsuite/vendor/create', methods=['POST'])
 def create_vendor_in_netsuite():
-    """Create vendor in NetSuite using SyncManager"""
+    """Create vendor in NetSuite with duplicate detection"""
     try:
         data = request.get_json()
         vendor_id = data.get('vendor_id')
@@ -1126,21 +1093,99 @@ def create_vendor_in_netsuite():
         
         # Use SyncManager to handle the vendor sync
         sync_manager = get_sync_manager()
-        result = sync_manager.sync_vendor_to_netsuite(vendor_id, force=force)
+        
+        try:
+            result = sync_manager.sync_vendor_to_netsuite(vendor_id, force=force)
+            
+            if result.get('success'):
+                return jsonify({
+                    'success': True,
+                    'netsuite_id': result.get('netsuite_id'),
+                    'message': result.get('message', 'Vendor synced successfully to NetSuite'),
+                    'vendor_id': vendor_id
+                })
+            else:
+                error_msg = result.get('error', 'Failed to sync vendor to NetSuite')
+                return jsonify({'success': False, 'error': error_msg}), 500
+                
+        except Exception as sync_error:
+            error_msg = str(sync_error)
+            error_lower = error_msg.lower()
+            
+            # Check if it's a duplicate vendor error
+            if 'already exists' in error_lower or 'duplicate' in error_lower:
+                print(f"⚠️ Vendor already exists in NetSuite for vendor_id: {vendor_id}")
+                
+                # Get vendor details to find NetSuite ID
+                bigquery_service = BigQueryService()
+                vendor = bigquery_service.get_vendor_by_id(vendor_id)
+                
+                if vendor:
+                    vendor_name = vendor.get('global_name', 'Unknown')
+                    netsuite_id = vendor.get('netsuite_internal_id', 'Unknown')
+                    
+                    # Return duplicate status with proper flags
+                    return jsonify({
+                        'success': False,
+                        'duplicate': True,
+                        'message': f'Vendor "{vendor_name}" already exists in NetSuite (ID: {netsuite_id})',
+                        'existing_vendor_id': netsuite_id,
+                        'vendor_id': vendor_id,
+                        'vendor_name': vendor_name,
+                        'action_required': 'confirm_update'
+                    }), 409  # 409 Conflict for duplicate
+                else:
+                    # Vendor exists but we can't get details
+                    return jsonify({
+                        'success': False,
+                        'duplicate': True,
+                        'message': 'Vendor already exists in NetSuite',
+                        'vendor_id': vendor_id,
+                        'action_required': 'confirm_update'
+                    }), 409
+            else:
+                # Not a duplicate error, return as normal error
+                raise sync_error
+            
+    except Exception as e:
+        print(f"Error creating NetSuite vendor: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/netsuite/vendor/update', methods=['POST'])
+def update_vendor_basic():
+    """Update existing vendor in NetSuite after duplicate confirmation"""
+    try:
+        data = request.get_json()
+        vendor_id = data.get('vendor_id')
+        force_update = data.get('force_update', False)
+        
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'vendor_id required'}), 400
+        
+        # Get vendor details
+        bigquery_service = BigQueryService()
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 404
+        
+        # Force sync with update flag
+        sync_manager = get_sync_manager()
+        result = sync_manager.sync_vendor_to_netsuite(vendor_id, force=True, update_existing=True)
         
         if result.get('success'):
             return jsonify({
                 'success': True,
                 'netsuite_id': result.get('netsuite_id'),
-                'message': result.get('message', 'Vendor synced successfully to NetSuite'),
+                'message': 'Vendor updated successfully in NetSuite',
                 'vendor_id': vendor_id
             })
         else:
-            error_msg = result.get('error', 'Failed to sync vendor to NetSuite')
+            error_msg = result.get('error', 'Failed to update vendor in NetSuite')
             return jsonify({'success': False, 'error': error_msg}), 500
             
     except Exception as e:
-        print(f"Error syncing NetSuite vendor: {e}")
+        print(f"Error updating NetSuite vendor: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/process', methods=['POST'])

@@ -1,9 +1,12 @@
 import os
 import json
 import uuid
+import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from google.cloud import bigquery
+from google.api_core import retry
+from google.api_core.exceptions import BadRequest
 from google.oauth2 import service_account
 from config import config
 
