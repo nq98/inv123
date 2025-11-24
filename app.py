@@ -816,7 +816,32 @@ def create_invoice_in_netsuite(invoice_id):
                 invoice_amount = float(invoice.get('amount', 0)) or float(invoice.get('subtotal', 0))
         
         try:
-            result = netsuite.create_vendor_bill({
+            # Prepare detailed line items from invoice data
+            line_items = []
+            
+            # Check if we have extracted line items from the invoice
+            extracted_items = invoice.get('line_items', [])
+            if extracted_items and isinstance(extracted_items, list):
+                # Use the actual extracted line items
+                for item in extracted_items:
+                    item_amount = float(item.get('amount', 0))
+                    if item_amount > 0:  # Only include positive amounts
+                        line_items.append({
+                            'description': item.get('description', 'Invoice line item'),
+                            'amount': item_amount,
+                            'account_id': '668'  # FIXED: Use account_id not nested object
+                        })
+            
+            # If no line items or they're all zero, create a single line with total
+            if not line_items:
+                line_items.append({
+                    'description': f"Invoice {invoice_id} - {invoice.get('vendor_name', 'Vendor')} - Total Amount",
+                    'amount': invoice_amount,
+                    'account_id': '668'  # FIXED: Use account_id not nested object
+                })
+            
+            # Log the bill data for debugging
+            bill_data = {
                 'invoice_id': invoice_id,  # Our invoice ID - REQUIRED
                 'vendor_netsuite_id': netsuite_internal_id,  # NetSuite vendor ID - REQUIRED
                 'invoice_number': invoice.get('invoice_number', invoice_id),
@@ -824,15 +849,14 @@ def create_invoice_in_netsuite(invoice_id):
                 'invoice_date': invoice.get('invoice_date'),
                 'due_date': invoice.get('due_date', invoice.get('invoice_date')),
                 'currency': invoice.get('currency', 'USD'),
-                'memo': f"Auto-created from invoice {invoice_id}",
-                'line_items': [{
-                    'description': f"Invoice {invoice_id} from {invoice.get('vendor_name')}",
-                    'amount': invoice_amount,
-                    'account': {
-                        'id': '668'  # Default expense account
-                    }
-                }]
-            })
+                'memo': f"Auto-created from invoice {invoice_id} - Amount: ${invoice_amount}",
+                'line_items': line_items
+            }
+            
+            print(f"📋 Creating bill with {len(line_items)} line items, total amount: ${invoice_amount}")
+            print(f"📋 Bill data: {json.dumps(bill_data, indent=2, default=str)}")
+            
+            result = netsuite.create_vendor_bill(bill_data)
         except Exception as e:
             # Check if this is a "record already exists" error
             error_msg = str(e).lower()
