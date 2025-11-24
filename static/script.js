@@ -4249,10 +4249,134 @@ let dashboardRefreshInterval = null;
 let dashboardCharts = {};
 
 /**
+ * Load and display NetSuite connection status
+ */
+async function loadNetSuiteConnectionStatus() {
+    try {
+        const response = await fetch('/api/netsuite/status');
+        const data = await response.json();
+        
+        const statusIcon = document.getElementById('connectionStatusIcon');
+        const statusText = document.getElementById('connectionStatusText');
+        const accountId = document.getElementById('netsuiteAccountId');
+        const env = document.getElementById('netsuiteEnv');
+        const baseUrl = document.getElementById('netsuiteBaseUrl');
+        const errorMsg = document.getElementById('connectionErrorMsg');
+        const errorText = document.getElementById('connectionErrorText');
+        
+        if (data.connected) {
+            // Connected successfully
+            statusIcon.textContent = '✅';
+            statusText.textContent = 'Connected';
+            statusText.style.color = '#4ade80';
+            
+            // Display account details
+            accountId.textContent = data.account_id || '--';
+            
+            // Parse environment from account ID (ends with _SB1 for sandbox)
+            const isSandbox = data.account_id && data.account_id.includes('_SB');
+            env.textContent = isSandbox ? 'Sandbox' : 'Production';
+            
+            // Format URL
+            const urlDisplay = data.base_url ? new URL(data.base_url).hostname : '--';
+            baseUrl.textContent = urlDisplay;
+            
+            // Hide error message
+            errorMsg.style.display = 'none';
+        } else {
+            // Not connected or error
+            statusIcon.textContent = '❌';
+            statusText.textContent = 'Disconnected';
+            statusText.style.color = '#ef4444';
+            
+            accountId.textContent = '--';
+            env.textContent = '--';
+            baseUrl.textContent = '--';
+            
+            // Show error message if available
+            if (data.error) {
+                errorText.textContent = data.error;
+                errorMsg.style.display = 'block';
+            } else {
+                errorMsg.style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading NetSuite connection status:', error);
+        
+        // Update UI to show error state
+        document.getElementById('connectionStatusIcon').textContent = '⚠️';
+        document.getElementById('connectionStatusText').textContent = 'Error';
+        document.getElementById('connectionStatusText').style.color = '#f59e0b';
+        document.getElementById('connectionErrorText').textContent = 'Failed to check connection status';
+        document.getElementById('connectionErrorMsg').style.display = 'block';
+    }
+}
+
+/**
+ * Test NetSuite connection
+ */
+async function testNetSuiteConnection() {
+    const button = event.target;
+    const originalText = button.textContent;
+    
+    try {
+        // Update button to show loading
+        button.disabled = true;
+        button.textContent = '⏳ Testing...';
+        
+        const response = await fetch('/api/netsuite/test');
+        const data = await response.json();
+        
+        if (data.success) {
+            // Show success message
+            button.textContent = '✅ Connected!';
+            button.style.background = 'rgba(74, 222, 128, 0.3)';
+            
+            // Reload connection status
+            await loadNetSuiteConnectionStatus();
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = 'rgba(255,255,255,0.2)';
+                button.disabled = false;
+            }, 3000);
+        } else {
+            // Show error
+            button.textContent = '❌ Failed';
+            button.style.background = 'rgba(239, 68, 68, 0.3)';
+            
+            // Display error message
+            document.getElementById('connectionErrorText').textContent = data.error || 'Connection test failed';
+            document.getElementById('connectionErrorMsg').style.display = 'block';
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = 'rgba(255,255,255,0.2)';
+                button.disabled = false;
+            }, 3000);
+        }
+    } catch (error) {
+        console.error('Error testing NetSuite connection:', error);
+        button.textContent = '❌ Error';
+        button.disabled = false;
+        
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 3000);
+    }
+}
+
+/**
  * Initialize NetSuite Dashboard
  */
 function initializeNetSuiteDashboard() {
     console.log('📊 Initializing NetSuite Sync Dashboard...');
+    
+    // Load NetSuite connection status first
+    loadNetSuiteConnectionStatus();
     
     // Load dashboard data
     loadDashboardData();

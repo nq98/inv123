@@ -114,6 +114,38 @@
         <!-- ==================== NETSUITE DASHBOARD TAB (DEFAULT) ==================== -->
         <div class="tab-content active" id="tab-netsuite-dashboard">
             
+            <!-- NetSuite Connection Status Bar -->
+            <section class="card" id="netsuiteConnectionStatus" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 20px;">
+                <div class="card-body" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0; font-size: 18px; opacity: 0.9;">NetSuite Connection Status</h3>
+                            <div style="margin-top: 10px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                                <span id="connectionStatusBadge" style="display: inline-flex; align-items: center; gap: 8px; font-size: 16px;">
+                                    <span id="connectionStatusIcon">⚡</span>
+                                    <strong id="connectionStatusText">Checking...</strong>
+                                </span>
+                                <span id="netsuiteAccountInfo" style="opacity: 0.9; font-size: 15px;">
+                                    Account ID: <strong id="netsuiteAccountId">--</strong>
+                                </span>
+                                <span id="netsuiteEnvironment" style="opacity: 0.9; font-size: 15px;">
+                                    Environment: <strong id="netsuiteEnv">--</strong>
+                                </span>
+                                <span id="netsuiteUrl" style="opacity: 0.9; font-size: 15px;">
+                                    URL: <strong id="netsuiteBaseUrl">--</strong>
+                                </span>
+                            </div>
+                        </div>
+                        <button onclick="testNetSuiteConnection()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                            🔌 Test Connection
+                        </button>
+                    </div>
+                    <div id="connectionErrorMsg" style="margin-top: 15px; padding: 10px; background: rgba(255,100,100,0.2); border-radius: 4px; display: none;">
+                        <span id="connectionErrorText" style="color: #ffcccc;"></span>
+                    </div>
+                </div>
+            </section>
+            
             <!-- Dashboard Header with Controls -->
             <section class="card">
                 <div class="card-header">
