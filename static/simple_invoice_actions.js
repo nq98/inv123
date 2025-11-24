@@ -227,87 +227,34 @@ async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpd
             
             // Check if it's a duplicate bill
             if (createResponse.status === 409 && result.duplicate) {
-                // Bill already exists - check its status from NetSuite
-                button.innerHTML = '⏳ CHECKING STATUS...';
-                button.style.backgroundColor = '#f59e0b';
-                button.style.animation = 'none';
-                statusBadge.textContent = 'Checking bill approval status...';
-                statusBadge.style.backgroundColor = '#f59e0b';
-                
-                // Check bill status from NetSuite
-                const externalId = result.netsuite_bill_id || `INV_${invoiceId}`;
-                const billStatus = await checkBillStatus(externalId);
-                
-                if (billStatus && billStatus.success && billStatus.found) {
-                    const { approval_status, can_modify } = billStatus;
+                // Bill already exists - handle based on approval status
+                if (result.approved) {
+                    // Bill is approved and cannot be modified
+                    button.innerHTML = '❌ BILL APPROVED';
+                    button.style.backgroundColor = '#ef4444';
+                    button.style.color = 'white';
+                    button.style.animation = 'none';
+                    statusBadge.textContent = result.message;
+                    statusBadge.style.backgroundColor = '#ef4444';
                     
-                    if (approval_status === 'Approved' || !can_modify) {
-                        // Bill is approved and cannot be modified
-                        button.innerHTML = '❌ BILL APPROVED';
-                        button.style.backgroundColor = '#ef4444';
+                    console.error('Cannot modify bill: Bill is approved in NetSuite');
+                    
+                    setTimeout(() => {
+                        button.innerHTML = '✓ Bill Approved';
+                        button.style.backgroundColor = '#10b981';
                         button.style.color = 'white';
-                        statusBadge.textContent = 'Bill is approved in NetSuite and cannot be modified';
-                        statusBadge.style.backgroundColor = '#ef4444';
-                        
-                        console.error('Cannot modify bill: Bill is approved in NetSuite');
-                        
-                        // Show more detailed message
-                        const detailMsg = `Bill ${billStatus.bill_details.transaction_number} is ${approval_status}. ` +
-                                        `Amount: $${billStatus.bill_details.amounts.total}`;
-                        console.log(detailMsg);
-                        
-                        setTimeout(() => {
-                            button.innerHTML = '✓ Bill Approved';
-                            button.style.backgroundColor = '#10b981';
-                            button.style.color = 'white';
-                            button.disabled = true;
-                            statusBadge.textContent = 'Approved bills cannot be modified';
-                            statusBadge.style.backgroundColor = '#10b981';
-                        }, 3000);
-                        
-                        return;
-                    } else {
-                        // Bill exists but can be modified - show confirmation dialog
-                        button.innerHTML = '⚠️ DUPLICATE DETECTED';
-                        statusBadge.textContent = `Bill is ${approval_status} - can be updated`;
-                        
-                        // Show confirmation dialog
-                        const userChoice = await showDuplicateConfirmation(
-                            'Bill Already Exists',
-                            `Bill is currently ${approval_status} in NetSuite.`,
-                            `Do you want to update the existing bill with amount $${result.invoice_amount}?`
-                        );
-                        
-                        if (userChoice) {
-                            // User wants to update - recurse with forceUpdate=true
-                            statusBadge.remove();
-                            button.innerHTML = originalText;
-                            button.style.backgroundColor = originalBg;
-                            button.style.color = '';
-                            button.style.fontWeight = '';
-                            button.disabled = false;
-                            
-                            // Call again with forceUpdate flag
-                            return createBillInNetSuite(invoiceId, true, true);
-                        } else {
-                            // User cancelled
-                            button.innerHTML = '❌ CANCELLED';
-                            button.style.backgroundColor = '#6b7280';
-                            statusBadge.textContent = 'Update cancelled by user';
-                            statusBadge.style.backgroundColor = '#6b7280';
-                            
-                            setTimeout(() => {
-                                button.innerHTML = originalText;
-                                button.style.backgroundColor = originalBg;
-                                button.style.color = '';
-                                button.style.fontWeight = '';
-                                button.disabled = false;
-                                statusBadge.remove();
-                            }, 3000);
-                        }
-                    }
+                        button.disabled = true;
+                        statusBadge.textContent = 'Approved bills cannot be modified';
+                        statusBadge.style.backgroundColor = '#10b981';
+                    }, 3000);
+                    
+                    return;
                 } else {
-                    // Could not check status, show generic confirmation
+                    // Bill exists but can be updated
+                    button.innerHTML = '⚠️ DUPLICATE DETECTED';
+                    statusBadge.textContent = result.message;
+                    
+                    // Show confirmation dialog
                     const userChoice = await showDuplicateConfirmation(
                         'Bill Already Exists',
                         result.message,
@@ -315,6 +262,7 @@ async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpd
                     );
                     
                     if (userChoice) {
+                        // User wants to update - recurse with forceUpdate=true
                         statusBadge.remove();
                         button.innerHTML = originalText;
                         button.style.backgroundColor = originalBg;
@@ -322,8 +270,10 @@ async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpd
                         button.style.fontWeight = '';
                         button.disabled = false;
                         
+                        // Call again with forceUpdate flag
                         return createBillInNetSuite(invoiceId, true, true);
                     } else {
+                        // User cancelled
                         button.innerHTML = '❌ CANCELLED';
                         button.style.backgroundColor = '#6b7280';
                         statusBadge.textContent = 'Update cancelled by user';
@@ -339,6 +289,25 @@ async function createBillInNetSuite(invoiceId, skipVendorCheck = false, forceUpd
                         }, 3000);
                     }
                 }
+            } else if (createResponse.status === 403 && result.duplicate && result.approved) {
+                // Bill is approved - 403 Forbidden response
+                button.innerHTML = '❌ BILL APPROVED';
+                button.style.backgroundColor = '#ef4444';
+                button.style.color = 'white';
+                button.style.animation = 'none';
+                statusBadge.textContent = result.message;
+                statusBadge.style.backgroundColor = '#ef4444';
+                
+                console.error('Cannot modify bill: Bill is approved in NetSuite');
+                
+                setTimeout(() => {
+                    button.innerHTML = '✓ Bill Approved';
+                    button.style.backgroundColor = '#10b981';
+                    button.style.color = 'white';
+                    button.disabled = true;
+                    statusBadge.textContent = 'Approved bills cannot be modified';
+                    statusBadge.style.backgroundColor = '#10b981';
+                }, 3000);
             } else if (createResponse.ok && result.success) {
                 // SUCCESS - Show very clear success state
                 button.innerHTML = '✅ BILL CREATED SUCCESSFULLY!';

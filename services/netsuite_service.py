@@ -2107,3 +2107,171 @@ class NetSuiteService:
             logger.error(f"Error searching vendor bills by invoice {invoice_id}: {e}")
             return []
     
+    def get_bill_status(self, invoice_id: str) -> Dict:
+        """
+        Get the status of a vendor bill in NetSuite by invoice ID
+        
+        This method checks:
+        - If a bill exists for the invoice
+        - The approval status of the bill
+        - Bill amount and other details
+        
+        Args:
+            invoice_id: The invoice ID to check
+            
+        Returns:
+            Dict with bill status information:
+            {
+                'exists': bool,
+                'bill_id': str (NetSuite internal ID),
+                'approval_status': str (Open, Pending Approval, Approved, Rejected, Paid Fully),
+                'amount': float,
+                'can_update': bool,
+                'bill_number': str,
+                'netsuite_url': str
+            }
+        """
+        if not self.enabled:
+            logger.warning("NetSuite service is disabled")
+            return {'exists': False, 'error': 'NetSuite service disabled'}
+        
+        try:
+            # First try to find the bill using SuiteQL for better performance
+            logger.info(f"Checking bill status for invoice {invoice_id}")
+            
+            # Try using external ID first
+            external_id = f"INV_{invoice_id}"
+            
+            # Use SuiteQL to search for the bill
+            query = f"""
+            SELECT 
+                vb.id,
+                vb.tranid as bill_number,
+                vb.externalid,
+                vb.approvalstatus,
+                vb.total,
+                vb.amountpaid,
+                vb.amountremaining,
+                vb.memo,
+                vb.status,
+                vb.trandate,
+                v.companyname as vendor_name
+            FROM vendorbill vb
+            LEFT JOIN vendor v ON v.id = vb.entity
+            WHERE vb.externalid = '{external_id}'
+               OR vb.tranid = '{invoice_id}'
+               OR vb.memo LIKE '%{invoice_id}%'
+            """
+            
+            result = self._make_request('POST', '/query/v1/suiteql', data={'q': query})
+            
+            if result and result.get('items') and len(result['items']) > 0:
+                bill = result['items'][0]
+                bill_id = bill.get('id')
+                
+                # Get full bill details for more accurate status
+                full_bill = self.get_vendor_bill(bill_id)
+                if full_bill:
+                    bill.update(full_bill)
+                
+                # Determine approval status
+                approval_status = bill.get('approvalstatus', '')
+                status = bill.get('status', '')
+                amount_remaining = float(bill.get('amountremaining', 0))
+                amount_paid = float(bill.get('amountpaid', 0))
+                total = float(bill.get('total', 0))
+                
+                # Map NetSuite approval status to human readable format
+                # NetSuite approval statuses: 1=Pending Approval, 2=Approved, 3=Rejected
+                approval_status_map = {
+                    '1': 'Pending Approval',
+                    '2': 'Approved', 
+                    '3': 'Rejected',
+                    'Pending Approval': 'Pending Approval',
+                    'Approved': 'Approved',
+                    'Rejected': 'Rejected'
+                }
+                
+                # Check if fully paid
+                if amount_remaining == 0 and amount_paid >= total and total > 0:
+                    approval_status_text = 'Paid Fully'
+                    can_update = False
+                elif approval_status in approval_status_map:
+                    approval_status_text = approval_status_map.get(approval_status, approval_status)
+                    # Can only update if Open or Rejected, not if Approved or Pending Approval
+                    can_update = approval_status_text in ['Rejected']
+                else:
+                    # If no explicit approval status, check general status
+                    if status and 'Paid' in status:
+                        approval_status_text = 'Paid Fully'
+                        can_update = False
+                    else:
+                        approval_status_text = 'Open'
+                        can_update = True
+                
+                # Build NetSuite URL
+                netsuite_url = f"https://{self.account_id_url}.app.netsuite.com/app/accounting/transactions/vendbill.nl?id={bill_id}"
+                
+                return {
+                    'exists': True,
+                    'bill_id': bill_id,
+                    'approval_status': approval_status_text,
+                    'amount': total,
+                    'amount_paid': amount_paid,
+                    'amount_remaining': amount_remaining,
+                    'can_update': can_update,
+                    'bill_number': bill.get('tranid') or bill.get('bill_number'),
+                    'vendor_name': bill.get('vendor_name'),
+                    'netsuite_url': netsuite_url
+                }
+            
+            # If SuiteQL fails, try REST API search
+            bills = self.search_vendor_bills_by_invoice(invoice_id)
+            if bills and len(bills) > 0:
+                bill = bills[0]
+                bill_id = bill.get('id')
+                
+                # Get full bill details
+                full_bill = self.get_vendor_bill(bill_id)
+                if full_bill:
+                    approval_status = full_bill.get('approvalStatus', {}).get('name', 'Open')
+                    amount_remaining = float(full_bill.get('amountRemaining', 0))
+                    amount_paid = float(full_bill.get('amountPaid', 0))
+                    total = float(full_bill.get('total', 0))
+                    
+                    # Determine if fully paid
+                    if amount_remaining == 0 and amount_paid >= total and total > 0:
+                        approval_status = 'Paid Fully'
+                        can_update = False
+                    else:
+                        can_update = approval_status in ['Open', 'Rejected']
+                    
+                    # Build NetSuite URL
+                    netsuite_url = f"https://{self.account_id_url}.app.netsuite.com/app/accounting/transactions/vendbill.nl?id={bill_id}"
+                    
+                    return {
+                        'exists': True,
+                        'bill_id': bill_id,
+                        'approval_status': approval_status,
+                        'amount': total,
+                        'amount_paid': amount_paid,
+                        'amount_remaining': amount_remaining,
+                        'can_update': can_update,
+                        'bill_number': full_bill.get('tranId'),
+                        'vendor_name': full_bill.get('entity', {}).get('name'),
+                        'netsuite_url': netsuite_url
+                    }
+            
+            # No bill found
+            return {
+                'exists': False,
+                'can_update': False
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting bill status for invoice {invoice_id}: {e}")
+            return {
+                'exists': False,
+                'error': str(e)
+            }
+    

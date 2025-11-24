@@ -864,39 +864,57 @@ def create_invoice_in_netsuite(invoice_id):
             error_lower = error_msg.lower()
             
             if 'already exists' in error_lower or 'duplicate' in error_lower or 'unique constraint' in error_lower:
-                # Bill already exists - extract the existing bill ID from the error if possible
+                # Bill already exists - check its approval status
                 print(f"⚠️ NetSuite bill already exists for invoice {invoice_id}")
                 
-                # Try to extract the existing NetSuite ID from the error message
-                import re
-                # Look for patterns like "record XXX already exists" or "duplicate key value: XXX"
-                existing_netsuite_id = None
+                # Get the bill status to check if it's approved
+                bill_status = netsuite.get_bill_status(invoice_id)
                 
-                # Try to find existing bill by external ID
-                existing_bill_id = f"INV_{invoice_id}"
-                
-                # Get the bill from NetSuite to get its internal ID
-                try:
-                    bill_details = netsuite.get_vendor_bill(existing_bill_id)
-                    if bill_details:
-                        existing_netsuite_id = bill_details.get('id')
-                        print(f"✅ Found existing bill in NetSuite with ID: {existing_netsuite_id}")
-                except:
-                    # If we can't get the bill details, use the external ID
-                    existing_netsuite_id = existing_bill_id
-                
-                # Return duplicate status with proper flags for frontend
-                return jsonify({
-                    'success': False,  # Mark as false to trigger confirmation dialog
-                    'duplicate': True,  # Flag to indicate duplicate detection
-                    'message': f'Bill already exists in NetSuite (ID: {existing_netsuite_id})',
-                    'existing_bill_id': existing_netsuite_id,
-                    'external_id': existing_bill_id,
-                    'invoice_id': invoice_id,
-                    'invoice_amount': invoice_amount,
-                    'vendor_name': invoice.get('vendor_name', 'Unknown'),
-                    'action_required': 'confirm_update'  # Tell frontend to ask for confirmation
-                }), 409  # Return 409 Conflict for duplicate resources
+                if bill_status.get('exists'):
+                    approval_status = bill_status.get('approval_status', 'Open')
+                    
+                    # If bill is approved or paid, block modification
+                    if approval_status in ['Approved', 'Paid Fully', 'Pending Approval']:
+                        return jsonify({
+                            'success': False,
+                            'duplicate': True,
+                            'approved': True,  # Signal that bill is approved
+                            'message': f'Bill is already {approval_status.lower()} in NetSuite and cannot be modified',
+                            'existing_bill_id': bill_status.get('bill_id'),
+                            'bill_number': bill_status.get('bill_number'),
+                            'approval_status': approval_status,
+                            'invoice_id': invoice_id,
+                            'netsuite_url': bill_status.get('netsuite_url'),
+                            'action_required': 'none'  # No action can be taken
+                        }), 403  # Return 403 Forbidden for approved bills
+                    else:
+                        # Bill exists but is Open or Rejected - can be updated
+                        return jsonify({
+                            'success': False,
+                            'duplicate': True,
+                            'approved': False,
+                            'message': f'Bill already exists in NetSuite (Status: {approval_status})',
+                            'existing_bill_id': bill_status.get('bill_id'),
+                            'bill_number': bill_status.get('bill_number'),
+                            'approval_status': approval_status,
+                            'external_id': f"INV_{invoice_id}",
+                            'invoice_id': invoice_id,
+                            'invoice_amount': invoice_amount,
+                            'vendor_name': invoice.get('vendor_name', 'Unknown'),
+                            'netsuite_url': bill_status.get('netsuite_url'),
+                            'action_required': 'confirm_update'  # Tell frontend to ask for confirmation
+                        }), 409  # Return 409 Conflict for duplicate resources
+                else:
+                    # Can't determine bill status, be cautious
+                    return jsonify({
+                        'success': False,
+                        'duplicate': True,
+                        'message': f'Bill may already exist in NetSuite',
+                        'invoice_id': invoice_id,
+                        'invoice_amount': invoice_amount,
+                        'vendor_name': invoice.get('vendor_name', 'Unknown'),
+                        'action_required': 'confirm_update'
+                    }), 409
             else:
                 # Re-raise if it's a different error
                 raise
@@ -950,21 +968,51 @@ def create_invoice_in_netsuite(invoice_id):
         print(f"Error creating NetSuite bill: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/netsuite/invoice/<invoice_id>/update', methods=['POST'])
 @app.route('/api/netsuite/invoice/<invoice_id>/update-bill', methods=['POST'])
 def update_bill_in_netsuite(invoice_id):
-    """Update existing bill in NetSuite with correct amount"""
+    """
+    Update existing bill in NetSuite with correct amount
+    MUST check approval status first - cannot update approved bills
+    """
     try:
+        # Initialize NetSuite service
+        netsuite = NetSuiteService()
+        
+        if not netsuite or not netsuite.enabled:
+            return jsonify({
+                'success': False,
+                'error': 'NetSuite integration not enabled'
+            }), 503
+        
+        # CRITICAL: Check bill status first to ensure it's not approved
+        bill_status = netsuite.get_bill_status(invoice_id)
+        
+        if not bill_status.get('exists'):
+            return jsonify({
+                'success': False,
+                'error': 'No bill exists to update. Please create bill first'
+            }), 404
+        
+        # Check approval status
+        approval_status = bill_status.get('approval_status', 'Open')
+        
+        # Block updates if bill is approved or paid
+        if approval_status in ['Approved', 'Paid Fully', 'Pending Approval']:
+            return jsonify({
+                'success': False,
+                'error': f'Cannot update bill - it is already {approval_status.lower()} in NetSuite',
+                'approval_status': approval_status,
+                'bill_number': bill_status.get('bill_number'),
+                'netsuite_url': bill_status.get('netsuite_url')
+            }), 403  # Forbidden - cannot modify approved bills
+        
         # Get invoice details from BigQuery
         bigquery_service = BigQueryService()
         invoice = bigquery_service.get_invoice_details(invoice_id)
         
         if not invoice:
             return jsonify({'success': False, 'error': 'Invoice not found'}), 404
-        
-        # Check if bill exists in NetSuite
-        netsuite_bill_id = invoice.get('netsuite_bill_id')
-        if not netsuite_bill_id:
-            return jsonify({'success': False, 'error': 'No bill exists to update. Please create bill first'}), 400
         
         # Get the correct amount from validated_data
         metadata = invoice.get('metadata', {})
@@ -6081,13 +6129,117 @@ def get_invoice_truth(invoice_id):
     """
     Get the ABSOLUTE TRUTH about an invoice's NetSuite bill status
     NO FAKE DATA - only real NetSuite information
+    
+    Returns proper action based on status:
+    - No bill: action = "create", button = "Create Bill"
+    - Bill exists + Open: action = "update", button = "Update Bill"  
+    - Bill exists + Approved: action = "none", button = "Bill Approved ✓"
+    - Bill exists + Rejected: action = "update", button = "Fix Rejected Bill"
+    - Bill exists + Paid: action = "none", button = "Bill Paid ✓"
     """
     try:
-        # Initialize the audit sync manager to get truth
-        audit_manager = AuditSyncManager()
+        # Initialize NetSuite service
+        netsuite = get_netsuite_service()
         
-        # Get the real truth about this invoice
-        truth = audit_manager.get_bill_truth(invoice_id)
+        if not netsuite or not netsuite.enabled:
+            return jsonify({
+                'success': False,
+                'error': 'NetSuite integration not enabled'
+            }), 503
+        
+        # Get the bill status from NetSuite
+        bill_status = netsuite.get_bill_status(invoice_id)
+        
+        # Determine the action based on bill status
+        if not bill_status.get('exists'):
+            # No bill exists - can create
+            truth = {
+                'action': 'create',
+                'button_text': '📄 Create Bill',
+                'button_state': 'CREATE_BILL',
+                'button_disabled': False,
+                'status_message': 'No bill exists in NetSuite',
+                'bill_exists': False,
+                'approval_status': None,
+                'can_update': False
+            }
+        else:
+            # Bill exists - check approval status
+            approval_status = bill_status.get('approval_status', 'Open')
+            amount = bill_status.get('amount', 0)
+            bill_number = bill_status.get('bill_number', '')
+            netsuite_url = bill_status.get('netsuite_url', '')
+            
+            if approval_status == 'Paid Fully':
+                truth = {
+                    'action': 'none',
+                    'button_text': '✅ Bill Paid',
+                    'button_state': 'BILL_PAID',
+                    'button_disabled': True,
+                    'status_message': f'Bill {bill_number} is fully paid (${amount:.2f})',
+                    'bill_exists': True,
+                    'approval_status': approval_status,
+                    'can_update': False,
+                    'bill_number': bill_number,
+                    'amount': amount,
+                    'netsuite_url': netsuite_url
+                }
+            elif approval_status == 'Approved':
+                truth = {
+                    'action': 'none',
+                    'button_text': '✅ Bill Approved',
+                    'button_state': 'BILL_APPROVED',
+                    'button_disabled': True,
+                    'status_message': f'Cannot modify - bill {bill_number} is approved in NetSuite',
+                    'bill_exists': True,
+                    'approval_status': approval_status,
+                    'can_update': False,
+                    'bill_number': bill_number,
+                    'amount': amount,
+                    'netsuite_url': netsuite_url
+                }
+            elif approval_status == 'Pending Approval':
+                truth = {
+                    'action': 'none',
+                    'button_text': '⏳ Pending Approval',
+                    'button_state': 'BILL_PENDING',
+                    'button_disabled': True,
+                    'status_message': f'Bill {bill_number} is pending approval',
+                    'bill_exists': True,
+                    'approval_status': approval_status,
+                    'can_update': False,
+                    'bill_number': bill_number,
+                    'amount': amount,
+                    'netsuite_url': netsuite_url
+                }
+            elif approval_status == 'Rejected':
+                truth = {
+                    'action': 'update',
+                    'button_text': '🔧 Fix Rejected Bill',
+                    'button_state': 'UPDATE_BILL',
+                    'button_disabled': False,
+                    'status_message': f'Bill {bill_number} was rejected - click to update',
+                    'bill_exists': True,
+                    'approval_status': approval_status,
+                    'can_update': True,
+                    'bill_number': bill_number,
+                    'amount': amount,
+                    'netsuite_url': netsuite_url
+                }
+            else:  # Open status
+                truth = {
+                    'action': 'update',
+                    'button_text': '📝 Update Bill',
+                    'button_state': 'UPDATE_BILL',
+                    'button_disabled': False,
+                    'status_message': f'Bill {bill_number} exists - click to update',
+                    'bill_exists': True,
+                    'approval_status': approval_status,
+                    'can_update': True,
+                    'bill_number': bill_number,
+                    'amount': amount,
+                    'netsuite_url': netsuite_url
+                }
         
         # Return the truth to the frontend
         return jsonify({
@@ -6099,6 +6251,8 @@ def get_invoice_truth(invoice_id):
         
     except Exception as e:
         print(f"Error getting invoice truth: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e),

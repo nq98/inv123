@@ -29,7 +29,7 @@ function updateInvoiceButtonWithTruth(invoiceId, truth) {
                 // Remove existing NetSuite-related buttons
                 const existingButtons = buttonContainer.querySelectorAll('button');
                 existingButtons.forEach(btn => {
-                    if (btn.innerHTML.includes('Bill') || btn.innerHTML.includes('Payment')) {
+                    if (btn.innerHTML.includes('Bill') || btn.innerHTML.includes('Payment') || btn.innerHTML.includes('Update') || btn.innerHTML.includes('Fix')) {
                         btn.remove();
                     }
                 });
@@ -65,10 +65,54 @@ function updateInvoiceButtonWithTruth(invoiceId, truth) {
                         break;
                 }
                 
+                // Add status indicator if bill is approved/paid
+                if (truth.approval_status && truth.approval_status !== 'Open') {
+                    const statusSpan = document.createElement('span');
+                    statusSpan.style.fontSize = '10px';
+                    statusSpan.style.marginLeft = '5px';
+                    statusSpan.style.color = '#666';
+                    statusSpan.textContent = `(${truth.approval_status})`;
+                    button.appendChild(statusSpan);
+                }
+                
                 buttonContainer.appendChild(button);
             }
         }
     });
+}
+
+// Function to update bill in NetSuite
+async function updateBillInNetSuite(invoiceId) {
+    // Check if the function exists in simple_invoice_actions.js
+    if (typeof window.updateBillInNetSuite === 'function') {
+        return window.updateBillInNetSuite(invoiceId);
+    }
+    
+    // Fallback implementation
+    if (!confirm(`Update bill for invoice ${invoiceId} in NetSuite?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/netsuite/invoice/${invoiceId}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            alert(`✅ Bill updated successfully! Amount: $${result.amount}`);
+            location.reload();
+        } else if (response.status === 403) {
+            alert(`❌ ${result.error}\n\nBill is ${result.approval_status} and cannot be modified.`);
+        } else {
+            alert(`❌ Failed to update bill: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('Error updating bill:', error);
+        alert('Failed to update bill: ' + error.message);
+    }
 }
 
 // Function to check and update all invoice statuses on the page
