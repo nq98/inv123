@@ -802,14 +802,30 @@ def create_invoice_in_netsuite(invoice_id):
         
         # Create bill in NetSuite
         netsuite = NetSuiteService()
+        
+        # Get the correct amount field - it's 'total_amount' not 'amount'!
+        invoice_amount = float(invoice.get('total_amount', 0))
+        if invoice_amount == 0:
+            print(f"⚠️ WARNING: Invoice {invoice_id} has $0 amount - using fallback")
+            # Try alternative field names just in case
+            invoice_amount = float(invoice.get('amount', 0)) or float(invoice.get('subtotal', 0))
+        
         result = netsuite.create_vendor_bill({
             'invoice_id': invoice_id,  # Our invoice ID - REQUIRED
             'vendor_netsuite_id': netsuite_internal_id,  # NetSuite vendor ID - REQUIRED
-            'invoice_number': invoice.get('invoice_id'),
-            'amount': float(invoice.get('amount', 0)),
-            'date': invoice.get('invoice_date'),
+            'invoice_number': invoice.get('invoice_number', invoice_id),
+            'total_amount': invoice_amount,  # Use the correct amount!
+            'invoice_date': invoice.get('invoice_date'),
+            'due_date': invoice.get('due_date', invoice.get('invoice_date')),
             'currency': invoice.get('currency', 'USD'),
-            'memo': f"Auto-created from invoice {invoice_id}"
+            'memo': f"Auto-created from invoice {invoice_id}",
+            'line_items': [{
+                'description': f"Invoice {invoice_id} from {invoice.get('vendor_name')}",
+                'amount': invoice_amount,
+                'account': {
+                    'id': '668'  # Default expense account
+                }
+            }]
         })
         
         if result and result.get('success'):
