@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetSuite Bill Creation Audit Trail</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            padding: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filters {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-group label {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 600;
+        }
+        
+        .filter-group input, .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            padding: 8px 20px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #4338ca;
+        }
+        
+        .audit-trail {
+            padding: 20px 30px;
+        }
+        
+        .event-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .event-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .event-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .event-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .event-icon.success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .event-icon.failure {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .event-icon.pending {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .event-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .detail-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .detail-value {
+            font-size: 14px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        
+        .detail-value.amount {
+            color: #059669;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        
+        .event-payload {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .payload-toggle {
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #4b5563;
+            margin-bottom: 10px;
+        }
+        
+        .payload-content {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .payload-content.show {
+            display: block;
+        }
+        
+        .netsuite-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: #4f46e5;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        
+        .netsuite-link:hover {
+            background: #4338ca;
+        }
+        
+        .no-events {
+            text-align: center;
+            padding: 60px;
+            color: #6b7280;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #4f46e5;
+        }
+        
+        .refresh-btn {
+            padding: 8px 15px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: #059669;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span>📋</span>
+                NetSuite Bill Creation Audit Trail
+            </h1>
+            <button class="refresh-btn" onclick="loadAuditTrail()">
+                🔄 Refresh
+            </button>
+        </div>
+        
+        <div class="filters">
+            <div class="filter-group">
+                <label>Invoice ID</label>
+                <input type="text" id="invoiceFilter" placeholder="e.g., 506" />
+            </div>
+            <div class="filter-group">
+                <label>Vendor</label>
+                <input type="text" id="vendorFilter" placeholder="Vendor name" />
+            </div>
+            <div class="filter-group">
+                <label>Status</label>
+                <select id="statusFilter">
+                    <option value="">All</option>
+                    <option value="SUCCESS">Success</option>
+                    <option value="FAILURE">Failed</option>
+                    <option value="DUPLICATE">Duplicate</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Date Range</label>
+                <input type="date" id="dateFrom" />
+            </div>
+            <div class="filter-group">
+                <label>&nbsp;</label>
+                <input type="date" id="dateTo" />
+            </div>
+            <div class="filter-group">
+                <label>&nbsp;</label>
+                <button class="btn" onclick="applyFilters()">Apply Filters</button>
+            </div>
+        </div>
+        
+        <div class="audit-trail" id="auditTrail">
+            <div class="loading">Loading audit trail...</div>
+        </div>
+    </div>
+    
+    <script>
+        let allEvents = [];
+        
+        async function loadAuditTrail() {
+            const container = document.getElementById('auditTrail');
+            container.innerHTML = '<div class="loading">Loading audit trail...</div>';
+            
+            try {
+                // Get bill creation events
+                const response = await fetch('/api/netsuite/bills/audit-trail');
+                const data = await response.json();
+                
+                allEvents = data.events || [];
+                displayEvents(allEvents);
+            } catch (error) {
+                console.error('Error loading audit trail:', error);
+                container.innerHTML = '<div class="no-events">❌ Error loading audit trail</div>';
+            }
+        }
+        
+        function displayEvents(events) {
+            const container = document.getElementById('auditTrail');
+            
+            if (!events || events.length === 0) {
+                container.innerHTML = `
+                    <div class="no-events">
+                        <h3>No bill creation events found</h3>
+                        <p>Try adjusting your filters or creating a new bill</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = events.map(event => {
+                const icon = event.status === 'SUCCESS' ? '✅' : 
+                           event.status === 'FAILURE' ? '❌' : '⏳';
+                const iconClass = event.status === 'SUCCESS' ? 'success' : 
+                                event.status === 'FAILURE' ? 'failure' : 'pending';
+                
+                return `
+                    <div class="event-card">
+                        <div class="event-header">
+                            <div class="event-title">
+                                <div class="event-icon ${iconClass}">${icon}</div>
+                                <div>
+                                    <h3>Invoice ${event.invoice_id}</h3>
+                                    <p style="color: #6b7280; font-size: 13px;">
+                                        ${new Date(event.timestamp).toLocaleString()}
+                                    </p>
+                                </div>
+                            </div>
+                            ${event.netsuite_bill_id ? `
+                                <a href="#" class="netsuite-link" onclick="alert('NetSuite Bill ID: ${event.netsuite_bill_id}')">
+                                    View in NetSuite →
+                                </a>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="event-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Status</span>
+                                <span class="detail-value">${event.status}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Amount</span>
+                                <span class="detail-value amount">$${event.amount || '0.00'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Vendor</span>
+                                <span class="detail-value">${event.vendor_name || 'N/A'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">External ID</span>
+                                <span class="detail-value">${event.external_id || 'N/A'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">NetSuite ID</span>
+                                <span class="detail-value">${event.netsuite_bill_id || 'N/A'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Action</span>
+                                <span class="detail-value">${event.action || 'CREATE'}</span>
+                            </div>
+                        </div>
+                        
+                        ${event.error_message ? `
+                            <div style="margin-top: 15px; padding: 10px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;">
+                                <strong style="color: #dc2626;">Error:</strong>
+                                <span style="color: #7f1d1d;">${event.error_message}</span>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="event-payload">
+                            <div class="payload-toggle" onclick="togglePayload(this)">
+                                📄 Show Request/Response Details
+                            </div>
+                            <div class="payload-content">
+                                <strong>Request Data:</strong>
+                                <pre>${JSON.stringify(event.request_data, null, 2)}</pre>
+                                <br>
+                                <strong>Response Data:</strong>
+                                <pre>${JSON.stringify(event.response_data, null, 2)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function togglePayload(element) {
+            const content = element.nextElementSibling;
+            content.classList.toggle('show');
+            element.textContent = content.classList.contains('show') ? 
+                '📄 Hide Request/Response Details' : '📄 Show Request/Response Details';
+        }
+        
+        function applyFilters() {
+            const invoiceId = document.getElementById('invoiceFilter').value.toLowerCase();
+            const vendor = document.getElementById('vendorFilter').value.toLowerCase();
+            const status = document.getElementById('statusFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            
+            let filtered = allEvents;
+            
+            if (invoiceId) {
+                filtered = filtered.filter(e => e.invoice_id && e.invoice_id.toLowerCase().includes(invoiceId));
+            }
+            
+            if (vendor) {
+                filtered = filtered.filter(e => e.vendor_name && e.vendor_name.toLowerCase().includes(vendor));
+            }
+            
+            if (status) {
+                filtered = filtered.filter(e => e.status === status);
+            }
+            
+            if (dateFrom) {
+                filtered = filtered.filter(e => new Date(e.timestamp) >= new Date(dateFrom));
+            }
+            
+            if (dateTo) {
+                filtered = filtered.filter(e => new Date(e.timestamp) <= new Date(dateTo + ' 23:59:59'));
+            }
+            
+            displayEvents(filtered);
+        }
+        
+        // Load on page load
+        loadAuditTrail();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadAuditTrail, 30000);
+    </script>
+</body>
+</html>
