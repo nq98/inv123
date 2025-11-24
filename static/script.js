@@ -35,6 +35,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 stopDashboardRefresh();
             }
             
+            // Initialize Invoice List if Invoices tab is selected
+            if (tabName === 'invoices') {
+                loadInvoiceList(1); // Load first page of invoices
+            }
+            
             // Close mobile menu after selection
             if (navTabs && navTabs.classList.contains('active')) {
                 navTabs.classList.remove('active');
@@ -2466,6 +2471,281 @@ if (copyApiKeyBtn) {
 // ==================== INVOICE MATCH HISTORY ====================
 let currentInvoicePage = 1;
 let currentInvoiceStatus = '';
+
+// ==================== INVOICE LIST FUNCTIONS (FOR INVOICES TAB) ====================
+
+let currentInvoiceListPage = 1;
+let currentInvoiceSearchTerm = '';
+let currentInvoiceStatusFilter = '';
+let currentInvoiceSyncFilter = '';
+let totalInvoicePages = 0;
+
+/**
+ * Load invoice list with pagination and filters (for Invoices tab)
+ */
+async function loadInvoiceList(page = 1) {
+    const invoiceLoading = document.getElementById('invoiceLoading');
+    const invoiceList = document.getElementById('invoiceList');
+    const invoiceEmptyState = document.getElementById('invoiceEmptyState');
+    const invoicePagination = document.getElementById('invoicePagination');
+    const invoiceStats = document.getElementById('invoiceStats');
+    
+    currentInvoiceListPage = page;
+    
+    // Show loading state
+    if (invoiceLoading) invoiceLoading.classList.remove('hidden');
+    if (invoiceEmptyState) invoiceEmptyState.classList.add('hidden');
+    if (invoiceList) invoiceList.innerHTML = '';
+    if (invoicePagination) invoicePagination.classList.add('hidden');
+    
+    try {
+        // Build API URL with filters
+        let url = `/api/invoices/matches?page=${page}&limit=20`;
+        
+        if (currentInvoiceStatusFilter) {
+            url += `&status=${encodeURIComponent(currentInvoiceStatusFilter)}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        // Hide loading
+        if (invoiceLoading) invoiceLoading.classList.add('hidden');
+        
+        if (!data.invoices || data.invoices.length === 0) {
+            if (invoiceEmptyState) invoiceEmptyState.classList.remove('hidden');
+            if (invoiceStats) invoiceStats.innerHTML = '';
+            return;
+        }
+        
+        totalInvoicePages = Math.ceil(data.total_count / 20);
+        
+        // Render stats
+        renderInvoiceStats(data.total_count, page, 20);
+        
+        // Render invoice list
+        renderInvoiceListView(data.invoices);
+        
+        // Render pagination
+        renderInvoiceListPagination(page, totalInvoicePages, data.total_count);
+        
+    } catch (error) {
+        if (invoiceLoading) invoiceLoading.classList.add('hidden');
+        if (invoiceList) {
+            invoiceList.innerHTML = `
+                <div style="background: #ffebee; padding: 20px; border-radius: 8px; color: #c62828;">
+                    <strong>Error loading invoices:</strong> ${error.message}
+                </div>
+            `;
+        }
+    }
+}
+
+/**
+ * Render invoice statistics
+ */
+function renderInvoiceStats(totalCount, currentPage, limit) {
+    const invoiceStats = document.getElementById('invoiceStats');
+    if (!invoiceStats) return;
+    
+    const startItem = (currentPage - 1) * limit + 1;
+    const endItem = Math.min(currentPage * limit, totalCount);
+    
+    invoiceStats.innerHTML = `
+        <div style="background: #e8f5e9; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #4caf50;">
+            <div style="font-size: 24px; font-weight: bold; color: #2e7d32;">${totalCount}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Total Invoices</div>
+        </div>
+        <div style="background: #e3f2fd; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #2196f3;">
+            <div style="font-size: 24px; font-weight: bold; color: #1976d2;">${startItem}-${endItem}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Showing</div>
+        </div>
+        <div style="background: #f3e5f5; padding: 12px 20px; border-radius: 8px; flex: 1; text-align: center; border-left: 4px solid #9c27b0;">
+            <div style="font-size: 24px; font-weight: bold; color: #7b1fa2;">${totalInvoicePages}</div>
+            <div style="font-size: 13px; color: #666; margin-top: 4px;">Total Pages</div>
+        </div>
+    `;
+}
+
+/**
+ * Render invoice list view (for Invoices tab)
+ */
+function renderInvoiceListView(invoices) {
+    const invoiceList = document.getElementById('invoiceList');
+    if (!invoiceList) return;
+    
+    let html = '<div class="invoice-list-grid" style="display: grid; gap: 15px;">';
+    
+    invoices.forEach(invoice => {
+        const statusBadge = getInvoiceStatusBadge(invoice.status);
+        const syncBadge = invoice.netsuite_bill_id ? 
+            '<span class="badge badge-success">✅ In NetSuite</span>' : 
+            '<span class="badge badge-warning">⏳ Not Synced</span>';
+        const paymentBadge = getPaymentStatusBadge(invoice.payment_status);
+        const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'N/A';
+        const amount = invoice.amount ? invoice.amount.toLocaleString() : '0';
+        const currency = invoice.currency || 'USD';
+        
+        html += `
+            <div class="invoice-card" style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; transition: all 0.3s; cursor: pointer;" 
+                 onmouseover="this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'" 
+                 onmouseout="this.style.boxShadow='none'">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0 0 5px 0; font-size: 18px; color: #111827;">
+                            📄 ${invoice.invoice_id || 'Unknown ID'}
+                        </h3>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            ${statusBadge}
+                            ${syncBadge}
+                            ${paymentBadge}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 24px; font-weight: bold; color: #111827;">
+                            ${amount} ${currency}
+                        </div>
+                        <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">
+                            ${invoiceDate}
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="border-top: 1px solid #e5e7eb; padding-top: 15px; margin-top: 15px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <span style="font-size: 13px; color: #6b7280;">Vendor:</span>
+                            <div style="font-weight: 500; color: #111827;">${invoice.vendor_name || 'Unknown'}</div>
+                        </div>
+                        <div>
+                            <span style="font-size: 13px; color: #6b7280;">Match Confidence:</span>
+                            <div style="font-weight: 500; color: #111827;">${invoice.match_confidence || 'N/A'}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 15px; display: flex; gap: 8px;">
+                    ${invoice.gcs_uri ? `
+                        <button onclick="downloadInvoice('${invoice.invoice_id}', event)" class="btn btn-secondary btn-sm">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download
+                        </button>
+                    ` : ''}
+                    ${!invoice.netsuite_bill_id ? `
+                        <button onclick="initiateInvoiceWorkflow('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
+                            📋 Create Bill
+                        </button>
+                    ` : `
+                        <button class="btn btn-success btn-sm" disabled>
+                            ✅ Bill Created
+                        </button>
+                    `}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    invoiceList.innerHTML = html;
+}
+
+/**
+ * Get invoice status badge HTML
+ */
+function getInvoiceStatusBadge(status) {
+    const badges = {
+        'matched': '<span class="badge badge-success">✅ Matched</span>',
+        'unmatched': '<span class="badge badge-info">➕ New Vendor</span>',
+        'ambiguous': '<span class="badge badge-warning">❓ Ambiguous</span>'
+    };
+    return badges[status] || '<span class="badge badge-secondary">Unknown</span>';
+}
+
+/**
+ * Render invoice list pagination
+ */
+function renderInvoiceListPagination(currentPage, totalPages, totalCount) {
+    const pagination = document.getElementById('invoicePagination');
+    if (!pagination || totalPages <= 1) {
+        if (pagination) pagination.classList.add('hidden');
+        return;
+    }
+    
+    pagination.classList.remove('hidden');
+    
+    let html = '<div style="display: flex; justify-content: center; align-items: center; gap: 10px;">';
+    
+    // Previous button
+    html += `
+        <button onclick="loadInvoiceList(${currentPage - 1})" 
+                ${currentPage === 1 ? 'disabled' : ''} 
+                class="btn btn-secondary btn-sm">
+            Previous
+        </button>
+    `;
+    
+    // Page numbers
+    const maxButtons = 7;
+    const halfButtons = Math.floor(maxButtons / 2);
+    let startPage = Math.max(1, currentPage - halfButtons);
+    let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+    
+    if (endPage - startPage < maxButtons - 1) {
+        startPage = Math.max(1, endPage - maxButtons + 1);
+    }
+    
+    if (startPage > 1) {
+        html += `<button onclick="loadInvoiceList(1)" class="btn btn-secondary btn-sm">1</button>`;
+        if (startPage > 2) html += '<span>...</span>';
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <button onclick="loadInvoiceList(${i})" 
+                    class="btn ${i === currentPage ? 'btn-primary' : 'btn-secondary'} btn-sm">
+                ${i}
+            </button>
+        `;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += '<span>...</span>';
+        html += `<button onclick="loadInvoiceList(${totalPages})" class="btn btn-secondary btn-sm">${totalPages}</button>`;
+    }
+    
+    // Next button
+    html += `
+        <button onclick="loadInvoiceList(${currentPage + 1})" 
+                ${currentPage === totalPages ? 'disabled' : ''} 
+                class="btn btn-secondary btn-sm">
+            Next
+        </button>
+    `;
+    
+    html += '</div>';
+    pagination.innerHTML = html;
+}
+
+/**
+ * Search invoices with filters
+ */
+function searchInvoices() {
+    const searchInput = document.getElementById('invoiceSearchInput');
+    const statusFilter = document.getElementById('invoiceStatusFilter');
+    const syncFilter = document.getElementById('invoiceSyncFilter');
+    
+    currentInvoiceSearchTerm = searchInput ? searchInput.value : '';
+    currentInvoiceStatusFilter = statusFilter ? statusFilter.value : '';
+    currentInvoiceSyncFilter = syncFilter ? syncFilter.value : '';
+    
+    loadInvoiceList(1); // Reset to page 1 when searching
+}
+
+// ==================== INVOICE MATCHING FUNCTIONS (FOR MATCHING TAB) ====================
 
 /**
  * Load invoice matches from API

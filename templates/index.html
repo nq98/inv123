@@ -324,6 +324,73 @@
                 </div>
             </section>
             
+            <!-- Invoice List Section -->
+            <section class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">📋 All Invoices</h2>
+                    <p class="card-desc">View and manage all processed invoices</p>
+                </div>
+                
+                <!-- Invoice Search & Filters -->
+                <div class="search-controls" style="padding: 20px; border-bottom: 1px solid #e5e7eb;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <input type="text" 
+                               id="invoiceSearchInput" 
+                               placeholder="🔍 Search invoices by ID, vendor, or amount..." 
+                               class="search-input"
+                               style="flex: 1; min-width: 300px; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                        
+                        <select id="invoiceStatusFilter" class="filter-select" style="padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            <option value="">All Status</option>
+                            <option value="matched">✅ Matched</option>
+                            <option value="unmatched">➕ Unmatched</option>
+                            <option value="ambiguous">❓ Ambiguous</option>
+                        </select>
+                        
+                        <select id="invoiceSyncFilter" class="filter-select" style="padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            <option value="">All Sync Status</option>
+                            <option value="synced">✅ In NetSuite</option>
+                            <option value="not_synced">⏳ Not in NetSuite</option>
+                        </select>
+                        
+                        <button onclick="searchInvoices()" class="btn btn-primary">
+                            Search
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Invoice Stats -->
+                <div id="invoiceStats" class="stats-grid" style="padding: 20px; display: flex; gap: 15px;">
+                    <!-- Stats will be dynamically inserted here -->
+                </div>
+                
+                <!-- Invoice List Container -->
+                <div id="invoiceListContainer" style="padding: 20px;">
+                    <div id="invoiceLoading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <p>Loading invoices...</p>
+                    </div>
+                    
+                    <div id="invoiceList">
+                        <!-- Invoices will be dynamically inserted here -->
+                    </div>
+                    
+                    <div id="invoiceEmptyState" class="empty-state hidden">
+                        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <h3 class="empty-title">No invoices yet</h3>
+                        <p class="empty-desc">Upload your first invoice above to get started</p>
+                    </div>
+                </div>
+                
+                <!-- Pagination -->
+                <div id="invoicePagination" class="pagination hidden" style="padding: 20px; border-top: 1px solid #e5e7eb;">
+                    <!-- Pagination controls will be dynamically inserted here -->
+                </div>
+            </section>
+            
         </div>
         
         <!-- ==================== VENDORS TAB ==================== -->
