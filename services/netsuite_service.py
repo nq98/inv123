@@ -470,46 +470,220 @@ class NetSuiteService:
                 'error': str(e)
             }
     
-    def search_vendors(self, name: str = None, tax_id: str = None, 
-                      email: str = None, limit: int = 10) -> List[Dict]:
+    def get_vendor_by_external_id(self, external_id: str) -> Optional[Dict]:
         """
-        Search for vendors in NetSuite.
-        PRIORITY: Tax ID -> Email -> Name.
+        SOLUTION 1: Direct External ID Lookup (HIGHEST PRIORITY)
+        Fetch vendor directly by external ID using the eid: prefix.
+        This is the fastest and most reliable method - bypasses all search issues!
+        
+        Args:
+            external_id: External ID of the vendor (e.g., "vendor:V2149")
+            
+        Returns:
+            Vendor data dict if found, None if 404
+        """
+        if not self.enabled:
+            return None
+        
+        if not external_id:
+            return None
+        
+        # Direct lookup using eid: prefix
+        endpoint = f'/record/v1/vendor/eid:{external_id}'
+        logger.info(f"Direct external ID lookup for: {external_id}")
+        
+        result = self._make_request('GET', endpoint, 
+                                   entity_type='vendor', 
+                                   entity_id=external_id,
+                                   action='lookup_by_external_id')
+        
+        if result:
+            logger.info(f"✅ Found vendor by external ID: {external_id} -> NetSuite ID: {result.get('id')}")
+            return result
+        else:
+            logger.debug(f"No vendor found with external ID: {external_id}")
+            return None
+    
+    def search_vendor_suiteql(self, external_id: str = None, email: str = None, 
+                            name: str = None) -> List[Dict]:
+        """
+        SOLUTION 2: SuiteQL Query Support
+        Use NetSuite's SQL-like query language for advanced vendor searches.
+        
+        Args:
+            external_id: External ID to search for
+            email: Email to search for
+            name: Company name to search for
+            
+        Returns:
+            List of matching vendors
         """
         if not self.enabled:
             return []
         
-        # 1. Try Tax ID first (Best, Unique)
-        if tax_id:
-            # Remove special chars for cleaner search
-            clean_tax = tax_id.strip()
-            params = {'q': f"vatRegNumber IS '{clean_tax}'", 'limit': limit}
+        # Build SuiteQL query based on provided parameters
+        conditions = []
+        
+        if external_id:
+            # In SuiteQL, string values need single quotes
+            conditions.append(f"externalid = '{external_id}'")
+        
+        if email:
+            conditions.append(f"email = '{email}'")
+        
+        if name:
+            # Use LIKE for partial name matching in SuiteQL
+            conditions.append(f"companyname LIKE '%{name}%'")
+        
+        if not conditions:
+            logger.warning("No search criteria provided for SuiteQL query")
+            return []
+        
+        # Combine conditions with OR (you can change to AND if needed)
+        where_clause = " OR ".join(conditions)
+        
+        # Build the complete SuiteQL query
+        query = f"SELECT id, companyname, email, externalid, vatregno FROM vendor WHERE {where_clause}"
+        
+        logger.info(f"Executing SuiteQL query: {query}")
+        
+        # Make POST request to SuiteQL endpoint
+        query_data = {"q": query}
+        
+        result = self._make_request('POST', '/query/v1/suiteql', 
+                                   data=query_data,
+                                   entity_type='vendor',
+                                   entity_id=external_id or email or name,
+                                   action='suiteql_search')
+        
+        if result and 'items' in result:
+            logger.info(f"SuiteQL found {len(result['items'])} vendor(s)")
+            return result['items']
+        
+        return []
+    
+    def search_vendors(self, name: str = None, tax_id: str = None, 
+                      email: str = None, external_id: str = None, limit: int = 10) -> List[Dict]:
+        """
+        SOLUTION 3: Fixed REST API Search
+        Search for vendors in NetSuite using DOUBLE QUOTES for string values.
+        PRIORITY: External ID -> Tax ID -> Email -> Name.
+        """
+        if not self.enabled:
+            return []
+        
+        # 0. Try External ID first (if provided)
+        if external_id:
+            # FIX: Use DOUBLE QUOTES for string values in REST API queries
+            params = {'q': f'externalId IS "{external_id}"', 'limit': limit}
+            logger.debug(f"Searching vendor by external ID with query: {params['q']}")
             result = self._make_request('GET', '/record/v1/vendor', params=params)
             if result and 'items' in result and len(result['items']) > 0:
+                logger.info(f"Found vendor by external ID: {external_id}")
+                return result['items']
+        
+        # 1. Try Tax ID (Best, Unique)
+        if tax_id:
+            # FIX: Use DOUBLE QUOTES instead of single quotes
+            clean_tax = tax_id.strip()
+            params = {'q': f'vatRegNumber IS "{clean_tax}"', 'limit': limit}
+            logger.debug(f"Searching vendor by tax ID with query: {params['q']}")
+            result = self._make_request('GET', '/record/v1/vendor', params=params)
+            if result and 'items' in result and len(result['items']) > 0:
+                logger.info(f"Found vendor by tax ID: {tax_id}")
                 return result['items']
 
-        # 2. Try Email second (Safe from encoding issues, Unique)
+        # 2. Try Email (Safe from encoding issues, Unique)
         if email:
+            # FIX: Use DOUBLE QUOTES instead of single quotes
             clean_email = email.strip()
-            params = {'q': f"email IS '{clean_email}'", 'limit': limit}
+            params = {'q': f'email IS "{clean_email}"', 'limit': limit}
+            logger.debug(f"Searching vendor by email with query: {params['q']}")
             result = self._make_request('GET', '/record/v1/vendor', params=params)
             if result and 'items' in result and len(result['items']) > 0:
+                logger.info(f"Found vendor by email: {email}")
                 return result['items']
 
         # 3. Try Name last (Risky due to spaces/encoding)
         if name:
-            # FIX: Use 'CONTAIN' (singular), not 'CONTAINS'
-            # Use string formatting that requests library handles better
-            clean_name = name.replace("'", "").strip() # Remove quotes to prevent breakage
-            query_string = f"companyName CONTAIN '{clean_name}'"
+            # FIX: Use DOUBLE QUOTES and handle special characters
+            clean_name = name.replace('"', '').strip()  # Remove double quotes to prevent breakage
+            # FIX: Use DOUBLE QUOTES instead of single quotes
+            query_string = f'companyName CONTAIN "{clean_name}"'
             
             params = {'q': query_string, 'limit': limit}
+            logger.debug(f"Searching vendor by name with query: {params['q']}")
             result = self._make_request('GET', '/record/v1/vendor', params=params)
             
             if result and 'items' in result:
+                logger.info(f"Found {len(result['items'])} vendor(s) by name: {name}")
                 return result['items']
         
         return []
+    
+    def lookup_vendor_integrated(self, external_id: str = None, email: str = None, 
+                                name: str = None, tax_id: str = None) -> Optional[Dict]:
+        """
+        Integrated vendor lookup using all three solutions in priority order:
+        1. Direct external ID lookup (fastest, most reliable)
+        2. SuiteQL query (if direct lookup fails)
+        3. Fixed REST API search (as fallback)
+        
+        Args:
+            external_id: External ID to search for (e.g., "vendor:V2149")
+            email: Email to search for
+            name: Company name to search for
+            tax_id: Tax ID to search for
+            
+        Returns:
+            Vendor data dict if found, None if not found
+        """
+        if not self.enabled:
+            return None
+        
+        logger.info(f"Starting integrated vendor lookup - external_id: {external_id}, email: {email}, name: {name}")
+        
+        # SOLUTION 1: Try direct external ID lookup first (if we have an external ID)
+        if external_id:
+            logger.info("Attempting Solution 1: Direct external ID lookup")
+            vendor = self.get_vendor_by_external_id(external_id)
+            if vendor:
+                logger.info(f"✅ Solution 1 SUCCESS: Found vendor via direct external ID lookup")
+                return vendor
+            else:
+                logger.info("Solution 1 returned no results, trying Solution 2")
+        
+        # SOLUTION 2: Try SuiteQL query
+        logger.info("Attempting Solution 2: SuiteQL query")
+        suiteql_results = self.search_vendor_suiteql(
+            external_id=external_id,
+            email=email,
+            name=name
+        )
+        
+        if suiteql_results:
+            logger.info(f"✅ Solution 2 SUCCESS: Found {len(suiteql_results)} vendor(s) via SuiteQL")
+            # Return the first match
+            return suiteql_results[0]
+        else:
+            logger.info("Solution 2 returned no results, trying Solution 3")
+        
+        # SOLUTION 3: Try fixed REST API search as fallback
+        logger.info("Attempting Solution 3: Fixed REST API search")
+        search_results = self.search_vendors(
+            external_id=external_id,
+            email=email,
+            name=name,
+            tax_id=tax_id
+        )
+        
+        if search_results:
+            logger.info(f"✅ Solution 3 SUCCESS: Found {len(search_results)} vendor(s) via REST API search")
+            # Return the first match
+            return search_results[0]
+        
+        logger.info("❌ No vendor found using any of the three solutions")
+        return None
     
     def get_vendor(self, vendor_id: str) -> Optional[Dict]:
         """
@@ -530,6 +704,7 @@ class NetSuiteService:
     def create_vendor(self, vendor_data: Dict) -> Dict:
         """
         Create a new vendor in NetSuite
+        Uses the integrated vendor lookup flow before creating
         
         Args:
             vendor_data: Vendor data from our system with fields:
@@ -548,6 +723,33 @@ class NetSuiteService:
             return {'success': False, 'error': 'NetSuite not enabled'}
         
         try:
+            # Format external ID using vendor: prefix (supports colon format)
+            external_id = None
+            if vendor_data.get('external_id'):
+                # Use vendor: prefix format as mentioned in task (NetSuite handles colon fine)
+                external_id = f"vendor:{vendor_data['external_id']}"
+            
+            # UNLESS force_create is True, first check if vendor already exists using integrated lookup
+            if not vendor_data.get('force_create'):
+                logger.info(f"Checking if vendor exists using integrated lookup flow")
+                existing_vendor = self.lookup_vendor_integrated(
+                    external_id=external_id,
+                    email=vendor_data.get('email'),
+                    name=vendor_data.get('name'),
+                    tax_id=vendor_data.get('tax_id')
+                )
+                
+                if existing_vendor:
+                    logger.info(f"✅ Vendor already exists in NetSuite with ID: {existing_vendor.get('id')}")
+                    return {
+                        'success': True,
+                        'netsuite_id': existing_vendor.get('id'),
+                        'action': 'found_existing',
+                        'data': existing_vendor
+                    }
+                else:
+                    logger.info("Vendor not found, proceeding to create new vendor")
+            
             # Map our data to NetSuite format
             netsuite_vendor = {
                 'companyName': vendor_data.get('name', ''),
@@ -567,8 +769,8 @@ class NetSuiteService:
             if vendor_data.get('phone'):
                 netsuite_vendor['phone'] = vendor_data['phone']
             
-            if vendor_data.get('external_id'):
-                netsuite_vendor['externalId'] = f"VENDOR_{vendor_data['external_id']}"
+            if external_id:
+                netsuite_vendor['externalId'] = external_id
             
             # Add address if provided
             if vendor_data.get('address'):
