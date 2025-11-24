@@ -975,10 +975,11 @@ class NetSuiteService:
         if line_items:
             # Use provided line items
             for item in line_items:
-                # Validate line item amount
+                # Get line item amount - NetSuite accepts $0 amounts
                 item_amount = float(item.get('amount', 0))
-                if item_amount <= 0:
-                    logger.warning(f"Skipping line item with invalid amount: {item_amount}")
+                # Only skip negative amounts, $0 is OK
+                if item_amount < 0:
+                    logger.warning(f"Skipping line item with negative amount: {item_amount}")
                     continue
                     
                 expense_item = {
@@ -1004,18 +1005,22 @@ class NetSuiteService:
                 
                 expense_items.append(expense_item)
         else:
-            # Fix amount field - Never send 0, use actual invoice amount
+            # Get invoice amount - NetSuite accepts $0 for placeholder bills
             amount = float(bill_data.get('total_amount') or bill_data.get('amount') or bill_data.get('subtotal') or 0)
-            if amount <= 0:
-                raise ValueError(f"Invoice amount must be greater than 0, got: {amount}")
             
-            # Create single line item with total amount
+            # Log warning for $0 amounts but still create the bill
+            if amount == 0:
+                logger.warning(f"Creating bill with $0 amount for invoice {bill_data.get('invoice_id')} - using placeholder")
+            elif amount < 0:
+                raise ValueError(f"Invoice amount cannot be negative, got: {amount}")
+            
+            # Create single line item with amount (even if $0)
             expense_items.append({
                 'account': {
                     'id': os.getenv('NETSUITE_EXPENSE_ACCOUNT_ID', 
                                   self.DEFAULT_EXPENSE_ACCOUNT_ID)
                 },
-                'amount': amount,  # Must be > 0
+                'amount': amount,  # $0 is OK for NetSuite
                 'memo': bill_data.get('memo', 'Invoice total'),
                 'department': {
                     'id': DEPARTMENT_ID  # Add department as per working example
