@@ -71,7 +71,11 @@
                 <span class="brand-subtitle">4-Layer Hybrid Intelligence</span>
             </div>
             <nav class="nav-tabs">
-                <a href="/" class="nav-link active" data-tab="invoices">
+                <a href="/" class="nav-link active" data-tab="netsuite-dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="/#invoices" class="nav-link" data-tab="invoices">
                     <span class="nav-icon">📄</span>
                     <span class="nav-text">Invoices</span>
                 </a>
@@ -86,10 +90,6 @@
                 <a href="/#gmail" class="nav-link" data-tab="gmail">
                     <span class="nav-icon">📧</span>
                     <span class="nav-text">Gmail</span>
-                </a>
-                <a href="/netsuite-dashboard" class="nav-link">
-                    <span class="nav-icon">⚙️</span>
-                    <span class="nav-text">NetSuite</span>
                 </a>
                 <a href="/#generate" class="nav-link" data-tab="generate">
                     <span class="nav-icon">📝</span>
@@ -111,8 +111,150 @@
     <!-- Tab Content Container -->
     <main class="tab-content-container">
         
+        <!-- ==================== NETSUITE DASHBOARD TAB (DEFAULT) ==================== -->
+        <div class="tab-content active" id="tab-netsuite-dashboard">
+            
+            <!-- Dashboard Header with Controls -->
+            <section class="card">
+                <div class="card-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h2 class="card-title">📊 NetSuite Sync Dashboard</h2>
+                            <p class="card-desc">Real-time synchronization status and system health</p>
+                        </div>
+                        <div class="dashboard-controls" style="display: flex; gap: 8px; align-items: center;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoRefreshToggle" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Auto-refresh</span>
+                            </label>
+                            <button id="refreshDashboardBtn" class="btn btn-secondary">
+                                🔄 Refresh Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Statistics Cards Grid -->
+            <div class="dashboard-stats-grid">
+                <!-- Vendor Sync Card -->
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span class="stat-icon">👥</span>
+                        <h3 class="stat-title">Vendor Sync</h3>
+                    </div>
+                    <div class="stat-body">
+                        <div class="stat-value" id="vendorSyncPercent">0%</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Synced: <span id="vendorsSynced">0</span></span>
+                            <span class="stat-label">Not Synced: <span id="vendorsNotSynced">0</span></span>
+                            <span class="stat-label">Total: <span id="vendorsTotal">0</span></span>
+                        </div>
+                        <div class="stat-chart">
+                            <canvas id="vendorSyncChart" width="150" height="150"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Invoice Sync Card -->
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span class="stat-icon">📄</span>
+                        <h3 class="stat-title">Invoice Bills</h3>
+                    </div>
+                    <div class="stat-body">
+                        <div class="stat-value" id="invoiceBillPercent">0%</div>
+                        <div class="stat-details">
+                            <span class="stat-label">With Bills: <span id="invoicesWithBills">0</span></span>
+                            <span class="stat-label">Without Bills: <span id="invoicesWithoutBills">0</span></span>
+                            <span class="stat-label">Total: <span id="invoicesTotal">0</span></span>
+                        </div>
+                        <div class="stat-chart">
+                            <canvas id="invoiceSyncChart" width="150" height="150"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Payment Status Card -->
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span class="stat-icon">💰</span>
+                        <h3 class="stat-title">Payment Status</h3>
+                    </div>
+                    <div class="stat-body">
+                        <div class="stat-value" id="paymentsPaidPercent">0%</div>
+                        <div class="stat-details">
+                            <span class="stat-label status-paid">Paid: <span id="paymentsPaid">0</span></span>
+                            <span class="stat-label status-pending">Pending: <span id="paymentsPending">0</span></span>
+                            <span class="stat-label status-overdue">Overdue: <span id="paymentsOverdue">0</span></span>
+                            <span class="stat-label status-partial">Partial: <span id="paymentsPartial">0</span></span>
+                        </div>
+                        <div class="stat-chart">
+                            <canvas id="paymentStatusChart" width="150" height="150"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">⚡ Quick Actions</h2>
+                    <p class="card-desc">Common synchronization operations</p>
+                </div>
+                <div class="quick-actions-grid">
+                    <button class="action-btn" onclick="pullVendorsFromNetSuite()">
+                        <span class="action-icon">⬇️</span>
+                        <span class="action-text">Pull Vendors</span>
+                    </button>
+                    <button class="action-btn" onclick="syncAllPayments()">
+                        <span class="action-icon">💳</span>
+                        <span class="action-text">Sync Payments</span>
+                    </button>
+                    <button class="action-btn" onclick="window.location.href='/#vendors'">
+                        <span class="action-icon">👥</span>
+                        <span class="action-text">Manage Vendors</span>
+                    </button>
+                    <button class="action-btn" onclick="window.location.href='/#invoices'">
+                        <span class="action-icon">📄</span>
+                        <span class="action-text">Process Invoices</span>
+                    </button>
+                </div>
+            </section>
+            
+            <!-- Recent Activity Feed -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📜 Recent Sync Activities</h2>
+                    <p class="card-desc">Last 10 synchronization operations</p>
+                </div>
+                <div id="activityFeed" class="activity-feed">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading activities...</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Operation Statistics -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📈 Operation Statistics (Last 24 Hours)</h2>
+                    <p class="card-desc">Sync operation performance metrics</p>
+                </div>
+                <div id="operationStats" class="operation-stats-grid">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading statistics...</p>
+                    </div>
+                </div>
+            </section>
+            
+        </div>
+        
         <!-- ==================== INVOICES TAB ==================== -->
-        <div class="tab-content active" id="tab-invoices">
+        <div class="tab-content" id="tab-invoices">
             
             <!-- Upload Invoice Section -->
             <section class="card">

@@ -3031,7 +3031,7 @@ def pull_netsuite_vendors():
     """
     def generate():
         try:
-            sync_manager = SyncManager()
+            sync_manager = get_sync_manager()
             
             # Progress callback for SSE streaming
             def progress_callback(step, total_steps, message, data):
@@ -3644,6 +3644,91 @@ def update_invoice_in_netsuite(invoice_id):
             'error': str(e),
             'invoice_id': invoice_id
         }), 500
+
+@app.route('/api/netsuite/sync/dashboard', methods=['GET'])
+def get_sync_dashboard():
+    """
+    Get comprehensive NetSuite synchronization dashboard statistics
+    Returns real-time sync stats for vendors, invoices, payments, and activities
+    """
+    try:
+        sync_manager = get_sync_manager()
+        
+        # Get comprehensive stats from BigQuery
+        stats = sync_manager.get_sync_dashboard_stats()
+        
+        # Add timestamp for client-side caching
+        stats['timestamp'] = datetime.utcnow().isoformat()
+        stats['success'] = True
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        print(f"Dashboard stats error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'vendors': {'total': 0, 'synced': 0, 'not_synced': 0, 'failed': 0, 'sync_percentage': 0},
+            'invoices': {'total': 0, 'with_bills': 0, 'without_bills': 0, 'bill_percentage': 0},
+            'payments': {'paid': 0, 'pending': 0, 'overdue': 0, 'partial': 0, 'total': 0},
+            'recent_activities': [],
+            'operation_stats': []
+        }), 500
+
+@app.route('/api/netsuite/sync/payments', methods=['POST'])
+def sync_all_payments():
+    """
+    Sync payment status for all invoices with NetSuite bills
+    Uses Server-Sent Events to stream progress
+    """
+    def generate():
+        try:
+            sync_manager = get_sync_manager()
+            
+            # Progress callback for SSE streaming
+            def progress_callback(step, total_steps, message, data):
+                event_data = {
+                    'step': step,
+                    'totalSteps': total_steps,
+                    'message': message,
+                    'progress': round((step / total_steps) * 100),
+                    'data': data
+                }
+                yield f"data: {json.dumps(event_data)}\n\n"
+            
+            # Run the payment sync with progress callback
+            result = sync_manager.sync_all_payment_status(progress_callback=progress_callback)
+            
+            # Send final result
+            final_event = {
+                'step': 5,
+                'totalSteps': 5,
+                'message': 'Payment sync completed!',
+                'progress': 100,
+                'completed': True,
+                'stats': result
+            }
+            yield f"data: {json.dumps(final_event)}\n\n"
+            
+        except Exception as e:
+            error_event = {
+                'error': True,
+                'message': f'Failed to sync payments: {str(e)}',
+                'progress': 0
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
 
 @app.route('/api/netsuite/vendors/bulk/<action>', methods=['POST'])
 def bulk_vendor_action(action):
@@ -4717,7 +4802,7 @@ def sync_payment_status():
     """
     def generate():
         try:
-            sync_manager = SyncManager()
+            sync_manager = get_sync_manager()
             
             # Progress callback function
             def progress_callback(step, total, message, data):
@@ -4760,7 +4845,7 @@ def sweep_unpaid_bills():
     """
     def generate():
         try:
-            sync_manager = SyncManager()
+            sync_manager = get_sync_manager()
             
             # Progress callback function
             def progress_callback(step, total, message, data):

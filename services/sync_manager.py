@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any
 from google.cloud import bigquery
 from services.bigquery_service import BigQueryService
 from services.netsuite_service import NetSuiteService
+from services.retry_utils import exponential_backoff_retry, retry_with_backoff, RetryableError
 from config import config
 
 class SyncManager:
@@ -20,6 +21,211 @@ class SyncManager:
         self.netsuite = NetSuiteService()
         self.client = self.bigquery.client
         self.project_id = config.GOOGLE_CLOUD_PROJECT_ID
+        self.sync_log_table_id = f"{self.project_id}.vendors_ai.sync_log"
+        self.ensure_sync_log_table()
+    
+    def ensure_sync_log_table(self):
+        """Create sync_log table if it doesn't exist"""
+        try:
+            # Check if table exists
+            table = self.client.get_table(self.sync_log_table_id)
+            print(f"✓ Sync log table {self.sync_log_table_id} already exists")
+        except Exception:
+            # Create the table if it doesn't exist
+            schema = [
+                bigquery.SchemaField("log_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("operation_type", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("entity_type", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("entity_id", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("details", "JSON", mode="NULLABLE"),
+                bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("user_id", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("duration_seconds", "FLOAT64", mode="NULLABLE"),
+            ]
+            
+            table = bigquery.Table(self.sync_log_table_id, schema=schema)
+            table = self.client.create_table(table)
+            print(f"✓ Created sync log table {self.sync_log_table_id}")
+    
+    @exponential_backoff_retry(max_retries=3, initial_delay=1.0, exceptions=(Exception,))
+    def log_sync_activity(self, operation_type: str, entity_type: str = None, 
+                          entity_id: str = None, status: str = "success", 
+                          details: dict = None, error_message: str = None,
+                          duration_seconds: float = None) -> bool:
+        """Log a sync activity to BigQuery with retry logic"""
+        try:
+            log_entry = {
+                "log_id": str(uuid.uuid4()),
+                "operation_type": operation_type,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "status": status,
+                "timestamp": datetime.utcnow().isoformat(),
+                "details": details or {},
+                "error_message": error_message,
+                "duration_seconds": duration_seconds
+            }
+            
+            table = self.client.get_table(self.sync_log_table_id)
+            errors = self.client.insert_rows_json(table, [log_entry])
+            
+            if errors:
+                error_msg = f"BigQuery insert failed: {errors}"
+                print(f"❌ Error logging sync activity: {error_msg}")
+                raise RetryableError(error_msg)
+            
+            return True
+        except RetryableError:
+            raise
+        except Exception as e:
+            print(f"❌ Failed to log sync activity: {e}")
+            # Don't fail the entire operation if logging fails
+            return False
+    
+    def get_recent_sync_activities(self, limit: int = 10) -> List[Dict]:
+        """Get recent sync activities from the log"""
+        try:
+            query = f"""
+            SELECT 
+                log_id,
+                operation_type,
+                entity_type,
+                entity_id,
+                status,
+                timestamp,
+                details,
+                error_message,
+                duration_seconds
+            FROM `{self.sync_log_table_id}`
+            ORDER BY timestamp DESC
+            LIMIT {limit}
+            """
+            
+            results = list(self.client.query(query).result())
+            activities = []
+            
+            for row in results:
+                activities.append({
+                    'log_id': row.log_id,
+                    'operation_type': row.operation_type,
+                    'entity_type': row.entity_type,
+                    'entity_id': row.entity_id,
+                    'status': row.status,
+                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                    'details': row.details,
+                    'error_message': row.error_message,
+                    'duration_seconds': row.duration_seconds
+                })
+            
+            return activities
+        except Exception as e:
+            print(f"Error fetching recent sync activities: {e}")
+            return []
+    
+    def get_sync_dashboard_stats(self) -> Dict:
+        """Get comprehensive sync statistics for dashboard"""
+        try:
+            stats = {
+                'vendors': {},
+                'invoices': {},
+                'payments': {},
+                'recent_activities': []
+            }
+            
+            # Get vendor sync statistics
+            # Using direct columns since global_vendors doesn't have custom_attributes
+            vendor_query = f"""
+            SELECT 
+                COUNT(*) as total_vendors,
+                COUNTIF(netsuite_internal_id IS NOT NULL) as synced_vendors,
+                COUNTIF(netsuite_internal_id IS NULL) as not_synced_vendors,
+                COUNTIF(netsuite_sync_status = 'failed') as failed_syncs
+            FROM `{self.project_id}.vendors_ai.global_vendors`
+            """
+            
+            vendor_results = list(self.client.query(vendor_query).result())
+            if vendor_results:
+                row = vendor_results[0]
+                stats['vendors'] = {
+                    'total': row.total_vendors,
+                    'synced': row.synced_vendors,
+                    'not_synced': row.not_synced_vendors,
+                    'failed': row.failed_syncs,
+                    'sync_percentage': round((row.synced_vendors / row.total_vendors * 100) if row.total_vendors > 0 else 0, 1)
+                }
+            
+            # Get invoice sync statistics
+            # Using direct columns since invoices table doesn't have custom_attributes column
+            invoice_query = f"""
+            SELECT 
+                COUNT(*) as total_invoices,
+                COUNTIF(netsuite_bill_id IS NOT NULL) as with_bills,
+                COUNTIF(netsuite_bill_id IS NULL) as without_bills,
+                COUNTIF(payment_status = 'paid') as paid,
+                COUNTIF(payment_status = 'pending') as pending,
+                COUNTIF(payment_status = 'overdue') as overdue,
+                COUNTIF(payment_status = 'partial') as partial
+            FROM `{self.project_id}.vendors_ai.invoices`
+            """
+            
+            invoice_results = list(self.client.query(invoice_query).result())
+            if invoice_results:
+                row = invoice_results[0]
+                stats['invoices'] = {
+                    'total': row.total_invoices,
+                    'with_bills': row.with_bills,
+                    'without_bills': row.without_bills,
+                    'bill_percentage': round((row.with_bills / row.total_invoices * 100) if row.total_invoices > 0 else 0, 1)
+                }
+                stats['payments'] = {
+                    'paid': row.paid,
+                    'pending': row.pending,
+                    'overdue': row.overdue,
+                    'partial': row.partial,
+                    'total': row.total_invoices
+                }
+            
+            # Get recent sync activities
+            stats['recent_activities'] = self.get_recent_sync_activities(10)
+            
+            # Get sync operation statistics for the last 24 hours
+            activity_stats_query = f"""
+            SELECT 
+                operation_type,
+                COUNT(*) as count,
+                COUNTIF(status = 'success') as success_count,
+                COUNTIF(status = 'failed') as failed_count,
+                AVG(duration_seconds) as avg_duration
+            FROM `{self.sync_log_table_id}`
+            WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+            GROUP BY operation_type
+            ORDER BY count DESC
+            """
+            
+            activity_results = list(self.client.query(activity_stats_query).result())
+            stats['operation_stats'] = []
+            for row in activity_results:
+                stats['operation_stats'].append({
+                    'operation': row.operation_type,
+                    'total': row.count,
+                    'success': row.success_count,
+                    'failed': row.failed_count,
+                    'avg_duration': round(row.avg_duration, 2) if row.avg_duration else 0
+                })
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Error getting sync dashboard stats: {e}")
+            return {
+                'vendors': {'total': 0, 'synced': 0, 'not_synced': 0, 'failed': 0, 'sync_percentage': 0},
+                'invoices': {'total': 0, 'with_bills': 0, 'without_bills': 0, 'bill_percentage': 0},
+                'payments': {'paid': 0, 'pending': 0, 'overdue': 0, 'partial': 0, 'total': 0},
+                'recent_activities': [],
+                'operation_stats': []
+            }
         
     def update_vendor_schema(self):
         """Add sync tracking fields to vendor table"""
@@ -119,16 +325,52 @@ class SyncManager:
                 'external_id': f"VENDOR_{vendor_id}"
             }
             
-            result = self.netsuite.sync_vendor_to_netsuite(sync_data)
+            # Log sync start
+            start_time = datetime.now()
+            
+            # Retry NetSuite API call with exponential backoff
+            try:
+                result = retry_with_backoff(
+                    self.netsuite.sync_vendor_to_netsuite,
+                    args=(sync_data,),
+                    max_retries=3,
+                    initial_delay=2.0,
+                    backoff_factor=2.0
+                )
+            except Exception as e:
+                print(f"❌ Failed to sync vendor to NetSuite after retries: {e}")
+                result = {'success': False, 'error': str(e)}
+            
+            # Calculate duration
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            # Log sync activity
+            self.log_sync_activity(
+                operation_type='vendor_sync',
+                entity_type='vendor',
+                entity_id=vendor_id,
+                status='success' if result.get('success') else 'failed',
+                details={
+                    'vendor_name': vendor.get('global_name', ''),
+                    'netsuite_id': result.get('netsuite_id'),
+                    'action': 'create' if not vendor.get('netsuite_internal_id') else 'update'
+                },
+                error_message=result.get('error') if not result.get('success') else None,
+                duration_seconds=duration
+            )
             
             # Update sync status in BigQuery
             update_query = f"""
             UPDATE `{self.project_id}.vendors_ai.global_vendors`
             SET 
-                netsuite_internal_id = @netsuite_id,
-                netsuite_sync_status = @sync_status,
-                netsuite_last_sync = CURRENT_TIMESTAMP(),
-                netsuite_sync_error = @sync_error
+                custom_attributes = JSON_SET(
+                    IFNULL(custom_attributes, JSON '{{}}'),
+                    '$.netsuite_internal_id', @netsuite_id,
+                    '$.netsuite_sync_status', @sync_status,
+                    '$.netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING),
+                    '$.netsuite_sync_error', @sync_error
+                ),
+                last_updated = CURRENT_TIMESTAMP()
             WHERE vendor_id = @vendor_id
             """
             
@@ -141,7 +383,18 @@ class SyncManager:
                 ]
             )
             
-            self.client.query(update_query, job_config=job_config).result()
+            # Execute query with retry logic
+            try:
+                retry_with_backoff(
+                    lambda: self.client.query(update_query, job_config=job_config).result(),
+                    max_retries=3,
+                    initial_delay=1.0
+                )
+            except Exception as e:
+                error_msg = f"Failed to update vendor sync status in BigQuery: {e}"
+                print(f"❌ {error_msg}")
+                # Propagate the error instead of swallowing it
+                raise RetryableError(error_msg)
             
             # Log sync activity
             self.bigquery.log_netsuite_sync({
@@ -441,10 +694,13 @@ class SyncManager:
             query = f"""
             UPDATE `{self.project_id}.vendors_ai.global_vendors`
             SET 
-                netsuite_internal_id = @netsuite_id,
-                external_id = @external_id,
-                netsuite_sync_status = 'synced',
-                netsuite_last_sync = CURRENT_TIMESTAMP(),
+                custom_attributes = JSON_SET(
+                    IFNULL(custom_attributes, JSON '{{}}'),
+                    '$.netsuite_internal_id', @netsuite_id,
+                    '$.external_id', @external_id,
+                    '$.netsuite_sync_status', 'synced',
+                    '$.netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING)
+                ),
                 last_updated = CURRENT_TIMESTAMP()
             WHERE vendor_id = @vendor_id
             """
@@ -509,7 +765,7 @@ class SyncManager:
                     existing_query = f"""
                     SELECT vendor_id 
                     FROM `{self.project_id}.vendors_ai.global_vendors`
-                    WHERE netsuite_internal_id = @netsuite_id
+                    WHERE JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_internal_id') = @netsuite_id
                     LIMIT 1
                     """
                     
@@ -529,8 +785,11 @@ class SyncManager:
                         UPDATE `{self.project_id}.vendors_ai.global_vendors`
                         SET 
                             global_name = @name,
-                            netsuite_sync_status = 'synced',
-                            netsuite_last_sync = CURRENT_TIMESTAMP(),
+                            custom_attributes = JSON_SET(
+                                IFNULL(custom_attributes, JSON '{{}}'),
+                                '$.netsuite_sync_status', 'synced',
+                                '$.netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING)
+                            ),
                             last_updated = CURRENT_TIMESTAMP()
                         WHERE vendor_id = @vendor_id
                         """
@@ -603,10 +862,14 @@ class SyncManager:
                 update_query = f"""
                 UPDATE `{self.project_id}.vendors_ai.invoices`
                 SET 
-                    payment_status = @payment_status,
-                    payment_date = @payment_date,
-                    payment_amount = @payment_amount,
-                    netsuite_sync_date = CURRENT_TIMESTAMP()
+                    custom_attributes = JSON_SET(
+                        IFNULL(custom_attributes, JSON '{{}}'),
+                        '$.payment_status', @payment_status,
+                        '$.payment_date', CAST(@payment_date AS STRING),
+                        '$.payment_amount', @payment_amount,
+                        '$.netsuite_sync_date', CAST(CURRENT_TIMESTAMP() AS STRING)
+                    ),
+                    updated_at = CURRENT_TIMESTAMP()
                 WHERE invoice_id = @invoice_id
                 """
                 
@@ -664,14 +927,14 @@ class SyncManager:
             query = f"""
             SELECT 
                 invoice_id,
-                netsuite_bill_id,
+                JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_bill_id') as netsuite_bill_id,
                 vendor_id,
                 invoice_number,
                 total_amount,
-                payment_status,
-                payment_date
+                JSON_EXTRACT_SCALAR(custom_attributes, '$.payment_status') as payment_status,
+                JSON_EXTRACT_SCALAR(custom_attributes, '$.payment_date') as payment_date
             FROM `{self.project_id}.vendors_ai.invoices`
-            WHERE netsuite_bill_id IS NOT NULL
+            WHERE JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_bill_id') IS NOT NULL
             """
             
             invoices = list(self.client.query(query).result())
@@ -703,10 +966,14 @@ class SyncManager:
                         update_query = f"""
                         UPDATE `{self.project_id}.vendors_ai.invoices`
                         SET 
-                            payment_status = @payment_status,
-                            payment_date = @payment_date,
-                            payment_amount = @payment_amount,
-                            payment_sync_date = CURRENT_TIMESTAMP()
+                            custom_attributes = JSON_SET(
+                                IFNULL(custom_attributes, JSON '{{}}'),
+                                '$.payment_status', @payment_status,
+                                '$.payment_date', CAST(@payment_date AS STRING),
+                                '$.payment_amount', @payment_amount,
+                                '$.payment_sync_date', CAST(CURRENT_TIMESTAMP() AS STRING)
+                            ),
+                            updated_at = CURRENT_TIMESTAMP()
                         WHERE invoice_id = @invoice_id
                         """
                         
@@ -829,9 +1096,11 @@ class SyncManager:
                     
                     # Find invoice by NetSuite bill ID
                     query = f"""
-                    SELECT invoice_id, payment_status
+                    SELECT 
+                        invoice_id, 
+                        JSON_EXTRACT_SCALAR(custom_attributes, '$.payment_status') as payment_status
                     FROM `{self.project_id}.vendors_ai.invoices`
-                    WHERE netsuite_bill_id = @bill_id
+                    WHERE JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_bill_id') = @bill_id
                     LIMIT 1
                     """
                     
@@ -853,8 +1122,12 @@ class SyncManager:
                         update_query = f"""
                         UPDATE `{self.project_id}.vendors_ai.invoices`
                         SET 
-                            payment_status = @payment_status,
-                            payment_sync_date = CURRENT_TIMESTAMP()
+                            custom_attributes = JSON_SET(
+                                IFNULL(custom_attributes, JSON '{{}}'),
+                                '$.payment_status', @payment_status,
+                                '$.payment_sync_date', CAST(CURRENT_TIMESTAMP() AS STRING)
+                            ),
+                            updated_at = CURRENT_TIMESTAMP()
                         WHERE invoice_id = @invoice_id
                         """
                         

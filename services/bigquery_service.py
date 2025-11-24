@@ -1070,7 +1070,12 @@ class BigQueryService:
         try:
             query = f"""
             UPDATE `{self.full_table_id}`
-            SET netsuite_internal_id = @netsuite_id,
+            SET custom_attributes = JSON_SET(
+                    IFNULL(custom_attributes, JSON '{{}}'),
+                    '$.netsuite_internal_id', @netsuite_id,
+                    '$.netsuite_sync_status', 'synced',
+                    '$.netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING)
+                ),
                 last_updated = CURRENT_TIMESTAMP()
             WHERE vendor_id = @vendor_id
             """
@@ -1152,7 +1157,7 @@ class BigQueryService:
         """
         try:
             query = f"""
-            SELECT netsuite_internal_id
+            SELECT JSON_EXTRACT_SCALAR(custom_attributes, '$.netsuite_internal_id') as netsuite_internal_id
             FROM `{self.full_table_id}`
             WHERE vendor_id = @vendor_id
             LIMIT 1

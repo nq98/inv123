@@ -27,6 +27,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 initializeInvoiceGeneration();
             }
             
+            // Initialize NetSuite Dashboard if selected
+            if (tabName === 'netsuite-dashboard') {
+                initializeNetSuiteDashboard();
+            } else {
+                // Stop auto-refresh when leaving dashboard
+                stopDashboardRefresh();
+            }
+            
             // Close mobile menu after selection
             if (navTabs && navTabs.classList.contains('active')) {
                 navTabs.classList.remove('active');
@@ -75,8 +83,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (hash) {
             switchTab(hash);
         } else {
-            // Default to invoices tab if no hash
-            switchTab('invoices');
+            // Default to NetSuite dashboard if no hash
+            switchTab('netsuite-dashboard');
         }
     }
     
@@ -4233,4 +4241,353 @@ function closePullResults() {
     document.getElementById('vendorPullResults').classList.add('hidden');
     document.getElementById('vendorPullStats').innerHTML = '';
     document.getElementById('vendorPullErrors').innerHTML = '';
+}
+
+// ==================== NETSUITE SYNC DASHBOARD FUNCTIONS ====================
+
+let dashboardRefreshInterval = null;
+let dashboardCharts = {};
+
+/**
+ * Initialize NetSuite Dashboard
+ */
+function initializeNetSuiteDashboard() {
+    console.log('📊 Initializing NetSuite Sync Dashboard...');
+    
+    // Load dashboard data
+    loadDashboardData();
+    
+    // Setup auto-refresh
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+    if (autoRefreshToggle && autoRefreshToggle.checked) {
+        startDashboardRefresh();
+    }
+    
+    // Setup event listeners
+    setupDashboardEventListeners();
+}
+
+/**
+ * Setup dashboard event listeners
+ */
+function setupDashboardEventListeners() {
+    // Auto-refresh toggle
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+    if (autoRefreshToggle) {
+        autoRefreshToggle.addEventListener('change', function() {
+            if (this.checked) {
+                startDashboardRefresh();
+            } else {
+                stopDashboardRefresh();
+            }
+        });
+    }
+    
+    // Manual refresh button
+    const refreshBtn = document.getElementById('refreshDashboardBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            loadDashboardData();
+        });
+    }
+}
+
+/**
+ * Start auto-refresh for dashboard
+ */
+function startDashboardRefresh() {
+    console.log('🔄 Starting dashboard auto-refresh (every 30 seconds)...');
+    stopDashboardRefresh(); // Clear any existing interval
+    dashboardRefreshInterval = setInterval(loadDashboardData, 30000);
+}
+
+/**
+ * Stop auto-refresh for dashboard
+ */
+function stopDashboardRefresh() {
+    if (dashboardRefreshInterval) {
+        console.log('⏸️ Stopping dashboard auto-refresh');
+        clearInterval(dashboardRefreshInterval);
+        dashboardRefreshInterval = null;
+    }
+}
+
+/**
+ * Load dashboard data from API
+ */
+async function loadDashboardData() {
+    console.log('📈 Loading dashboard data...');
+    
+    try {
+        const response = await fetch('/api/netsuite/sync/dashboard');
+        const data = await response.json();
+        
+        if (data.success || response.ok) {
+            updateDashboardUI(data);
+        } else {
+            console.error('Failed to load dashboard data:', data.error);
+            showDashboardError('Failed to load dashboard data');
+        }
+    } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        showDashboardError('Error connecting to server');
+    }
+}
+
+/**
+ * Update dashboard UI with data
+ */
+function updateDashboardUI(data) {
+    // Update vendor statistics
+    updateVendorStats(data.vendors || {});
+    
+    // Update invoice statistics
+    updateInvoiceStats(data.invoices || {});
+    
+    // Update payment statistics
+    updatePaymentStats(data.payments || {});
+    
+    // Update activity feed
+    updateActivityFeed(data.recent_activities || []);
+    
+    // Update operation statistics
+    updateOperationStats(data.operation_stats || []);
+    
+    // Draw charts
+    drawDashboardCharts(data);
+}
+
+/**
+ * Update vendor statistics
+ */
+function updateVendorStats(vendors) {
+    document.getElementById('vendorSyncPercent').textContent = `${vendors.sync_percentage || 0}%`;
+    document.getElementById('vendorsSynced').textContent = vendors.synced || 0;
+    document.getElementById('vendorsNotSynced').textContent = vendors.not_synced || 0;
+    document.getElementById('vendorsTotal').textContent = vendors.total || 0;
+}
+
+/**
+ * Update invoice statistics
+ */
+function updateInvoiceStats(invoices) {
+    document.getElementById('invoiceBillPercent').textContent = `${invoices.bill_percentage || 0}%`;
+    document.getElementById('invoicesWithBills').textContent = invoices.with_bills || 0;
+    document.getElementById('invoicesWithoutBills').textContent = invoices.without_bills || 0;
+    document.getElementById('invoicesTotal').textContent = invoices.total || 0;
+}
+
+/**
+ * Update payment statistics
+ */
+function updatePaymentStats(payments) {
+    const total = payments.total || 1;
+    const paid = payments.paid || 0;
+    const paidPercent = total > 0 ? Math.round((paid / total) * 100) : 0;
+    
+    document.getElementById('paymentsPaidPercent').textContent = `${paidPercent}%`;
+    document.getElementById('paymentsPaid').textContent = paid;
+    document.getElementById('paymentsPending').textContent = payments.pending || 0;
+    document.getElementById('paymentsOverdue').textContent = payments.overdue || 0;
+    document.getElementById('paymentsPartial').textContent = payments.partial || 0;
+}
+
+/**
+ * Update activity feed
+ */
+function updateActivityFeed(activities) {
+    const feedContainer = document.getElementById('activityFeed');
+    
+    if (!activities || activities.length === 0) {
+        feedContainer.innerHTML = '<div class="empty-state">No recent activities</div>';
+        return;
+    }
+    
+    const feedHTML = activities.map(activity => {
+        const statusIcon = activity.status === 'success' ? '✅' : '❌';
+        const statusClass = activity.status === 'success' ? 'status-success' : 'status-error';
+        const timestamp = activity.timestamp ? new Date(activity.timestamp).toLocaleString() : 'Unknown';
+        
+        return `
+            <div class="activity-item ${statusClass}">
+                <div class="activity-icon">${statusIcon}</div>
+                <div class="activity-content">
+                    <div class="activity-header">
+                        <span class="activity-type">${activity.operation_type || 'Unknown'}</span>
+                        <span class="activity-time">${timestamp}</span>
+                    </div>
+                    <div class="activity-details">
+                        ${activity.entity_type ? `<span class="detail-label">Type:</span> ${activity.entity_type}` : ''}
+                        ${activity.entity_id ? `<span class="detail-label">ID:</span> ${activity.entity_id}` : ''}
+                        ${activity.error_message ? `<div class="error-message">${activity.error_message}</div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    feedContainer.innerHTML = feedHTML;
+}
+
+/**
+ * Update operation statistics
+ */
+function updateOperationStats(stats) {
+    const container = document.getElementById('operationStats');
+    
+    if (!stats || stats.length === 0) {
+        container.innerHTML = '<div class="empty-state">No operations in the last 24 hours</div>';
+        return;
+    }
+    
+    const statsHTML = stats.map(stat => {
+        const successRate = stat.total > 0 ? Math.round((stat.success / stat.total) * 100) : 0;
+        
+        return `
+            <div class="operation-stat-card">
+                <div class="operation-name">${stat.operation || 'Unknown'}</div>
+                <div class="operation-metrics">
+                    <div class="metric">
+                        <span class="metric-value">${stat.total || 0}</span>
+                        <span class="metric-label">Total</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value" style="color: #22c55e;">${stat.success || 0}</span>
+                        <span class="metric-label">Success</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value" style="color: #ef4444;">${stat.failed || 0}</span>
+                        <span class="metric-label">Failed</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value">${successRate}%</span>
+                        <span class="metric-label">Success Rate</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value">${stat.avg_duration || 0}s</span>
+                        <span class="metric-label">Avg Duration</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = statsHTML;
+}
+
+/**
+ * Draw dashboard charts using Canvas API
+ */
+function drawDashboardCharts(data) {
+    // Draw vendor sync chart
+    drawDonutChart('vendorSyncChart', [
+        { label: 'Synced', value: data.vendors?.synced || 0, color: '#22c55e' },
+        { label: 'Not Synced', value: data.vendors?.not_synced || 0, color: '#ef4444' }
+    ]);
+    
+    // Draw invoice sync chart
+    drawDonutChart('invoiceSyncChart', [
+        { label: 'With Bills', value: data.invoices?.with_bills || 0, color: '#3b82f6' },
+        { label: 'Without Bills', value: data.invoices?.without_bills || 0, color: '#f59e0b' }
+    ]);
+    
+    // Draw payment status chart
+    drawDonutChart('paymentStatusChart', [
+        { label: 'Paid', value: data.payments?.paid || 0, color: '#22c55e' },
+        { label: 'Pending', value: data.payments?.pending || 0, color: '#f59e0b' },
+        { label: 'Overdue', value: data.payments?.overdue || 0, color: '#ef4444' },
+        { label: 'Partial', value: data.payments?.partial || 0, color: '#8b5cf6' }
+    ]);
+}
+
+/**
+ * Draw a simple donut chart using Canvas API
+ */
+function drawDonutChart(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = Math.min(centerX, centerY) - 10;
+    const innerRadius = radius * 0.5;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate total
+    const total = data.reduce((sum, item) => sum + item.value, 0);
+    if (total === 0) return;
+    
+    // Draw segments
+    let currentAngle = -Math.PI / 2; // Start at top
+    
+    data.forEach(item => {
+        if (item.value === 0) return;
+        
+        const sliceAngle = (item.value / total) * 2 * Math.PI;
+        
+        // Draw outer arc
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+        ctx.arc(centerX, centerY, innerRadius, currentAngle + sliceAngle, currentAngle, true);
+        ctx.closePath();
+        ctx.fillStyle = item.color;
+        ctx.fill();
+        
+        currentAngle += sliceAngle;
+    });
+    
+    // Draw center text if needed
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // You can add center text here if needed
+}
+
+/**
+ * Show dashboard error message
+ */
+function showDashboardError(message) {
+    const feedContainer = document.getElementById('activityFeed');
+    if (feedContainer) {
+        feedContainer.innerHTML = `
+            <div class="alert-error">
+                <strong>Error loading dashboard</strong>
+                <p>${message}</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Sync all payments from NetSuite
+ */
+async function syncAllPayments() {
+    console.log('💳 Starting payment sync...');
+    
+    const eventSource = new EventSource('/api/netsuite/sync/payments');
+    
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log('Payment sync progress:', data);
+        
+        if (data.completed) {
+            eventSource.close();
+            loadDashboardData(); // Refresh dashboard
+            alert('Payment sync completed successfully!');
+        }
+        
+        if (data.error) {
+            eventSource.close();
+            alert(`Payment sync failed: ${data.message}`);
+        }
+    };
+    
+    eventSource.onerror = function() {
+        eventSource.close();
+        alert('Payment sync connection error');
+    };
 }
