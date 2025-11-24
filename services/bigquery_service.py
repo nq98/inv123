@@ -925,7 +925,9 @@ class BigQueryService:
             invoice_date,
             status,
             created_at,
-            metadata
+            metadata,
+            netsuite_bill_id,
+            netsuite_sync_status
         FROM `{invoices_table_id}`
         {where_clause}
         ORDER BY created_at DESC
@@ -979,7 +981,9 @@ class BigQueryService:
                     "match_verdict": metadata.get("verdict"),
                     "match_confidence": metadata.get("confidence"),
                     "match_reasoning": metadata.get("reasoning"),
-                    "match_method": metadata.get("method")
+                    "match_method": metadata.get("method"),
+                    "netsuite_bill_id": row.netsuite_bill_id if hasattr(row, 'netsuite_bill_id') else None,
+                    "netsuite_sync_status": row.netsuite_sync_status if hasattr(row, 'netsuite_sync_status') else None
                 }
                 
                 invoices.append(invoice)

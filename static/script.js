@@ -37,7 +37,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Initialize Invoice List if Invoices tab is selected
             if (tabName === 'invoices') {
-                loadInvoiceList(1); // Load first page of invoices
+                // Force refresh to get latest data (no cache)
+                loadInvoiceList(currentInvoiceListPage || 1); // Reload current page or first page
             }
             
             // Close mobile menu after selection
@@ -2635,7 +2636,7 @@ function renderInvoiceListView(invoices) {
                             Download
                         </button>
                     ` : ''}
-                    ${!invoice.netsuite_bill_id || invoice.netsuite_bill_id.startsWith('EXISTING_') || invoice.invoice_id === '506' ? `
+                    ${(!invoice.netsuite_bill_id || invoice.netsuite_bill_id === null || invoice.netsuite_bill_id === 'null' || invoice.invoice_id === '506') ? `
                         <button onclick="createBillInNetSuite('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
                             📋 Create Bill
                         </button>
