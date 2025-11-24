@@ -371,7 +371,7 @@ class SyncManager:
                 update_query = f"""
                 UPDATE `{self.project_id}.vendors_ai.global_vendors`
                 SET 
-                    custom_attributes = TO_JSON_STRING(STRUCT(
+                    custom_attributes = PARSE_JSON(TO_JSON_STRING(STRUCT(
                         IFNULL(JSON_VALUE(custom_attributes, '$.source'), 'API') AS source,
                         IFNULL(JSON_VALUE(custom_attributes, '$.address'), '') AS address,
                         IFNULL(JSON_VALUE(custom_attributes, '$.email'), '') AS email,
@@ -381,7 +381,7 @@ class SyncManager:
                         @netsuite_id AS netsuite_internal_id,
                         'synced' AS netsuite_sync_status,
                         CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync
-                    )),
+                    ))),
                     netsuite_internal_id = @netsuite_id,
                     netsuite_sync_status = 'synced',
                     netsuite_last_sync = CURRENT_TIMESTAMP(),
@@ -393,7 +393,7 @@ class SyncManager:
                 update_query = f"""
                 UPDATE `{self.project_id}.vendors_ai.global_vendors`
                 SET 
-                    custom_attributes = TO_JSON_STRING(STRUCT(
+                    custom_attributes = PARSE_JSON(TO_JSON_STRING(STRUCT(
                         IFNULL(JSON_VALUE(custom_attributes, '$.source'), 'API') AS source,
                         IFNULL(JSON_VALUE(custom_attributes, '$.address'), '') AS address,
                         IFNULL(JSON_VALUE(custom_attributes, '$.email'), '') AS email,
@@ -404,7 +404,7 @@ class SyncManager:
                         'failed' AS netsuite_sync_status,
                         CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync,
                         @sync_error AS netsuite_sync_error
-                    )),
+                    ))),
                     netsuite_sync_status = 'failed',
                     netsuite_sync_error = @sync_error,
                     netsuite_last_sync = CURRENT_TIMESTAMP(),
