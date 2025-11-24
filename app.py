@@ -2977,12 +2977,17 @@ def create_invoice_in_netsuite(invoice_id):
                     search_results = netsuite.search_vendors(name=vendor_name)
                     if search_results and len(search_results) > 0:
                         # Vendor exists in NetSuite! Use the first match
+                        first_result = search_results[0]
+                        print(f"🔍 NetSuite search result structure: {first_result.keys() if isinstance(first_result, dict) else type(first_result)}")
+                        print(f"🔍 Full first result: {first_result}")
                         netsuite_vendor_id = search_results[0].get('id')
                         print(f"✅ Found existing vendor in NetSuite with ID: {netsuite_vendor_id}")
                         
                         # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                        # CRITICAL: Ensure we keep using this ID for invoice creation
+                        print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
                         # Vendor doesn't exist - need to create it
                         print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
@@ -3022,6 +3027,7 @@ def create_invoice_in_netsuite(invoice_id):
                             print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
+        print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
         if not netsuite_vendor_id:
             return jsonify({
                 'success': False,
@@ -3122,12 +3128,17 @@ def update_invoice_in_netsuite(invoice_id):
                     search_results = netsuite.search_vendors(name=vendor_name)
                     if search_results and len(search_results) > 0:
                         # Vendor exists in NetSuite! Use the first match
+                        first_result = search_results[0]
+                        print(f"🔍 NetSuite search result structure: {first_result.keys() if isinstance(first_result, dict) else type(first_result)}")
+                        print(f"🔍 Full first result: {first_result}")
                         netsuite_vendor_id = search_results[0].get('id')
                         print(f"✅ Found existing vendor in NetSuite with ID: {netsuite_vendor_id}")
                         
                         # Update BigQuery with the found NetSuite ID
                         bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
                         print(f"✅ Updated BigQuery vendor with NetSuite ID: {netsuite_vendor_id}")
+                        # CRITICAL: Ensure we keep using this ID for invoice creation
+                        print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
                         # Vendor doesn't exist - need to create it
                         print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
@@ -3167,6 +3178,7 @@ def update_invoice_in_netsuite(invoice_id):
                             print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
+        print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
         if not netsuite_vendor_id:
             return jsonify({
                 'success': False,
