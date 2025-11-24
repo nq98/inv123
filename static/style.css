@@ -923,6 +923,34 @@ body {
     word-break: break-word;
 }
 
+/* ========== SYNC MESSAGE ANIMATIONS ========== */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.sync-success-message,
+.sync-error-message {
+    transition: all 0.3s ease-out;
+}
+
 /* ========== PAGINATION ========== */
 .pagination {
     display: flex;

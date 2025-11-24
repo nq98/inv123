@@ -2337,22 +2337,95 @@ async function syncVendorToNetSuite(vendorId, vendorName) {
         }
         
         if (data.success) {
-            // Show success message
-            alert(`✅ Successfully synced vendor "${vendorName}" to NetSuite!\n\nNetSuite ID: ${data.netsuite_id || 'Created'}`);
+            // Update the UI immediately without alerts
+            if (button) {
+                button.style.display = 'none';
+            }
             
-            // Reload the vendor list to show updated sync status
-            await loadVendorList(currentPage);
+            // Replace the warning section with success message
+            const vendorCard = button ? button.closest('.vendor-card-details') : null;
+            if (vendorCard) {
+                const syncSection = button.closest('.vendor-detail-section');
+                if (syncSection) {
+                    syncSection.style.background = '#d4edda';
+                    syncSection.style.border = '1px solid #c3e6cb';
+                    syncSection.innerHTML = `
+                        <strong style="color: #155724;">✅ Synced to NetSuite</strong>
+                        <div style="margin-top: 10px; font-size: 13px; color: #155724;">
+                            NetSuite Internal ID: <code>${data.netsuite_id || data.message}</code>
+                        </div>
+                    `;
+                }
+                
+                // Update the sync badge in the header
+                const vendorHeader = vendorCard.previousElementSibling;
+                if (vendorHeader) {
+                    const syncBadge = vendorHeader.querySelector('.sync-badge');
+                    if (syncBadge) {
+                        syncBadge.className = 'sync-badge sync-complete';
+                        syncBadge.innerHTML = '✅ Synced';
+                    } else {
+                        // Find where to add the sync badge
+                        const metaDiv = vendorHeader.querySelector('.vendor-meta');
+                        if (metaDiv) {
+                            // Remove old "Not Synced" badge if exists
+                            const oldBadge = metaDiv.querySelector('.sync-pending');
+                            if (oldBadge) oldBadge.remove();
+                            
+                            // Add new synced badge
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'sync-badge sync-complete';
+                            newBadge.innerHTML = '✅ Synced';
+                            metaDiv.appendChild(newBadge);
+                        }
+                    }
+                }
+            }
             
-            // If we're on a page with invoices, reload them too
+            // Show inline success message instead of alert
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'sync-success-message';
+            messageDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px 20px; border-radius: 8px; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out;';
+            messageDiv.innerHTML = `
+                <strong>✅ Vendor synced successfully!</strong><br>
+                <small>${vendorName} • NetSuite ID: ${data.netsuite_id || 'Created'}</small>
+            `;
+            document.body.appendChild(messageDiv);
+            
+            // Remove success message after 5 seconds
+            setTimeout(() => {
+                messageDiv.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, 5000);
+            
+            // Silently refresh vendor data in background
+            if (typeof loadVendorList === 'function') {
+                loadVendorList(currentPage);
+            }
             if (typeof loadInvoiceHistory === 'function') {
-                await loadInvoiceHistory(1);
+                loadInvoiceHistory(1);
             }
         } else {
             throw new Error(data.error || 'Sync failed');
         }
     } catch (error) {
         console.error('Error syncing vendor:', error);
-        alert(`❌ Failed to sync vendor: ${error.message}`);
+        
+        // Show inline error message instead of alert
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'sync-error-message';
+        errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px 20px; border-radius: 8px; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out;';
+        errorDiv.innerHTML = `
+            <strong>❌ Sync failed</strong><br>
+            <small>${error.message}</small>
+        `;
+        document.body.appendChild(errorDiv);
+        
+        // Remove error message after 5 seconds
+        setTimeout(() => {
+            errorDiv.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => errorDiv.remove(), 300);
+        }, 5000);
         
         if (button) {
             button.disabled = false;
