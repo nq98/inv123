@@ -829,7 +829,7 @@ def create_invoice_in_netsuite(invoice_id):
                         line_items.append({
                             'description': item.get('description', 'Invoice line item'),
                             'amount': item_amount,
-                            'account_id': '668'  # FIXED: Use account_id not nested object
+                            'account_id': '351'  # FIXED: Use NetSuite's valid expense account ID
                         })
             
             # If no line items or they're all zero, create a single line with total
@@ -837,7 +837,7 @@ def create_invoice_in_netsuite(invoice_id):
                 line_items.append({
                     'description': f"Invoice {invoice_id} - {invoice.get('vendor_name', 'Vendor')} - Total Amount",
                     'amount': invoice_amount,
-                    'account_id': '668'  # FIXED: Use account_id not nested object
+                    'account_id': '351'  # FIXED: Use NetSuite's valid expense account ID
                 })
             
             # Log the bill data for debugging
