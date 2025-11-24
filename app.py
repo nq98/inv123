@@ -803,7 +803,8 @@ def create_invoice_in_netsuite(invoice_id):
         # Create bill in NetSuite
         netsuite = NetSuiteService()
         result = netsuite.create_vendor_bill({
-            'vendor_id': netsuite_internal_id,  # Use the extracted ID
+            'invoice_id': invoice_id,  # Our invoice ID - REQUIRED
+            'vendor_netsuite_id': netsuite_internal_id,  # NetSuite vendor ID - REQUIRED
             'invoice_number': invoice.get('invoice_id'),
             'amount': float(invoice.get('amount', 0)),
             'date': invoice.get('invoice_date'),
