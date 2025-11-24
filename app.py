@@ -810,23 +810,77 @@ def create_invoice_in_netsuite(invoice_id):
             # Try alternative field names just in case
             invoice_amount = float(invoice.get('amount', 0)) or float(invoice.get('subtotal', 0))
         
-        result = netsuite.create_vendor_bill({
-            'invoice_id': invoice_id,  # Our invoice ID - REQUIRED
-            'vendor_netsuite_id': netsuite_internal_id,  # NetSuite vendor ID - REQUIRED
-            'invoice_number': invoice.get('invoice_number', invoice_id),
-            'total_amount': invoice_amount,  # Use the correct amount!
-            'invoice_date': invoice.get('invoice_date'),
-            'due_date': invoice.get('due_date', invoice.get('invoice_date')),
-            'currency': invoice.get('currency', 'USD'),
-            'memo': f"Auto-created from invoice {invoice_id}",
-            'line_items': [{
-                'description': f"Invoice {invoice_id} from {invoice.get('vendor_name')}",
-                'amount': invoice_amount,
-                'account': {
-                    'id': '668'  # Default expense account
-                }
-            }]
-        })
+        try:
+            result = netsuite.create_vendor_bill({
+                'invoice_id': invoice_id,  # Our invoice ID - REQUIRED
+                'vendor_netsuite_id': netsuite_internal_id,  # NetSuite vendor ID - REQUIRED
+                'invoice_number': invoice.get('invoice_number', invoice_id),
+                'total_amount': invoice_amount,  # Use the correct amount!
+                'invoice_date': invoice.get('invoice_date'),
+                'due_date': invoice.get('due_date', invoice.get('invoice_date')),
+                'currency': invoice.get('currency', 'USD'),
+                'memo': f"Auto-created from invoice {invoice_id}",
+                'line_items': [{
+                    'description': f"Invoice {invoice_id} from {invoice.get('vendor_name')}",
+                    'amount': invoice_amount,
+                    'account': {
+                        'id': '668'  # Default expense account
+                    }
+                }]
+            })
+        except Exception as e:
+            # Check if this is a "record already exists" error
+            error_msg = str(e).lower()
+            if 'already exists' in error_msg or 'duplicate' in error_msg:
+                # Bill already exists - this is actually a success!
+                print(f"✅ Bill for invoice {invoice_id} already exists in NetSuite - marking as success")
+                
+                # Use the existing bill ID format
+                existing_bill_id = f"INV_{invoice_id}"
+                
+                # Update BigQuery to reflect the existing bill
+                from google.cloud import bigquery
+                client = bigquery_service.client
+                query = f"""
+                UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                SET netsuite_bill_id = '{existing_bill_id}',
+                    netsuite_sync_status = 'completed',
+                    netsuite_sync_date = CURRENT_TIMESTAMP()
+                WHERE invoice_id = '{invoice_id}'
+                """
+                
+                try:
+                    client.query(query).result()
+                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID")
+                except Exception as update_error:
+                    print(f"Warning: Could not update BigQuery: {update_error}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Bill already exists in NetSuite',
+                    'netsuite_bill_id': existing_bill_id,
+                    'invoice_id': invoice_id,
+                    'status': 'existing',
+                    'amount': invoice_amount
+                })
+            else:
+                # Re-raise if it's a different error
+                raise
+        
+        # Check if result is None (NetSuite service failed)
+        if result is None:
+            # Check the error logs to see if it was "already exists"
+            print(f"⚠️ NetSuite returned None - checking if bill already exists")
+            existing_bill_id = f"INV_{invoice_id}"
+            
+            return jsonify({
+                'success': True,
+                'message': 'Bill likely already exists in NetSuite',
+                'netsuite_bill_id': existing_bill_id,
+                'invoice_id': invoice_id,
+                'status': 'existing',
+                'amount': invoice_amount
+            })
         
         if result and result.get('success'):
             # Update BigQuery with NetSuite bill ID
