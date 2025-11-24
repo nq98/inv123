@@ -1035,14 +1035,28 @@ class NetSuiteService:
         logger.info(f"Creating vendor bill in NetSuite for invoice: {bill_data['invoice_id']}")
         logger.info(f"Sending Payload to NetSuite: {json.dumps(netsuite_bill, indent=2)}")
         
-        result = self._make_request('POST', '/record/v1/vendorbill', data=netsuite_bill)
-        
-        if result:
-            logger.info(f"Successfully created vendor bill with ID: {result.get('id')}")
-            return result
-        
-        logger.error(f"Failed to create vendor bill for invoice: {bill_data['invoice_id']}")
-        return None
+        try:
+            result = self._make_request('POST', '/record/v1/vendorbill', data=netsuite_bill)
+            
+            if result:
+                logger.info(f"Successfully created vendor bill with ID: {result.get('id')}")
+                return result
+            
+            logger.error(f"Failed to create vendor bill for invoice: {bill_data['invoice_id']}")
+            return None
+            
+        except Exception as e:
+            error_msg = str(e)
+            # Check if this is a duplicate record error
+            if "This record already exists" in error_msg:
+                logger.warning(f"Bill already exists for invoice {bill_data['invoice_id']} with external ID INV_{bill_data['invoice_id']}")
+                # Return success with a placeholder ID since bill already exists
+                return {
+                    'id': f"EXISTING_INV_{bill_data['invoice_id']}",
+                    'message': 'Bill already exists in NetSuite'
+                }
+            # Re-raise other errors
+            raise e
     
     def create_invoice(self, invoice_data: Dict) -> Optional[Dict]:
         """
