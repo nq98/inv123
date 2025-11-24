@@ -777,16 +777,25 @@ def create_invoice_in_netsuite(invoice_id):
         
         # CRITICAL FIX: Extract NetSuite ID from custom_attributes JSON
         import json
-        custom_attrs = vendor.get('custom_attributes', {})
-        if isinstance(custom_attrs, str):
-            try:
-                custom_attrs = json.loads(custom_attrs)
-            except:
-                custom_attrs = {}
-        elif not isinstance(custom_attrs, dict):
-            custom_attrs = {}
         
-        netsuite_internal_id = custom_attrs.get('netsuite_internal_id')
+        # First check if vendor has netsuite_internal_id as a direct field (new schema)
+        netsuite_internal_id = vendor.get('netsuite_internal_id')
+        
+        # If not found, check in custom_attributes JSON (legacy location)
+        if not netsuite_internal_id:
+            custom_attrs = vendor.get('custom_attributes', {})
+            if isinstance(custom_attrs, str):
+                try:
+                    custom_attrs = json.loads(custom_attrs)
+                except:
+                    custom_attrs = {}
+            elif not isinstance(custom_attrs, dict):
+                custom_attrs = {}
+            
+            netsuite_internal_id = custom_attrs.get('netsuite_internal_id')
+        
+        print(f"🔍 DEBUG: Vendor {vendor_id} has NetSuite ID: {netsuite_internal_id}")
+        print(f"🔍 DEBUG: Vendor data keys: {vendor.keys() if vendor else 'None'}")
         
         if not netsuite_internal_id:
             return jsonify({'success': False, 'error': 'Vendor not synced to NetSuite'}), 400
