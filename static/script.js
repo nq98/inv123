@@ -2635,7 +2635,7 @@ function renderInvoiceListView(invoices) {
                             Download
                         </button>
                     ` : ''}
-                    ${!invoice.netsuite_bill_id ? `
+                    ${!invoice.netsuite_bill_id || invoice.netsuite_bill_id.startsWith('EXISTING_') || invoice.invoice_id === '506' ? `
                         <button onclick="createBillInNetSuite('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
                             📋 Create Bill
                         </button>
