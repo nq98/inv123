@@ -1258,8 +1258,12 @@ class BigQueryService:
                     "total_amount": float(row.total_amount) if row.total_amount else 0,
                     "subtotal": float(row.subtotal) if row.subtotal else 0,
                     "tax_amount": float(row.tax_amount) if row.tax_amount else 0,
+                    "amount": float(row.total_amount) if row.total_amount else 0,  # Add amount field for compatibility
                     "netsuite_bill_id": row.netsuite_bill_id,
                     "sync_status": row.sync_status,
+                    "gcs_uri": row.gcs_uri if hasattr(row, 'gcs_uri') else None,
+                    "file_type": row.file_type if hasattr(row, 'file_type') else None,
+                    "file_size": row.file_size if hasattr(row, 'file_size') else 0,
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None
                 }
