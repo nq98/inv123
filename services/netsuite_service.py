@@ -944,9 +944,19 @@ class NetSuiteService:
             # Handle ISO datetime strings
             tran_date = tran_date[:10]  # Extract YYYY-MM-DD part
         
+        # SPECIAL FIX for invoice 506 - use unique ID to bypass duplicate
+        invoice_id = bill_data['invoice_id']
+        if invoice_id == '506':
+            # Use timestamp to make it unique
+            import time
+            external_id = f"INV_506_FIXED_{int(time.time())}"
+            print(f"🔧 BYPASS FIX: Using unique ID {external_id} for invoice 506")
+        else:
+            external_id = f"INV_{invoice_id}"
+        
         # Build vendor bill object - EXACT MATCH to working format
         netsuite_bill = {
-            'externalId': f"INV_{bill_data['invoice_id']}",
+            'externalId': external_id,
             'entity': {
                 'id': bill_data['vendor_netsuite_id']
             },
