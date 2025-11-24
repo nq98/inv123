@@ -869,18 +869,16 @@ def create_invoice_in_netsuite(invoice_id):
         
         # Check if result is None (NetSuite service failed)
         if result is None:
-            # Check the error logs to see if it was "already exists"
-            print(f"⚠️ NetSuite returned None - checking if bill already exists")
-            existing_bill_id = f"INV_{invoice_id}"
+            # BE HONEST - this is a failure!
+            print(f"❌ NetSuite creation failed - bill already exists with wrong amount")
             
             return jsonify({
-                'success': True,
-                'message': 'Bill likely already exists in NetSuite',
-                'netsuite_bill_id': existing_bill_id,
+                'success': False,  # BE HONEST!
+                'error': 'Bill already exists in NetSuite with $0 amount. Cannot create duplicate.',
                 'invoice_id': invoice_id,
-                'status': 'existing',
-                'amount': invoice_amount
-            })
+                'amount': invoice_amount,
+                'existing_bill': f'INV_{invoice_id}'
+            }), 400  # Return proper error status
         
         if result and result.get('success'):
             # Update BigQuery with NetSuite bill ID

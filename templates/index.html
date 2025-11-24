@@ -1668,5 +1668,69 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
     <!-- <script src="/static/invoice_workflow.js?v=1"></script> -->
     <!-- Simple direct actions without annoying modals -->
     <script src="/static/simple_invoice_actions.js?v=1"></script>
+    
+    <!-- REAL regular button that works properly -->
+    <script>
+    // Simple, honest button that shows real results
+    window.createBillInNetSuite = async function(invoiceId) {
+        const button = event.target;
+        const originalHTML = button.innerHTML;
+        
+        // Regular button loading state
+        button.innerHTML = '⏳ Processing...';
+        button.disabled = true;
+        button.style.backgroundColor = '#fbbf24';
+        button.style.color = '#000';
+        
+        try {
+            const response = await fetch(`/api/netsuite/invoice/${invoiceId}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const result = await response.json();
+            
+            // Show real status
+            if (result.success) {
+                // Success!
+                button.innerHTML = '✅ Bill Created!';
+                button.style.backgroundColor = '#10b981';
+                button.style.color = '#fff';
+                
+                // Reload page to update list
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                // Error - show it honestly
+                button.innerHTML = '❌ Failed';
+                button.style.backgroundColor = '#ef4444';
+                button.style.color = '#fff';
+                
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    button.innerHTML = originalHTML;
+                    button.disabled = false;
+                    button.style.backgroundColor = '';
+                    button.style.color = '';
+                }, 3000);
+            }
+        } catch (error) {
+            // Network error
+            button.innerHTML = '❌ Network Error';
+            button.style.backgroundColor = '#ef4444';
+            button.style.color = '#fff';
+            console.error('Network error:', error);
+            
+            // Reset after 3 seconds
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+                button.disabled = false;
+                button.style.backgroundColor = '';
+                button.style.color = '';
+            }, 3000);
+        }
+    };
+    </script>
 </body>
 </html>
