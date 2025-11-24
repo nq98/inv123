@@ -988,6 +988,10 @@ if (urlParams.get('gmail_connected') === 'true') {
 function displayResults(data) {
     results.classList.remove('hidden');
     
+    // Store invoice data globally for vendor matching
+    currentInvoiceData = data.validated_data || data;
+    currentInvoiceId = data.invoice_id || data.validated_data?.invoiceId;
+    
     // Add "Upload Another" button at the top
     let html = `
         <div style="text-align: right; margin-bottom: 20px;">
@@ -1011,7 +1015,33 @@ function displayResults(data) {
     const validated = data.validated_data || {};
     const rawEntities = data.layers?.layer1_document_ai?.entities || {};
     
+    // Check vendor matching status
+    const vendorMatch = data.vendor_match;
+    const hasVendorMatch = vendorMatch && vendorMatch.vendor_id && vendorMatch.confidence > 0.5;
+    
     html += `<span class="success-badge">✓ Processing Complete</span>`;
+    
+    // Add vendor matching status
+    if (hasVendorMatch) {
+        html += `
+            <div class="vendor-match-success">
+                <strong>✅ Vendor Matched:</strong> ${vendorMatch.vendor_name} (${Math.round(vendorMatch.confidence * 100)}% confidence)
+                <button onclick="syncInvoiceToNetSuite('${currentInvoiceId}')" class="btn btn-primary" style="margin-left: 20px;">
+                    🔄 Sync to NetSuite
+                </button>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="vendor-match-warning">
+                <strong>⚠️ Vendor Matching Required</strong>
+                <p>No vendor match found. Please select or create a vendor.</p>
+                <button onclick="showVendorMatchingModal(currentInvoiceData)" class="btn btn-primary">
+                    🔍 Match Vendor
+                </button>
+            </div>
+        `;
+    }
     
     // ALWAYS SHOW GCS LINK IF AVAILABLE (regardless of invoice ID)
     const invoiceId = validated.invoiceId || validated.invoiceNumber || data.invoice_id || "Unknown";
@@ -3602,4 +3632,239 @@ function showMessage(message, type = 'info') {
         messageDiv.classList.remove('message-show');
         setTimeout(() => messageDiv.remove(), 300);
     }, 3000);
+}
+
+// ==================== VENDOR MATCHING WORKFLOW ====================
+let currentInvoiceId = null;
+let currentInvoiceData = null;
+
+/**
+ * Show vendor matching modal when invoice doesn't have a vendor
+ */
+function showVendorMatchingModal(invoiceData) {
+    currentInvoiceData = invoiceData;
+    currentInvoiceId = invoiceData.invoice_id;
+    
+    // Update modal content
+    document.getElementById('modalInvoiceInfo').innerHTML = `
+        Invoice ID: ${invoiceData.invoice_id}<br>
+        Amount: ${invoiceData.currency} ${invoiceData.amount}<br>
+        Date: ${invoiceData.invoice_date}
+    `;
+    document.getElementById('modalVendorName').textContent = invoiceData.vendor_name || 'Unknown';
+    
+    // Show modal
+    document.getElementById('vendorMatchModal').style.display = 'block';
+    
+    // Automatically search for vendor
+    if (invoiceData.vendor_name) {
+        searchVendorsForMatching(invoiceData.vendor_name);
+    }
+}
+
+/**
+ * Search vendors for matching
+ */
+async function searchVendorsForMatching(query) {
+    if (!query || query.length < 2) {
+        document.getElementById('vendorSearchResults').innerHTML = '';
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/vendors/list?search=${encodeURIComponent(query)}&limit=10`);
+        const data = await response.json();
+        
+        if (data.success && data.vendors.length > 0) {
+            displayVendorSearchResults(data.vendors);
+        } else {
+            document.getElementById('vendorSearchResults').innerHTML = 
+                '<p style="padding: 10px; color: #666;">No vendors found. Create a new vendor below.</p>';
+        }
+    } catch (error) {
+        console.error('Error searching vendors:', error);
+    }
+}
+
+/**
+ * Display vendor search results
+ */
+function displayVendorSearchResults(vendors) {
+    const html = vendors.map(vendor => `
+        <div class="vendor-result-item" onclick="selectVendorForMatching('${vendor.vendor_id}', '${vendor.global_name}')">
+            <strong>${vendor.global_name}</strong>
+            ${vendor.tax_id ? `<br><small>Tax ID: ${vendor.tax_id}</small>` : ''}
+            ${vendor.address ? `<br><small>${vendor.address}</small>` : ''}
+        </div>
+    `).join('');
+    
+    document.getElementById('vendorSearchResults').innerHTML = html;
+}
+
+/**
+ * Select vendor for matching
+ */
+async function selectVendorForMatching(vendorId, vendorName) {
+    if (!currentInvoiceId) return;
+    
+    // Show workflow modal
+    showWorkflowModal('matching');
+    
+    try {
+        // Update invoice with selected vendor
+        const response = await fetch(`/api/invoices/${currentInvoiceId}/update-vendor`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({vendor_id: vendorId})
+        });
+        
+        if (response.ok) {
+            updateWorkflowStep('match', '✅', 'Vendor matched successfully');
+            
+            // Auto-proceed to NetSuite sync
+            setTimeout(() => {
+                syncInvoiceToNetSuite(currentInvoiceId);
+            }, 1000);
+        } else {
+            updateWorkflowStep('match', '❌', 'Failed to match vendor');
+        }
+    } catch (error) {
+        console.error('Error matching vendor:', error);
+        updateWorkflowStep('match', '❌', 'Error occurred');
+    }
+}
+
+/**
+ * Show create vendor form
+ */
+function showCreateVendorForm() {
+    document.getElementById('createVendorForm').style.display = 'block';
+    document.getElementById('newVendorName').value = currentInvoiceData?.vendor_name || '';
+}
+
+/**
+ * Create and match new vendor
+ */
+async function createAndMatchVendor() {
+    const vendorData = {
+        global_name: document.getElementById('newVendorName').value,
+        emails: document.getElementById('newVendorEmail').value ? [document.getElementById('newVendorEmail').value] : [],
+        phone_numbers: document.getElementById('newVendorPhone').value ? [document.getElementById('newVendorPhone').value] : [],
+        tax_id: document.getElementById('newVendorTaxId').value,
+        address: document.getElementById('newVendorAddress').value,
+        vendor_type: 'Company'
+    };
+    
+    if (!vendorData.global_name) {
+        alert('Vendor name is required');
+        return;
+    }
+    
+    try {
+        // Create vendor
+        const createResponse = await fetch('/api/vendors/add', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(vendorData)
+        });
+        
+        const result = await createResponse.json();
+        
+        if (result.success) {
+            // Match to invoice
+            selectVendorForMatching(result.vendor_id, vendorData.global_name);
+            closeVendorModal();
+        } else {
+            alert('Failed to create vendor: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error creating vendor:', error);
+        alert('Error creating vendor');
+    }
+}
+
+/**
+ * Show workflow modal
+ */
+function showWorkflowModal(startingStep = 'upload') {
+    document.getElementById('workflowModal').style.display = 'block';
+    
+    // Reset all steps
+    document.getElementById('match-status').textContent = '⏳';
+    document.getElementById('netsuite-check-status').textContent = '⏳';
+    document.getElementById('create-status').textContent = '⏳';
+    
+    // Set initial message
+    document.getElementById('workflowMessage').innerHTML = 
+        '<p>Processing invoice through complete workflow...</p>';
+}
+
+/**
+ * Update workflow step status
+ */
+function updateWorkflowStep(step, status, message) {
+    const statusElement = document.getElementById(`${step}-status`);
+    if (statusElement) {
+        statusElement.textContent = status;
+    }
+    
+    if (message) {
+        const messageDiv = document.getElementById('workflowMessage');
+        messageDiv.innerHTML = `<p>${message}</p>`;
+    }
+}
+
+/**
+ * Sync invoice to NetSuite with auto-vendor creation
+ */
+async function syncInvoiceToNetSuite(invoiceId) {
+    updateWorkflowStep('netsuite-check', '🔄', 'Checking vendor in NetSuite...');
+    
+    try {
+        // Attempt to create invoice in NetSuite
+        const response = await fetch(`/api/netsuite/invoice/${invoiceId}/create`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateWorkflowStep('netsuite-check', '✅', 'Vendor found/created in NetSuite');
+            updateWorkflowStep('create', '✅', 'Invoice created successfully!');
+            
+            document.getElementById('workflowActions').innerHTML = `
+                <button onclick="closeWorkflowModal()" class="btn btn-primary">Done</button>
+                <button onclick="window.location.href='/netsuite-dashboard'" class="btn btn-secondary">View in NetSuite Dashboard</button>
+            `;
+        } else {
+            updateWorkflowStep('create', '❌', result.error || 'Failed to create invoice');
+        }
+    } catch (error) {
+        console.error('Error syncing to NetSuite:', error);
+        updateWorkflowStep('create', '❌', 'Error occurred during sync');
+    }
+}
+
+/**
+ * Close vendor modal
+ */
+function closeVendorModal() {
+    document.getElementById('vendorMatchModal').style.display = 'none';
+    document.getElementById('vendorSearchResults').innerHTML = '';
+    document.getElementById('createVendorForm').style.display = 'none';
+}
+
+/**
+ * Close workflow modal
+ */
+function closeWorkflowModal() {
+    document.getElementById('workflowModal').style.display = 'none';
+}
+
+// Close modals when clicking outside
+window.onclick = function(event) {
+    if (event.target.className === 'modal') {
+        event.target.style.display = 'none';
+    }
 }

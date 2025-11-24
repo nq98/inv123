@@ -544,6 +544,55 @@ def health():
         'vertex_search_datastore': config.VERTEX_SEARCH_DATA_STORE_ID
     })
 
+@app.route('/api/invoices/<invoice_id>/update-vendor', methods=['POST'])
+def update_invoice_vendor(invoice_id):
+    """Update invoice vendor_id for manual matching"""
+    try:
+        data = request.get_json()
+        vendor_id = data.get('vendor_id')
+        
+        if not vendor_id:
+            return jsonify({
+                'success': False,
+                'error': 'vendor_id is required'
+            }), 400
+        
+        # Update invoice vendor in BigQuery
+        bigquery_service = BigQueryService()
+        
+        # Use direct SQL update
+        from google.cloud import bigquery
+        client = bigquery_service.client
+        
+        query = f"""
+        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        SET vendor_id = @vendor_id
+        WHERE invoice_id = @invoice_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id)
+            ]
+        )
+        
+        client.query(query, job_config=job_config).result()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Invoice vendor updated successfully',
+            'invoice_id': invoice_id,
+            'vendor_id': vendor_id
+        })
+        
+    except Exception as e:
+        print(f"Error updating invoice vendor: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/process', methods=['POST'])
 def process_invoice():
     """
@@ -2989,8 +3038,8 @@ def create_invoice_in_netsuite(invoice_id):
                         # CRITICAL: Ensure we keep using this ID for invoice creation
                         print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
-                        # Vendor doesn't exist - need to create it
-                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
+                        # Vendor doesn't exist - AUTO-CREATE IT!
+                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. AUTO-CREATING...")
                         
                         # Prepare vendor data for sync
                         # Handle both List and String formats for emails/phones
@@ -3018,13 +3067,14 @@ def create_invoice_in_netsuite(invoice_id):
                             'address': vendor.get('address')  # Optional address
                         }
                         
-                        # Use the correct sync_vendor_to_netsuite method
+                        # AUTO-CREATE vendor in NetSuite
+                        print(f"🚀 Auto-creating vendor: {vendor_sync_data['name']}")
                         sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
                         if sync_result and sync_result.get('success'):
                             netsuite_vendor_id = sync_result.get('netsuite_id')
                             # Update BigQuery with the new ID immediately
                             bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
-                            print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
+                            print(f"✅ Vendor AUTO-CREATED in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
@@ -3140,8 +3190,8 @@ def update_invoice_in_netsuite(invoice_id):
                         # CRITICAL: Ensure we keep using this ID for invoice creation
                         print(f"✓ Will use NetSuite vendor ID {netsuite_vendor_id} for invoice creation")
                     else:
-                        # Vendor doesn't exist - need to create it
-                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. Creating new vendor...")
+                        # Vendor doesn't exist - AUTO-CREATE IT!
+                        print(f"⚠️ Vendor {vendor_name} not found in NetSuite. AUTO-CREATING...")
                         
                         # Prepare vendor data for sync
                         # Handle both List and String formats for emails/phones
@@ -3169,13 +3219,14 @@ def update_invoice_in_netsuite(invoice_id):
                             'address': vendor.get('address')  # Optional address
                         }
                         
-                        # Use the correct sync_vendor_to_netsuite method
+                        # AUTO-CREATE vendor in NetSuite
+                        print(f"🚀 Auto-creating vendor: {vendor_sync_data['name']}")
                         sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
                         if sync_result and sync_result.get('success'):
                             netsuite_vendor_id = sync_result.get('netsuite_id')
                             # Update BigQuery with the new ID immediately
                             bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
-                            print(f"✅ Vendor created in NetSuite with ID: {netsuite_vendor_id}")
+                            print(f"✅ Vendor AUTO-CREATED in NetSuite with ID: {netsuite_vendor_id}")
         
         # Fail safely if still missing
         print(f"🔍 DEBUG: Final netsuite_vendor_id value before check: {netsuite_vendor_id}")
