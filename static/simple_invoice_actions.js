@@ -1,4 +1,4 @@
-// Simple, direct invoice actions without complex modals
+// Simple, direct invoice actions without ANY popups or alerts
 
 async function createBillInNetSuite(invoiceId) {
     // Find the button that was clicked
@@ -23,7 +23,13 @@ async function createBillInNetSuite(invoiceId) {
         if (!invoice.vendor_id) {
             button.innerHTML = '❌ No vendor matched';
             button.disabled = false;
-            alert('Cannot create bill: This invoice has no vendor matched. Please match a vendor first.');
+            // NO ALERT - just show in button
+            console.error('Cannot create bill: No vendor matched for this invoice');
+            
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 3000);
             return;
         }
         
@@ -45,9 +51,9 @@ async function createBillInNetSuite(invoiceId) {
             button.innerHTML = '❌ Vendor not in NS';
             button.disabled = false;
             
-            if (confirm(`Vendor "${invoice.vendor_name}" is not in NetSuite yet. Would you like to create it?`)) {
-                await createVendorInNetSuite(invoice.vendor_id, button, invoiceId);
-            }
+            // NO CONFIRM - just try to create vendor automatically
+            console.log(`Creating vendor "${invoice.vendor_name}" in NetSuite...`);
+            await createVendorInNetSuite(invoice.vendor_id, button, invoiceId);
             return;
         }
         
@@ -72,9 +78,8 @@ async function createBillInNetSuite(invoiceId) {
             button.className = 'btn btn-success btn-sm';
             button.disabled = true;
             
-            // Show success message
-            const message = `Bill successfully created in NetSuite!\nNetSuite Bill ID: ${result.netsuite_bill_id}`;
-            alert(message);
+            // NO ALERT - just console log and button feedback
+            console.log(`Bill successfully created in NetSuite! NetSuite Bill ID: ${result.netsuite_bill_id}`);
             
             // Reload to update the UI
             setTimeout(() => location.reload(), 1500);
@@ -87,14 +92,8 @@ async function createBillInNetSuite(invoiceId) {
         button.innerHTML = '❌ Failed';
         button.disabled = false;
         
-        // Show user-friendly error
-        let errorMessage = 'Failed to create bill in NetSuite.\n\n';
-        if (error.message.includes('<!doctype') || error.message.includes('html')) {
-            errorMessage += 'The server encountered an error. Please try again.';
-        } else {
-            errorMessage += error.message;
-        }
-        alert(errorMessage);
+        // NO ALERT - just show error in console and button
+        console.error('Failed to create bill in NetSuite:', error.message);
         
         // Reset button after 3 seconds
         setTimeout(() => {
@@ -113,10 +112,19 @@ async function createVendorInNetSuite(vendorId, button, invoiceId) {
             body: JSON.stringify({ vendor_id: vendorId })
         });
         
-        const result = await response.json();
+        const responseText = await response.text();
+        let result;
         
-        if (result.success) {
-            alert(`Vendor created successfully in NetSuite!\nNetSuite ID: ${result.netsuite_id}`);
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            // If response is HTML or invalid JSON, just log it
+            console.error('Invalid JSON response:', responseText);
+            throw new Error('Server error - check logs');
+        }
+        
+        if (response.ok && result.success) {
+            console.log(`Vendor created successfully in NetSuite! NetSuite ID: ${result.netsuite_id}`);
             // Now create the bill
             await createBillInNetSuite(invoiceId);
         } else {
@@ -125,7 +133,14 @@ async function createVendorInNetSuite(vendorId, button, invoiceId) {
     } catch (error) {
         console.error('Error creating vendor:', error);
         button.innerHTML = '❌ Failed';
-        alert('Failed to create vendor: ' + error.message);
+        
+        // NO ALERT - just console error
+        console.error('Failed to create vendor:', error.message);
+        
+        setTimeout(() => {
+            button.innerHTML = '📋 Create Bill';
+            button.disabled = false;
+        }, 3000);
     }
 }
 
