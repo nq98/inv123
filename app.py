@@ -1294,12 +1294,21 @@ def upload_invoice():
         # Extract invoice data (try multiple possible keys for invoice_id)
         invoice_id = validated_data.get('invoiceId') or validated_data.get('invoiceNumber') or 'Unknown'
         
-        # CRITICAL FIX: Extract amount from correct nested structure
-        totals = validated_data.get('totals', {})
-        total_amount = totals.get('total', 0) if totals else validated_data.get('totalAmount', 0)
+        # CRITICAL FIX: Extract amount from correct structure
+        # The amount is at the top level as 'totalAmount', not nested in 'totals'
+        total_amount = validated_data.get('totalAmount', 0)
+        if total_amount == 0:
+            # Fallback: try nested totals object if totalAmount is 0
+            totals = validated_data.get('totals', {})
+            total_amount = totals.get('total', 0)
         
-        # Extract currency from totals or fallback to top level
-        currency_code = totals.get('currency', 'USD') if totals else validated_data.get('currencyCode', 'USD')
+        # DEBUG: Log amount extraction
+        print(f"💰 Amount extraction: totalAmount={validated_data.get('totalAmount')}, total_amount={total_amount}")
+        
+        # Extract currency - check top level first, then totals
+        currency_code = validated_data.get('currencyCode', 'USD')
+        if currency_code == 'USD' and validated_data.get('totals'):
+            currency_code = validated_data.get('totals', {}).get('currency', 'USD')
         
         # CRITICAL FIX: Try multiple possible date field names
         invoice_date = (validated_data.get('invoiceDate') or 
