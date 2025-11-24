@@ -4026,3 +4026,182 @@ async function syncAllVendorsToNetSuite(vendorIds) {
         body: JSON.stringify({ vendor_ids: vendorIds })
     });
 }
+
+/* ==================== NETSUITE VENDOR PULL FUNCTIONS ==================== */
+/**
+ * Pull all vendors from NetSuite and sync to BigQuery
+ */
+async function pullVendorsFromNetSuite() {
+    console.log('Starting NetSuite vendor pull...');
+    
+    // Get UI elements
+    const pullBtn = document.getElementById('pullVendorsBtn');
+    const progressSection = document.getElementById('vendorPullProgress');
+    const progressBar = document.getElementById('vendorPullProgressBar');
+    const statusText = document.getElementById('vendorPullStatus');
+    const detailsText = document.getElementById('vendorPullDetails');
+    const resultsSection = document.getElementById('vendorPullResults');
+    const statsDiv = document.getElementById('vendorPullStats');
+    const errorsDiv = document.getElementById('vendorPullErrors');
+    
+    // Disable button and show progress
+    pullBtn.disabled = true;
+    progressSection.classList.remove('hidden');
+    resultsSection.classList.add('hidden');
+    
+    // Reset progress
+    progressBar.style.width = '0%';
+    statusText.textContent = 'Connecting to NetSuite...';
+    detailsText.textContent = '';
+    
+    try {
+        // Create EventSource for SSE
+        const response = await fetch('/api/netsuite/vendors/pull', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Process complete SSE messages
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        handlePullProgress(data);
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e);
+                    }
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error pulling vendors:', error);
+        statusText.textContent = '❌ Error: ' + error.message;
+        statusText.style.color = '#dc2626';
+        
+        // Show error in results
+        resultsSection.classList.remove('hidden');
+        statsDiv.innerHTML = `
+            <div class="alert-error">
+                <strong>Failed to pull vendors from NetSuite</strong>
+                <p>${error.message}</p>
+            </div>
+        `;
+    } finally {
+        // Re-enable button
+        pullBtn.disabled = false;
+    }
+    
+    /**
+     * Handle progress updates from SSE
+     */
+    function handlePullProgress(data) {
+        // Update progress bar
+        if (data.progress !== undefined) {
+            progressBar.style.width = data.progress + '%';
+        }
+        
+        // Update status message
+        if (data.message) {
+            statusText.textContent = data.message;
+        }
+        
+        // Update details
+        if (data.data) {
+            if (data.data.fetched !== undefined) {
+                detailsText.textContent = `Vendors found: ${data.data.fetched}`;
+            } else if (data.data.current !== undefined && data.data.total !== undefined) {
+                detailsText.textContent = `Processing: ${data.data.current} of ${data.data.total} - ${data.data.vendor_name || ''}`;
+            }
+        }
+        
+        // Handle completion
+        if (data.completed) {
+            progressSection.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+            
+            const stats = data.stats || {};
+            
+            // Display statistics
+            statsDiv.innerHTML = `
+                <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                    <div class="stat-card" style="padding: 15px; background: #f0f9ff; border-radius: 8px; border: 1px solid #3b82f6;">
+                        <div class="stat-value" style="font-size: 24px; font-weight: bold; color: #3b82f6;">${stats.totalFetched || 0}</div>
+                        <div class="stat-label" style="font-size: 14px; color: #666;">Total Fetched</div>
+                    </div>
+                    <div class="stat-card" style="padding: 15px; background: #f0fdf4; border-radius: 8px; border: 1px solid #22c55e;">
+                        <div class="stat-value" style="font-size: 24px; font-weight: bold; color: #22c55e;">${stats.newVendors || 0}</div>
+                        <div class="stat-label" style="font-size: 14px; color: #666;">New Vendors</div>
+                    </div>
+                    <div class="stat-card" style="padding: 15px; background: #fefce8; border-radius: 8px; border: 1px solid #facc15;">
+                        <div class="stat-value" style="font-size: 24px; font-weight: bold; color: #facc15;">${stats.updatedVendors || 0}</div>
+                        <div class="stat-label" style="font-size: 14px; color: #666;">Updated</div>
+                    </div>
+                    <div class="stat-card" style="padding: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #ef4444;">
+                        <div class="stat-value" style="font-size: 24px; font-weight: bold; color: #ef4444;">${stats.failed || 0}</div>
+                        <div class="stat-label" style="font-size: 14px; color: #666;">Failed</div>
+                    </div>
+                    <div class="stat-card" style="padding: 15px; background: #f3f4f6; border-radius: 8px; border: 1px solid #9ca3af;">
+                        <div class="stat-value" style="font-size: 24px; font-weight: bold; color: #6b7280;">${Math.round(stats.duration || 0)}s</div>
+                        <div class="stat-label" style="font-size: 14px; color: #666;">Duration</div>
+                    </div>
+                </div>
+            `;
+            
+            // Display errors if any
+            if (stats.errors && stats.errors.length > 0) {
+                errorsDiv.innerHTML = `
+                    <div class="error-list" style="margin-top: 20px; padding: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #ef4444;">
+                        <h4 style="color: #dc2626; margin-bottom: 10px;">Errors encountered:</h4>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            ${stats.errors.map(err => `<li style="color: #666; margin: 5px 0;">${err}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            } else {
+                errorsDiv.innerHTML = '';
+            }
+        }
+        
+        // Handle error
+        if (data.error) {
+            progressSection.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+            
+            statsDiv.innerHTML = `
+                <div class="alert-error" style="padding: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #ef4444;">
+                    <strong style="color: #dc2626;">❌ Error pulling vendors</strong>
+                    <p style="color: #666; margin-top: 10px;">${data.message || 'Unknown error occurred'}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+/**
+ * Close the pull results section
+ */
+function closePullResults() {
+    document.getElementById('vendorPullResults').classList.add('hidden');
+    document.getElementById('vendorPullStats').innerHTML = '';
+    document.getElementById('vendorPullErrors').innerHTML = '';
+}

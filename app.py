@@ -3023,6 +3023,66 @@ def test_netsuite_connection():
             'message': 'Failed to test NetSuite connection'
         }), 500
 
+@app.route('/api/netsuite/vendors/pull', methods=['POST'])
+def pull_netsuite_vendors():
+    """
+    Pull all vendors from NetSuite and sync to BigQuery
+    Uses Server-Sent Events to stream progress
+    """
+    def generate():
+        try:
+            sync_manager = SyncManager()
+            
+            # Progress callback for SSE streaming
+            def progress_callback(step, total_steps, message, data):
+                event_data = {
+                    'step': step,
+                    'totalSteps': total_steps,
+                    'message': message,
+                    'progress': round((step / total_steps) * 100),
+                    'data': data
+                }
+                yield f"data: {json.dumps(event_data)}\n\n"
+            
+            # Run the sync with progress callback
+            result = sync_manager.sync_vendors_from_netsuite(progress_callback=progress_callback)
+            
+            # Send final result
+            final_event = {
+                'step': 5,
+                'totalSteps': 5,
+                'message': 'Sync completed!',
+                'progress': 100,
+                'completed': True,
+                'stats': {
+                    'totalFetched': result.get('total_fetched', 0),
+                    'newVendors': result.get('new_vendors', 0),
+                    'updatedVendors': result.get('updated_vendors', 0),
+                    'failed': result.get('failed', 0),
+                    'duration': result.get('duration_seconds', 0),
+                    'errors': result.get('errors', [])
+                }
+            }
+            yield f"data: {json.dumps(final_event)}\n\n"
+            
+        except Exception as e:
+            error_event = {
+                'error': True,
+                'message': f'Failed to sync vendors: {str(e)}',
+                'progress': 0
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
+
 @app.route('/api/netsuite/sync/vendor/<vendor_id>', methods=['POST'])
 def sync_vendor_to_netsuite(vendor_id):
     """

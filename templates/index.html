@@ -155,6 +155,43 @@
         <!-- ==================== VENDORS TAB ==================== -->
         <div class="tab-content" id="tab-vendors">
             
+            <!-- NetSuite Vendor Pull Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔄 NetSuite Vendor Import</h2>
+                    <p class="card-desc">Pull all vendors from NetSuite to BigQuery</p>
+                </div>
+                
+                <div class="netsuite-pull-controls">
+                    <button id="pullVendorsBtn" onclick="pullVendorsFromNetSuite()" class="btn btn-primary">
+                        <span class="btn-icon">⬇️</span> Pull Vendors from NetSuite
+                    </button>
+                    <p class="help-text" style="margin-top: 10px; color: #666;">Import all vendors from NetSuite. New vendors will be added, existing ones will be updated.</p>
+                </div>
+                
+                <!-- Pull Progress Modal -->
+                <div id="vendorPullProgress" class="progress-section hidden" style="margin-top: 20px;">
+                    <div class="progress-header">
+                        <h3>⏳ Importing Vendors from NetSuite</h3>
+                    </div>
+                    <div class="progress-body">
+                        <div class="progress-bar" style="background: #f0f0f0; border-radius: 10px; overflow: hidden; height: 30px; margin: 15px 0;">
+                            <div id="vendorPullProgressBar" class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.3s ease;"></div>
+                        </div>
+                        <div id="vendorPullStatus" class="progress-status" style="font-size: 16px; color: #333; margin: 10px 0;">Initializing...</div>
+                        <div id="vendorPullDetails" class="progress-details" style="font-size: 14px; color: #666;"></div>
+                    </div>
+                </div>
+                
+                <!-- Pull Results -->
+                <div id="vendorPullResults" class="results-section hidden" style="margin-top: 20px; padding: 20px; background: #f9fafb; border-radius: 8px;">
+                    <h3>✅ Import Complete</h3>
+                    <div id="vendorPullStats" class="stats-grid" style="margin: 15px 0;"></div>
+                    <div id="vendorPullErrors" class="error-list" style="margin: 15px 0;"></div>
+                    <button onclick="closePullResults()" class="btn btn-secondary">Close</button>
+                </div>
+            </section>
+            
             <!-- CSV Import Section -->
             <section class="card">
                 <div class="card-header">

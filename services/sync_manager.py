@@ -4,6 +4,7 @@ Handles bidirectional sync between our platform and NetSuite
 """
 import os
 import json
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from google.cloud import bigquery
@@ -181,6 +182,309 @@ class SyncManager:
                 })
         
         return results
+    
+    def sync_vendors_from_netsuite(self, progress_callback=None) -> Dict:
+        """
+        Pull all vendors from NetSuite and sync to BigQuery with real-time progress reporting
+        
+        Args:
+            progress_callback: Optional callback function to report progress
+                             Should accept (step, total_steps, message, data)
+        
+        Returns:
+            Dictionary with sync statistics
+        """
+        stats = {
+            'total_fetched': 0,
+            'new_vendors': 0,
+            'updated_vendors': 0,
+            'failed': 0,
+            'errors': [],
+            'start_time': datetime.now()
+        }
+        
+        try:
+            # Step 1: Fetch vendors from NetSuite with pagination
+            if progress_callback:
+                progress_callback(1, 5, "Connecting to NetSuite...", {})
+            
+            all_vendors = []
+            offset = 0
+            limit = 100  # Fetch 100 vendors at a time
+            
+            while True:
+                try:
+                    # Use REST API to get all vendors
+                    params = {'limit': limit, 'offset': offset}
+                    response = self.netsuite._make_request('GET', '/record/v1/vendor', params=params)
+                    
+                    if not response or 'items' not in response:
+                        break
+                    
+                    batch_items = response.get('items', [])
+                    all_vendors.extend(batch_items)
+                    
+                    if progress_callback:
+                        progress_callback(
+                            1, 5, 
+                            f"Fetching vendors from NetSuite... ({len(all_vendors)} found)", 
+                            {'fetched': len(all_vendors)}
+                        )
+                    
+                    # Check if there are more vendors
+                    if len(batch_items) < limit:
+                        break
+                    
+                    offset += limit
+                    
+                except Exception as e:
+                    print(f"Error fetching vendors batch at offset {offset}: {e}")
+                    stats['errors'].append(f"Fetch error at offset {offset}: {str(e)}")
+                    break
+            
+            stats['total_fetched'] = len(all_vendors)
+            
+            if progress_callback:
+                progress_callback(
+                    2, 5, 
+                    f"Found {len(all_vendors)} vendors in NetSuite", 
+                    {'total': len(all_vendors)}
+                )
+            
+            # Step 2: Process each vendor
+            for idx, ns_vendor in enumerate(all_vendors):
+                try:
+                    if progress_callback and idx % 10 == 0:
+                        progress_callback(
+                            3, 5,
+                            f"Processing vendor {idx + 1} of {len(all_vendors)}",
+                            {
+                                'current': idx + 1,
+                                'total': len(all_vendors),
+                                'vendor_name': ns_vendor.get('companyName', 'Unknown')
+                            }
+                        )
+                    
+                    # Extract vendor data from NetSuite format
+                    vendor_data = {
+                        'name': ns_vendor.get('companyName', ''),
+                        'email': ns_vendor.get('email', ''),
+                        'phone': ns_vendor.get('phone', ''),
+                        'tax_id': ns_vendor.get('defaultTaxReg', ''),
+                        'address': self._format_netsuite_address(ns_vendor.get('defaultAddress', {})),
+                        'netsuite_internal_id': str(ns_vendor.get('id', '')),
+                        'external_id': ns_vendor.get('externalId', ''),
+                        'source_system': 'NETSUITE'
+                    }
+                    
+                    # Check if vendor exists in BigQuery
+                    existing_vendor = None
+                    
+                    # Try to find by tax ID first
+                    if vendor_data['tax_id']:
+                        existing_vendor = self._find_vendor_by_tax_id(vendor_data['tax_id'])
+                    
+                    # If not found by tax ID, try by name
+                    if not existing_vendor and vendor_data['name']:
+                        existing_vendor = self._find_vendor_by_name(vendor_data['name'])
+                    
+                    if existing_vendor:
+                        # Update existing vendor with NetSuite info
+                        self._update_vendor_netsuite_fields(
+                            existing_vendor['vendor_id'],
+                            vendor_data['netsuite_internal_id'],
+                            vendor_data['external_id']
+                        )
+                        stats['updated_vendors'] += 1
+                    else:
+                        # Create new vendor
+                        new_vendor_id = str(uuid.uuid4())
+                        vendor_data['vendor_id'] = new_vendor_id
+                        vendor_data['global_name'] = vendor_data['name']
+                        vendor_data['created_at'] = datetime.now()
+                        vendor_data['last_updated'] = datetime.now()
+                        vendor_data['netsuite_sync_status'] = 'synced'
+                        vendor_data['netsuite_last_sync'] = datetime.now()
+                        
+                        # Format for BigQuery
+                        vendor_data['emails'] = [vendor_data['email']] if vendor_data['email'] else []
+                        vendor_data['phone_numbers'] = [vendor_data['phone']] if vendor_data['phone'] else []
+                        del vendor_data['email']
+                        del vendor_data['phone']
+                        
+                        # Insert into BigQuery
+                        self._insert_vendor_to_bigquery(vendor_data)
+                        stats['new_vendors'] += 1
+                        
+                except Exception as e:
+                    print(f"Error processing vendor {ns_vendor.get('companyName', 'Unknown')}: {e}")
+                    stats['failed'] += 1
+                    stats['errors'].append(f"Vendor {ns_vendor.get('companyName', 'Unknown')}: {str(e)}")
+            
+            # Step 4: Final statistics
+            if progress_callback:
+                progress_callback(
+                    4, 5,
+                    "Finalizing sync results...",
+                    stats
+                )
+            
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            # Log sync activity
+            if self.bigquery:
+                self.bigquery.log_netsuite_sync({
+                    'entity_type': 'vendor_bulk',
+                    'entity_id': 'BULK_PULL',
+                    'action': 'pull_all',
+                    'status': 'success',
+                    'details': {
+                        'total_fetched': stats['total_fetched'],
+                        'new_vendors': stats['new_vendors'],
+                        'updated_vendors': stats['updated_vendors'],
+                        'failed': stats['failed']
+                    }
+                })
+            
+            if progress_callback:
+                progress_callback(
+                    5, 5,
+                    "Vendor sync completed successfully!",
+                    stats
+                )
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Critical error in vendor sync: {e}")
+            stats['errors'].append(f"Critical error: {str(e)}")
+            stats['end_time'] = datetime.now()
+            stats['duration_seconds'] = (stats['end_time'] - stats['start_time']).total_seconds()
+            
+            if progress_callback:
+                progress_callback(
+                    5, 5,
+                    f"Sync failed: {str(e)}",
+                    stats
+                )
+            
+            return stats
+    
+    def _format_netsuite_address(self, address_obj: Dict) -> str:
+        """Format NetSuite address object into a string"""
+        if not address_obj:
+            return ""
+        
+        parts = []
+        if address_obj.get('addr1'):
+            parts.append(address_obj['addr1'])
+        if address_obj.get('addr2'):
+            parts.append(address_obj['addr2'])
+        if address_obj.get('city'):
+            parts.append(address_obj['city'])
+        if address_obj.get('state'):
+            parts.append(address_obj['state'])
+        if address_obj.get('zip'):
+            parts.append(address_obj['zip'])
+        if address_obj.get('country'):
+            parts.append(address_obj['country'])
+        
+        return ", ".join(parts)
+    
+    def _find_vendor_by_tax_id(self, tax_id: str) -> Optional[Dict]:
+        """Find vendor in BigQuery by tax ID"""
+        try:
+            query = f"""
+            SELECT * FROM `{self.project_id}.vendors_ai.global_vendors`
+            WHERE LOWER(tax_id) = LOWER(@tax_id)
+            LIMIT 1
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("tax_id", "STRING", tax_id)
+                ]
+            )
+            
+            results = list(self.client.query(query, job_config=job_config).result())
+            return dict(results[0]) if results else None
+        except Exception as e:
+            print(f"Error finding vendor by tax ID: {e}")
+            return None
+    
+    def _find_vendor_by_name(self, name: str) -> Optional[Dict]:
+        """Find vendor in BigQuery by name"""
+        try:
+            query = f"""
+            SELECT * FROM `{self.project_id}.vendors_ai.global_vendors`
+            WHERE LOWER(global_name) = LOWER(@name)
+            OR LOWER(name) = LOWER(@name)
+            LIMIT 1
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("name", "STRING", name)
+                ]
+            )
+            
+            results = list(self.client.query(query, job_config=job_config).result())
+            return dict(results[0]) if results else None
+        except Exception as e:
+            print(f"Error finding vendor by name: {e}")
+            return None
+    
+    def _update_vendor_netsuite_fields(self, vendor_id: str, netsuite_id: str, external_id: str):
+        """Update vendor's NetSuite sync fields"""
+        try:
+            query = f"""
+            UPDATE `{self.project_id}.vendors_ai.global_vendors`
+            SET 
+                netsuite_internal_id = @netsuite_id,
+                external_id = @external_id,
+                netsuite_sync_status = 'synced',
+                netsuite_last_sync = CURRENT_TIMESTAMP(),
+                last_updated = CURRENT_TIMESTAMP()
+            WHERE vendor_id = @vendor_id
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id),
+                    bigquery.ScalarQueryParameter("netsuite_id", "STRING", netsuite_id),
+                    bigquery.ScalarQueryParameter("external_id", "STRING", external_id or "")
+                ]
+            )
+            
+            self.client.query(query, job_config=job_config).result()
+            
+        except Exception as e:
+            print(f"Error updating vendor NetSuite fields: {e}")
+            raise
+    
+    def _insert_vendor_to_bigquery(self, vendor_data: Dict):
+        """Insert new vendor into BigQuery"""
+        try:
+            table_id = f"{self.project_id}.vendors_ai.global_vendors"
+            table = self.client.get_table(table_id)
+            
+            # Convert datetime objects to ISO format strings
+            if isinstance(vendor_data.get('created_at'), datetime):
+                vendor_data['created_at'] = vendor_data['created_at'].isoformat()
+            if isinstance(vendor_data.get('last_updated'), datetime):
+                vendor_data['last_updated'] = vendor_data['last_updated'].isoformat()
+            if isinstance(vendor_data.get('netsuite_last_sync'), datetime):
+                vendor_data['netsuite_last_sync'] = vendor_data['netsuite_last_sync'].isoformat()
+            
+            errors = self.client.insert_rows_json(table, [vendor_data])
+            
+            if errors:
+                raise Exception(f"Failed to insert vendor: {errors}")
+                
+        except Exception as e:
+            print(f"Error inserting vendor to BigQuery: {e}")
+            raise
     
     def pull_vendors_from_netsuite(self, last_modified_after: Optional[datetime] = None) -> Dict:
         """
