@@ -2965,8 +2965,8 @@ def create_invoice_in_netsuite(invoice_id):
             vendor = bigquery_service.get_vendor_by_id(vendor_id)
             
             if vendor:
-                # Check if vendor has a NetSuite ID
-                netsuite_vendor_id = vendor.get('netsuite_id')
+                # Check if vendor has a NetSuite ID (correct column name)
+                netsuite_vendor_id = vendor.get('netsuite_internal_id')
                 
                 if not netsuite_vendor_id:
                     # AUTO-SYNC VENDOR if missing
@@ -3095,8 +3095,8 @@ def update_invoice_in_netsuite(invoice_id):
             vendor = bigquery_service.get_vendor_by_id(vendor_id)
             
             if vendor:
-                # Check if vendor has a NetSuite ID
-                netsuite_vendor_id = vendor.get('netsuite_id')
+                # Check if vendor has a NetSuite ID (correct column name)
+                netsuite_vendor_id = vendor.get('netsuite_internal_id')
                 
                 if not netsuite_vendor_id:
                     # AUTO-SYNC VENDOR if missing
