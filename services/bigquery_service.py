@@ -400,7 +400,7 @@ class BigQueryService:
         {where_clause}
         """
         
-        # Get paginated vendors
+        # Get paginated vendors with NetSuite sync status
         vendors_query = f"""
         SELECT 
             vendor_id,
@@ -411,6 +411,12 @@ class BigQueryService:
             countries,
             custom_attributes,
             source_system,
+            netsuite_internal_id,
+            netsuite_sync_status,
+            netsuite_last_sync,
+            netsuite_sync_error,
+            payment_status,
+            payment_date,
             last_updated,
             created_at
         FROM `{self.full_table_id}`
@@ -465,6 +471,12 @@ class BigQueryService:
                     "countries": list(row.countries) if row.countries else [],
                     "custom_attributes": custom_attrs,
                     "source_system": row.source_system,
+                    "netsuite_internal_id": getattr(row, 'netsuite_internal_id', None),
+                    "netsuite_sync_status": getattr(row, 'netsuite_sync_status', None) or 'not_synced',
+                    "netsuite_last_sync": getattr(row, 'netsuite_last_sync', None).isoformat() if getattr(row, 'netsuite_last_sync', None) else None,
+                    "netsuite_sync_error": getattr(row, 'netsuite_sync_error', None),
+                    "payment_status": getattr(row, 'payment_status', None),
+                    "payment_date": getattr(row, 'payment_date', None).isoformat() if getattr(row, 'payment_date', None) else None,
                     "last_updated": row.last_updated.isoformat() if row.last_updated else None,
                     "created_at": row.created_at.isoformat() if row.created_at else None
                 })

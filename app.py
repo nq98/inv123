@@ -22,6 +22,7 @@ from services.action_manager import ActionManager
 from services.pdf_generator import PDFInvoiceGenerator
 from services.invoice_composer import InvoiceComposer
 from services.netsuite_service import NetSuiteService
+from services.sync_manager import SyncManager
 from config import config
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -436,6 +437,7 @@ _vertex_search_service = None
 _agent_search_service = None
 _issue_detector = None
 _action_manager = None
+_sync_manager = None
 
 def get_processor():
     """Lazy initialization of InvoiceProcessor to avoid blocking app startup"""
@@ -478,6 +480,13 @@ def get_vertex_search_service():
     if _vertex_search_service is None:
         _vertex_search_service = VertexSearchService()
     return _vertex_search_service
+
+def get_sync_manager():
+    """Lazy initialization of SyncManager"""
+    global _sync_manager
+    if _sync_manager is None:
+        _sync_manager = SyncManager()
+    return _sync_manager
 
 def get_agent_services():
     """Lazy initialization of agent services"""
@@ -777,66 +786,32 @@ def create_invoice_in_netsuite(invoice_id):
 
 @app.route('/api/netsuite/vendor/create', methods=['POST'])
 def create_vendor_in_netsuite():
-    """Create vendor in NetSuite"""
+    """Create vendor in NetSuite using SyncManager"""
     try:
         data = request.get_json()
         vendor_id = data.get('vendor_id')
+        force = data.get('force', False)  # Option to force re-sync
         
         if not vendor_id:
             return jsonify({'success': False, 'error': 'vendor_id required'}), 400
         
-        # Get vendor from BigQuery
-        bigquery_service = BigQueryService()
-        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        # Use SyncManager to handle the vendor sync
+        sync_manager = get_sync_manager()
+        result = sync_manager.sync_vendor_to_netsuite(vendor_id, force=force)
         
-        if not vendor:
-            return jsonify({'success': False, 'error': 'Vendor not found'}), 404
-        
-        # Prepare vendor data
-        email_val = vendor.get('emails')
-        primary_email = None
-        if isinstance(email_val, list) and len(email_val) > 0:
-            primary_email = email_val[0]
-        elif isinstance(email_val, str) and email_val:
-            primary_email = email_val.split(',')[0]
-        
-        phone_val = vendor.get('phone_numbers')
-        primary_phone = None
-        if isinstance(phone_val, list) and len(phone_val) > 0:
-            primary_phone = phone_val[0]
-        elif isinstance(phone_val, str) and phone_val:
-            primary_phone = phone_val.split(',')[0]
-        
-        vendor_sync_data = {
-            'vendor_id': vendor_id,
-            'name': vendor.get('global_name', ''),
-            'email': primary_email,
-            'phone': primary_phone,
-            'tax_id': vendor.get('tax_id'),
-            'external_id': f"VENDOR_{vendor_id}",
-            'address': vendor.get('address')
-        }
-        
-        # Create vendor in NetSuite
-        netsuite = NetSuiteService()
-        sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
-        
-        if sync_result and sync_result.get('success'):
-            netsuite_vendor_id = sync_result.get('netsuite_id')
-            # Update BigQuery with NetSuite ID
-            bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
-            
+        if result.get('success'):
             return jsonify({
                 'success': True,
-                'netsuite_id': netsuite_vendor_id,
-                'message': 'Vendor created successfully in NetSuite'
+                'netsuite_id': result.get('netsuite_id'),
+                'message': result.get('message', 'Vendor synced successfully to NetSuite'),
+                'vendor_id': vendor_id
             })
         else:
-            error_msg = sync_result.get('error') if sync_result else 'Failed to create vendor'
+            error_msg = result.get('error', 'Failed to sync vendor to NetSuite')
             return jsonify({'success': False, 'error': error_msg}), 500
             
     except Exception as e:
-        print(f"Error creating NetSuite vendor: {e}")
+        print(f"Error syncing NetSuite vendor: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/process', methods=['POST'])
@@ -2288,6 +2263,82 @@ def import_vendor_csv():
                 csv_uploads.pop(upload_id, None)
         except:
             pass
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vendors/csv/sync-netsuite', methods=['POST'])
+def sync_csv_vendors_to_netsuite():
+    """
+    Sync vendors from CSV upload to NetSuite with SSE progress streaming
+    Accepts vendor IDs from a previous CSV import
+    """
+    try:
+        data = request.get_json()
+        vendor_ids = data.get('vendor_ids', [])
+        force = data.get('force', False)
+        
+        if not vendor_ids:
+            return jsonify({'error': 'No vendor IDs provided'}), 400
+        
+        def generate():
+            """Generator function for SSE streaming"""
+            sync_manager = get_sync_manager()
+            total = len(vendor_ids)
+            success_count = 0
+            failed_count = 0
+            errors = []
+            
+            # Send initial progress
+            yield f"data: {json.dumps({'type': 'start', 'total': total, 'message': f'Starting sync for {total} vendors'})}\n\n"
+            
+            # Ensure vendor schema is up to date
+            if sync_manager.update_vendor_schema():
+                yield f"data: {json.dumps({'type': 'info', 'message': 'Vendor schema updated with sync fields'})}\n\n"
+            
+            for index, vendor_id in enumerate(vendor_ids):
+                try:
+                    # Send progress update
+                    yield f"data: {json.dumps({'type': 'progress', 'current': index, 'total': total, 'vendor_id': vendor_id, 'message': f'Syncing vendor {index+1}/{total}: {vendor_id}'})}\n\n"
+                    
+                    # Sync vendor to NetSuite
+                    result = sync_manager.sync_vendor_to_netsuite(vendor_id, force=force)
+                    
+                    if result.get('success'):
+                        success_count += 1
+                        yield f"data: {json.dumps({'type': 'success', 'vendor_id': vendor_id, 'netsuite_id': result.get('netsuite_id'), 'message': f'Successfully synced vendor {vendor_id}'})}\n\n"
+                    else:
+                        failed_count += 1
+                        error_msg = result.get('error', 'Unknown error')
+                        errors.append({'vendor_id': vendor_id, 'error': error_msg})
+                        yield f"data: {json.dumps({'type': 'error', 'vendor_id': vendor_id, 'error': error_msg, 'message': f'Failed to sync vendor {vendor_id}'})}\n\n"
+                
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e)
+                    errors.append({'vendor_id': vendor_id, 'error': error_msg})
+                    yield f"data: {json.dumps({'type': 'error', 'vendor_id': vendor_id, 'error': error_msg, 'message': f'Error syncing vendor {vendor_id}'})}\n\n"
+            
+            # Send final summary
+            summary = {
+                'type': 'complete',
+                'total': total,
+                'success': success_count,
+                'failed': failed_count,
+                'errors': errors,
+                'message': f'Sync complete: {success_count} succeeded, {failed_count} failed'
+            }
+            yield f"data: {json.dumps(summary)}\n\n"
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Error in CSV NetSuite sync: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vendors/search', methods=['GET'])

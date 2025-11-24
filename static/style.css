@@ -2983,3 +2983,94 @@ button {
     border-radius: 8px;
     margin-top: 20px;
 }
+
+/* ==================== NETSUITE SYNC STATUS STYLES ==================== */
+.sync-badge {
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+    display: inline-block;
+}
+
+.sync-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.sync-failed {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.sync-pending {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+
+.vendor-card.synced {
+    border-left: 4px solid #28a745;
+}
+
+.vendor-card.sync-failed {
+    border-left: 4px solid #dc3545;
+}
+
+.vendor-card.not-synced {
+    border-left: 4px solid #ffc107;
+}
+
+.btn-sync, .btn-sync-small, .btn-retry {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.btn-sync-small {
+    background: #6c757d;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.btn-retry {
+    background: #dc3545;
+}
+
+.btn-sync:hover, .btn-sync-small:hover, .btn-retry:hover {
+    opacity: 0.9;
+}
+
+.sync-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.sync-date {
+    color: #666;
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+.sync-error {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8d7da;
+    border-radius: 6px;
+}
+
+.error-text {
+    color: #721c24;
+    font-size: 12px;
+    margin-bottom: 5px;
+}

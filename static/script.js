@@ -1983,14 +1983,31 @@ function renderVendorList(vendors) {
         const lastUpdated = vendor.last_updated ? new Date(vendor.last_updated).toLocaleString() : 'N/A';
         const createdAt = vendor.created_at ? new Date(vendor.created_at).toLocaleString() : 'N/A';
         
+        // Determine NetSuite sync status
+        let syncStatusBadge = '';
+        let syncStatusClass = '';
+        
+        if (vendor.netsuite_internal_id) {
+            const lastSync = vendor.netsuite_last_sync ? new Date(vendor.netsuite_last_sync).toLocaleString() : 'Unknown';
+            syncStatusClass = 'synced';
+            syncStatusBadge = `<span class="sync-badge sync-success" title="Last sync: ${lastSync}">✅ NetSuite</span>`;
+        } else if (vendor.netsuite_sync_status === 'failed') {
+            syncStatusClass = 'sync-failed';
+            syncStatusBadge = `<span class="sync-badge sync-failed" title="${vendor.netsuite_sync_error || 'Sync failed'}">❌ Failed</span>`;
+        } else {
+            syncStatusClass = 'not-synced';
+            syncStatusBadge = `<span class="sync-badge sync-pending">⚠️ Not Synced</span>`;
+        }
+        
         return `
-            <div class="vendor-card" id="${vendorId}">
+            <div class="vendor-card ${syncStatusClass}" id="${vendorId}">
                 <div class="vendor-card-header" onclick="toggleVendorDetails('${vendorId}')">
                     <div style="flex: 1;">
                         <h3 class="vendor-name">${vendor.global_name}</h3>
                         <div class="vendor-meta">
                             <span class="vendor-id">ID: ${vendor.vendor_id}</span>
                             <span class="vendor-source">${vendor.source_system || 'Unknown'}</span>
+                            ${syncStatusBadge}
                         </div>
                     </div>
                     <div class="vendor-expand-icon">▼</div>
