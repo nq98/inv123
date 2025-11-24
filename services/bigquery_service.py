@@ -213,6 +213,7 @@ class BigQueryService:
             emails,
             countries,
             custom_attributes,
+            netsuite_internal_id,
             created_at,
             last_updated
         FROM `{self.full_table_id}`
@@ -272,6 +273,8 @@ class BigQueryService:
                     "addresses": addresses,
                     "phone_numbers": phone_numbers,
                     "tax_id": tax_id,
+                    "netsuite_internal_id": row.netsuite_internal_id if hasattr(row, 'netsuite_internal_id') else custom_attrs.get('netsuite_internal_id'),
+                    "custom_attributes": custom_attrs,
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "last_updated": row.last_updated.isoformat() if row.last_updated else None
                 })
