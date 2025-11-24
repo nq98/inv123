@@ -593,6 +593,252 @@ def update_invoice_vendor(invoice_id):
             'error': str(e)
         }), 500
 
+@app.route('/api/netsuite/vendor/check', methods=['POST'])
+def check_vendor_in_netsuite():
+    """Check if vendor exists in NetSuite and compare data"""
+    try:
+        data = request.get_json()
+        vendor_id = data.get('vendor_id')
+        
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'vendor_id required'}), 400
+        
+        # Get vendor from BigQuery
+        bigquery_service = BigQueryService()
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 404
+        
+        # Check if vendor has NetSuite ID
+        netsuite_internal_id = vendor.get('netsuite_internal_id')
+        
+        if netsuite_internal_id:
+            # Vendor exists in NetSuite - could check for differences
+            return jsonify({
+                'success': True,
+                'exists': True,
+                'vendor': {
+                    'id': netsuite_internal_id,
+                    'name': vendor.get('global_name')
+                },
+                'differences': []  # Could implement comparison logic
+            })
+        
+        # Search NetSuite by vendor name
+        netsuite = NetSuiteService()
+        vendor_name = vendor.get('global_name', '')
+        search_results = netsuite.search_vendors(name=vendor_name)
+        
+        if search_results and len(search_results) > 0:
+            # Found vendor in NetSuite
+            netsuite_vendor = search_results[0]
+            netsuite_vendor_id = netsuite_vendor.get('id')
+            
+            # Update BigQuery with found ID
+            bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+            
+            return jsonify({
+                'success': True,
+                'exists': True,
+                'vendor': {
+                    'id': netsuite_vendor_id,
+                    'name': vendor_name
+                },
+                'differences': []
+            })
+        
+        # Vendor doesn't exist in NetSuite
+        return jsonify({
+            'success': True,
+            'exists': False,
+            'vendor': None
+        })
+        
+    except Exception as e:
+        print(f"Error checking NetSuite vendor: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/vendors/add', methods=['POST'])
+def add_vendor():
+    """Add a new vendor to the database"""
+    try:
+        data = request.get_json()
+        
+        # Generate unique vendor ID
+        import uuid
+        vendor_id = f"VENDOR_{str(uuid.uuid4())[:8].upper()}"
+        
+        # Get BigQuery service
+        bigquery_service = BigQueryService()
+        
+        # Prepare vendor data
+        vendor_data = {
+            'vendor_id': vendor_id,
+            'global_name': data.get('global_name'),
+            'emails': [data.get('emails')] if isinstance(data.get('emails'), str) else data.get('emails', []),
+            'phone_numbers': [data.get('phone_numbers')] if isinstance(data.get('phone_numbers'), str) else data.get('phone_numbers', []),
+            'tax_id': data.get('tax_id'),
+            'address': data.get('address'),
+            'vendor_type': data.get('vendor_type', 'Company'),
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        
+        # Insert vendor into BigQuery
+        from google.cloud import bigquery
+        client = bigquery_service.client
+        table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors"
+        table = client.get_table(table_id)
+        
+        rows_to_insert = [vendor_data]
+        errors = client.insert_rows_json(table, rows_to_insert)
+        
+        if errors:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to insert vendor: {errors}'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'vendor_id': vendor_id,
+            'message': 'Vendor created successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error adding vendor: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/netsuite/invoice/<invoice_id>/create', methods=['POST'])
+def create_invoice_in_netsuite(invoice_id):
+    """Create invoice/bill in NetSuite"""
+    try:
+        # Get invoice details from BigQuery
+        bigquery_service = BigQueryService()
+        invoice = bigquery_service.get_invoice_details(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+        
+        # Check if vendor has NetSuite ID
+        vendor_id = invoice.get('vendor_id')
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'Invoice has no vendor matched'}), 400
+        
+        # Get vendor details
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        if not vendor or not vendor.get('netsuite_internal_id'):
+            return jsonify({'success': False, 'error': 'Vendor not synced to NetSuite'}), 400
+        
+        # Create bill in NetSuite
+        netsuite = NetSuiteService()
+        result = netsuite.create_vendor_bill({
+            'vendor_id': vendor.get('netsuite_internal_id'),
+            'invoice_number': invoice.get('invoice_id'),
+            'amount': float(invoice.get('amount', 0)),
+            'date': invoice.get('invoice_date'),
+            'currency': invoice.get('currency', 'USD'),
+            'memo': f"Auto-created from invoice {invoice_id}"
+        })
+        
+        if result and result.get('success'):
+            # Update BigQuery with NetSuite bill ID
+            from google.cloud import bigquery
+            client = bigquery_service.client
+            query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+            SET netsuite_bill_id = @bill_id
+            WHERE invoice_id = @invoice_id
+            """
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                    bigquery.ScalarQueryParameter("bill_id", "STRING", str(result.get('bill_id')))
+                ]
+            )
+            client.query(query, job_config=job_config).result()
+            
+            return jsonify({
+                'success': True,
+                'netsuite_bill_id': result.get('bill_id'),
+                'message': 'Bill created successfully in NetSuite'
+            })
+        else:
+            error_msg = result.get('error') if result else 'Failed to create bill'
+            return jsonify({'success': False, 'error': error_msg}), 500
+            
+    except Exception as e:
+        print(f"Error creating NetSuite bill: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/netsuite/vendor/create', methods=['POST'])
+def create_vendor_in_netsuite():
+    """Create vendor in NetSuite"""
+    try:
+        data = request.get_json()
+        vendor_id = data.get('vendor_id')
+        
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'vendor_id required'}), 400
+        
+        # Get vendor from BigQuery
+        bigquery_service = BigQueryService()
+        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 404
+        
+        # Prepare vendor data
+        email_val = vendor.get('emails')
+        primary_email = None
+        if isinstance(email_val, list) and len(email_val) > 0:
+            primary_email = email_val[0]
+        elif isinstance(email_val, str) and email_val:
+            primary_email = email_val.split(',')[0]
+        
+        phone_val = vendor.get('phone_numbers')
+        primary_phone = None
+        if isinstance(phone_val, list) and len(phone_val) > 0:
+            primary_phone = phone_val[0]
+        elif isinstance(phone_val, str) and phone_val:
+            primary_phone = phone_val.split(',')[0]
+        
+        vendor_sync_data = {
+            'vendor_id': vendor_id,
+            'name': vendor.get('global_name', ''),
+            'email': primary_email,
+            'phone': primary_phone,
+            'tax_id': vendor.get('tax_id'),
+            'external_id': f"VENDOR_{vendor_id}",
+            'address': vendor.get('address')
+        }
+        
+        # Create vendor in NetSuite
+        netsuite = NetSuiteService()
+        sync_result = netsuite.sync_vendor_to_netsuite(vendor_sync_data)
+        
+        if sync_result and sync_result.get('success'):
+            netsuite_vendor_id = sync_result.get('netsuite_id')
+            # Update BigQuery with NetSuite ID
+            bigquery_service.update_vendor_netsuite_id(vendor_id, netsuite_vendor_id)
+            
+            return jsonify({
+                'success': True,
+                'netsuite_id': netsuite_vendor_id,
+                'message': 'Vendor created successfully in NetSuite'
+            })
+        else:
+            error_msg = sync_result.get('error') if sync_result else 'Failed to create vendor'
+            return jsonify({'success': False, 'error': error_msg}), 500
+            
+    except Exception as e:
+        print(f"Error creating NetSuite vendor: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/process', methods=['POST'])
 def process_invoice():
     """
@@ -2819,7 +3065,7 @@ def sync_vendor_to_netsuite(vendor_id):
 # ===== NEW NETSUITE CREATE/UPDATE ENDPOINTS =====
 
 @app.route('/api/netsuite/vendor/<vendor_id>/create', methods=['POST'])
-def create_vendor_in_netsuite(vendor_id):
+def create_vendor_in_netsuite_direct(vendor_id):
     """
     Creates a NEW vendor in NetSuite (even if one exists)
     Always creates a new record without checking for duplicates
@@ -2985,8 +3231,8 @@ def update_vendor_in_netsuite(vendor_id):
             'vendor_id': vendor_id
         }), 500
 
-@app.route('/api/netsuite/invoice/<invoice_id>/create', methods=['POST'])
-def create_invoice_in_netsuite(invoice_id):
+@app.route('/api/netsuite/invoice/<invoice_id>/create-new', methods=['POST'])
+def create_invoice_in_netsuite_new(invoice_id):
     """
     Creates a NEW invoice/bill in NetSuite (even if one exists)
     """

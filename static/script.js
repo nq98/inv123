@@ -1015,33 +1015,32 @@ function displayResults(data) {
     const validated = data.validated_data || {};
     const rawEntities = data.layers?.layer1_document_ai?.entities || {};
     
-    // Check vendor matching status
-    const vendorMatch = data.vendor_match;
-    const hasVendorMatch = vendorMatch && vendorMatch.vendor_id && vendorMatch.confidence > 0.5;
-    
     html += `<span class="success-badge">✓ Processing Complete</span>`;
     
-    // Add vendor matching status
-    if (hasVendorMatch) {
-        html += `
-            <div class="vendor-match-success">
-                <strong>✅ Vendor Matched:</strong> ${vendorMatch.vendor_name} (${Math.round(vendorMatch.confidence * 100)}% confidence)
-                <button onclick="syncInvoiceToNetSuite('${currentInvoiceId}')" class="btn btn-primary" style="margin-left: 20px;">
-                    🔄 Sync to NetSuite
-                </button>
-            </div>
-        `;
-    } else {
-        html += `
-            <div class="vendor-match-warning">
-                <strong>⚠️ Vendor Matching Required</strong>
-                <p>No vendor match found. Please select or create a vendor.</p>
-                <button onclick="showVendorMatchingModal(currentInvoiceData)" class="btn btn-primary">
-                    🔍 Match Vendor
-                </button>
-            </div>
-        `;
-    }
+    // Prepare invoice data for workflow
+    const invoiceWorkflowData = {
+        invoice_id: currentInvoiceId,
+        vendor_name: validated.vendorName || validated.supplier_name || 'Unknown',
+        amount: validated.totalAmount || validated.total_amount || '0',
+        currency: validated.currency || 'USD',
+        invoice_date: validated.invoiceDate || validated.invoice_date || 'N/A',
+        vendor_match: data.vendor_match,
+        validated_data: validated
+    };
+    
+    // Start the perfect workflow instead of showing buttons
+    html += `
+        <div class="workflow-starting">
+            <h3>📋 Invoice Details</h3>
+            <table class="invoice-summary">
+                <tr><td><strong>Invoice ID:</strong></td><td>${invoiceWorkflowData.invoice_id}</td></tr>
+                <tr><td><strong>Vendor:</strong></td><td>${invoiceWorkflowData.vendor_name}</td></tr>
+                <tr><td><strong>Amount:</strong></td><td>${invoiceWorkflowData.currency} ${invoiceWorkflowData.amount}</td></tr>
+                <tr><td><strong>Date:</strong></td><td>${invoiceWorkflowData.invoice_date}</td></tr>
+            </table>
+            <p style="margin-top: 20px; font-style: italic;">Starting guided workflow...</p>
+        </div>
+    `;
     
     // ALWAYS SHOW GCS LINK IF AVAILABLE (regardless of invoice ID)
     const invoiceId = validated.invoiceId || validated.invoiceNumber || data.invoice_id || "Unknown";
@@ -1501,6 +1500,13 @@ function displayResults(data) {
     `;
     
     resultContent.innerHTML = html;
+    
+    // Start the perfect workflow after displaying results
+    if (typeof invoiceWorkflow !== 'undefined') {
+        setTimeout(() => {
+            invoiceWorkflow.startWorkflow(invoiceWorkflowData);
+        }, 1500); // Small delay to let user see the invoice details first
+    }
 }
 
 function buildLayerStatusView(layers) {

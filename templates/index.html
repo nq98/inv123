@@ -7,40 +7,35 @@
     <link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
-    <!-- ==================== VENDOR MATCHING MODAL ==================== -->
-    <div id="vendorMatchModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <span class="close" onclick="closeVendorModal()">&times;</span>
-            <h2>🔍 Vendor Matching Required</h2>
+    <!-- ==================== STEP 1: VENDOR SELECTION MODAL (REQUIRED) ==================== -->
+    <div id="vendorSelectionModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <h2>🔍 Step 1: Vendor Selection (Required)</h2>
             <div class="modal-body">
-                <div class="alert-info">
-                    <p><strong>Invoice Details:</strong></p>
-                    <p id="modalInvoiceInfo"></p>
-                    <p><strong>Vendor from Invoice:</strong> <span id="modalVendorName"></span></p>
-                </div>
+                <div id="invoiceVendorInfo" class="alert-info"></div>
                 
                 <div class="vendor-search-section">
-                    <h3>Select Existing Vendor</h3>
-                    <input type="text" id="vendorSearchInput" placeholder="Type vendor name to search..." 
-                           class="form-input" oninput="searchVendorsForMatching(this.value)">
-                    <div id="vendorSearchResults" class="vendor-results"></div>
+                    <h3>Option 1: Select Existing Vendor</h3>
+                    <input type="text" id="vendorSearchBox" placeholder="Type vendor name to search..." 
+                           class="form-input" oninput="searchVendorsForSelection(this.value)">
+                    <div id="vendorSearchResultsList" class="vendor-results"></div>
                 </div>
                 
-                <div class="or-divider">- OR -</div>
+                <div class="or-divider">━━━ OR ━━━</div>
                 
                 <div class="create-vendor-section">
-                    <h3>Create New Vendor</h3>
-                    <button onclick="showCreateVendorForm()" class="btn btn-secondary">
+                    <h3>Option 2: Create New Vendor</h3>
+                    <button onclick="showVendorCreationForm()" class="btn btn-secondary">
                         ➕ Create New Vendor
                     </button>
-                    <div id="createVendorForm" style="display: none; margin-top: 1rem;">
-                        <input type="text" id="newVendorName" placeholder="Vendor Name" class="form-input" required>
+                    <div id="createVendorFormSection" style="display: none; margin-top: 1rem;">
+                        <input type="text" id="newVendorName" placeholder="Vendor Name *" class="form-input" required>
                         <input type="email" id="newVendorEmail" placeholder="Email (optional)" class="form-input">
                         <input type="text" id="newVendorPhone" placeholder="Phone (optional)" class="form-input">
                         <input type="text" id="newVendorTaxId" placeholder="Tax ID (optional)" class="form-input">
                         <textarea id="newVendorAddress" placeholder="Address (optional)" class="form-input"></textarea>
-                        <button onclick="createAndMatchVendor()" class="btn btn-primary">
-                            Create & Match Vendor
+                        <button onclick="createNewVendorAndMatch()" class="btn btn-primary">
+                            Create & Select Vendor
                         </button>
                     </div>
                 </div>
@@ -48,38 +43,23 @@
         </div>
     </div>
 
-    <!-- ==================== WORKFLOW STATUS MODAL ==================== -->
-    <div id="workflowModal" class="modal" style="display: none;">
-        <div class="modal-content workflow-modal">
-            <span class="close" onclick="closeWorkflowModal()">&times;</span>
-            <h2>📊 Invoice → NetSuite Workflow</h2>
-            <div class="workflow-steps">
-                <div class="workflow-step" id="step-upload">
-                    <span class="step-icon">📤</span>
-                    <span class="step-title">Upload Invoice</span>
-                    <span class="step-status">✅</span>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step" id="step-match">
-                    <span class="step-icon">🔍</span>
-                    <span class="step-title">Match Vendor</span>
-                    <span class="step-status" id="match-status">⏳</span>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step" id="step-netsuite-check">
-                    <span class="step-icon">🔄</span>
-                    <span class="step-title">Check NetSuite</span>
-                    <span class="step-status" id="netsuite-check-status">⏳</span>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step" id="step-create">
-                    <span class="step-icon">✨</span>
-                    <span class="step-title">Create Bill</span>
-                    <span class="step-status" id="create-status">⏳</span>
-                </div>
+    <!-- ==================== STEP 2: NETSUITE CHECK MODAL ==================== -->
+    <div id="netsuiteCheckModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <h2>🔄 Step 2: NetSuite Vendor Check</h2>
+            <div class="modal-body">
+                <div id="netsuiteCheckStatus"></div>
             </div>
-            <div class="workflow-message" id="workflowMessage"></div>
-            <div class="workflow-actions" id="workflowActions"></div>
+        </div>
+    </div>
+
+    <!-- ==================== STEP 3: INVOICE CREATION MODAL ==================== -->
+    <div id="invoiceCreationModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <h2>📋 Step 3: Create Vendor Bill in NetSuite</h2>
+            <div class="modal-body">
+                <div id="invoiceCreationContent"></div>
+            </div>
         </div>
     </div>
     
@@ -1334,5 +1314,6 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
     </main>
 
     <script src="/static/script.js?v=9"></script>
+    <script src="/static/invoice_workflow.js?v=1"></script>
 </body>
 </html>
