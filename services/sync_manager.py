@@ -365,20 +365,52 @@ class SyncManager:
                 duration_seconds=duration
             )
             
-            # Update sync status in BigQuery
-            update_query = f"""
-            UPDATE `{self.project_id}.vendors_ai.global_vendors`
-            SET 
-                custom_attributes = JSON_SET(
-                    IFNULL(custom_attributes, JSON '{{}}'),
-                    '$.netsuite_internal_id', @netsuite_id,
-                    '$.netsuite_sync_status', @sync_status,
-                    '$.netsuite_last_sync', CAST(CURRENT_TIMESTAMP() AS STRING),
-                    '$.netsuite_sync_error', @sync_error
-                ),
-                last_updated = CURRENT_TIMESTAMP()
-            WHERE vendor_id = @vendor_id
-            """
+            # Update sync status in BigQuery using proper BigQuery JSON syntax
+            if result.get('success'):
+                # Build JSON object for successful sync
+                update_query = f"""
+                UPDATE `{self.project_id}.vendors_ai.global_vendors`
+                SET 
+                    custom_attributes = TO_JSON_STRING(STRUCT(
+                        IFNULL(JSON_VALUE(custom_attributes, '$.source'), 'API') AS source,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.address'), '') AS address,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.email'), '') AS email,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.phone'), '') AS phone,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.tax_id'), '') AS tax_id,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.external_id'), '') AS external_id,
+                        @netsuite_id AS netsuite_internal_id,
+                        'synced' AS netsuite_sync_status,
+                        CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync
+                    )),
+                    netsuite_internal_id = @netsuite_id,
+                    netsuite_sync_status = 'synced',
+                    netsuite_last_sync = CURRENT_TIMESTAMP(),
+                    last_updated = CURRENT_TIMESTAMP()
+                WHERE vendor_id = @vendor_id
+                """
+            else:
+                # Build JSON object for failed sync
+                update_query = f"""
+                UPDATE `{self.project_id}.vendors_ai.global_vendors`
+                SET 
+                    custom_attributes = TO_JSON_STRING(STRUCT(
+                        IFNULL(JSON_VALUE(custom_attributes, '$.source'), 'API') AS source,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.address'), '') AS address,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.email'), '') AS email,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.phone'), '') AS phone,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.tax_id'), '') AS tax_id,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.external_id'), '') AS external_id,
+                        IFNULL(JSON_VALUE(custom_attributes, '$.netsuite_internal_id'), NULL) AS netsuite_internal_id,
+                        'failed' AS netsuite_sync_status,
+                        CAST(CURRENT_TIMESTAMP() AS STRING) AS netsuite_last_sync,
+                        @sync_error AS netsuite_sync_error
+                    )),
+                    netsuite_sync_status = 'failed',
+                    netsuite_sync_error = @sync_error,
+                    netsuite_last_sync = CURRENT_TIMESTAMP(),
+                    last_updated = CURRENT_TIMESTAMP()
+                WHERE vendor_id = @vendor_id
+                """
             
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[

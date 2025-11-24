@@ -3962,6 +3962,80 @@ def get_netsuite_status():
             'connected': False
         }), 500
 
+@app.route('/api/repair/vendor/<vendor_id>/netsuite/<netsuite_id>', methods=['POST'])
+def repair_vendor_netsuite_id(vendor_id, netsuite_id):
+    """Emergency repair endpoint to fix vendor NetSuite ID in BigQuery"""
+    try:
+        # Initialize BigQuery service
+        bigquery_service = BigQueryService()
+        
+        # Build the repair query - using proper JSON literal syntax for BigQuery
+        from datetime import datetime
+        import json
+        current_time = datetime.now().isoformat()
+        
+        # Create the JSON object properly
+        json_obj = {
+            "source": "API",
+            "address": "25-16 27th St. Apt. 1R Astoria New York 11102 United States",
+            "email": "contact@nickdematteo.com",
+            "phone": "917.573.8530",
+            "tax_id": "",
+            "external_id": f"VENDOR_{vendor_id}",
+            "netsuite_internal_id": netsuite_id,
+            "netsuite_sync_status": "synced",
+            "netsuite_last_sync": current_time
+        }
+        json_str = json.dumps(json_obj)
+        
+        update_query = f"""
+        UPDATE `invoicereader-477008.vendors_ai.global_vendors`
+        SET 
+            custom_attributes = JSON '{json_str}',
+            last_updated = CURRENT_TIMESTAMP()
+        WHERE vendor_id = '{vendor_id}'
+        """
+        
+        # Execute the repair
+        job = bigquery_service.client.query(update_query)
+        job.result()  # Wait for completion
+        
+        # Verify the fix - only select fields that exist in the table
+        verify_query = f"""
+        SELECT vendor_id, global_name, 
+               JSON_VALUE(custom_attributes, '$.netsuite_internal_id') AS netsuite_internal_id,
+               JSON_VALUE(custom_attributes, '$.netsuite_sync_status') AS netsuite_sync_status
+        FROM `invoicereader-477008.vendors_ai.global_vendors`
+        WHERE vendor_id = '{vendor_id}'
+        """
+        
+        results = bigquery_service.client.query(verify_query).result()
+        vendor_data = None
+        for row in results:
+            vendor_data = {
+                'vendor_id': row.vendor_id,
+                'global_name': row.global_name,
+                'netsuite_internal_id': row.netsuite_internal_id,
+                'netsuite_sync_status': row.netsuite_sync_status
+            }
+            break
+        
+        if vendor_data and vendor_data['netsuite_internal_id'] == netsuite_id:
+            return jsonify({
+                'success': True,
+                'message': f'Successfully repaired vendor {vendor_id} with NetSuite ID {netsuite_id}',
+                'vendor': vendor_data
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Repair verification failed',
+                'vendor': vendor_data
+            }), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/netsuite/activities', methods=['GET'])
 def get_netsuite_activities():
     """
