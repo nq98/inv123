@@ -375,10 +375,28 @@ class InvoiceWorkflow {
     // Create invoice in NetSuite
     async createInvoiceInNetSuite() {
         const contentDiv = document.getElementById('invoiceCreationContent');
+        
+        // Validate that we have a valid invoice_id
+        if (!this.currentInvoice || !this.currentInvoice.invoice_id) {
+            contentDiv.innerHTML = `
+                <div class="error-message">
+                    <h3>❌ Error: Invalid Invoice</h3>
+                    <p>Cannot create bill in NetSuite - invoice ID is missing.</p>
+                    <p>Invoice data: ${JSON.stringify(this.currentInvoice || {})}</p>
+                    <button onclick="location.reload()" class="btn btn-secondary">
+                        🔄 Start Over
+                    </button>
+                </div>
+            `;
+            console.error('Cannot create invoice in NetSuite - invoice_id is missing:', this.currentInvoice);
+            return;
+        }
+        
         contentDiv.innerHTML = `
             <div class="creating-invoice">
                 <div class="spinner"></div>
                 <p>Creating vendor bill in NetSuite...</p>
+                <p>Invoice ID: ${this.currentInvoice.invoice_id}</p>
             </div>
         `;
         

@@ -1017,9 +1017,9 @@ function displayResults(data) {
     
     html += `<span class="success-badge">✓ Processing Complete</span>`;
     
-    // Prepare invoice data for workflow
+    // Prepare invoice data for workflow - ensure invoice_id is always set
     const invoiceWorkflowData = {
-        invoice_id: currentInvoiceId,
+        invoice_id: currentInvoiceId || validated.invoiceId || validated.invoiceNumber || data.invoice_id || `INV_${Date.now()}`,
         vendor_name: validated.vendorName || validated.supplier_name || 'Unknown',
         amount: validated.totalAmount || validated.total_amount || '0',
         currency: validated.currency || 'USD',
@@ -1027,6 +1027,11 @@ function displayResults(data) {
         vendor_match: data.vendor_match,
         validated_data: validated
     };
+    
+    // Log if invoice_id is generated
+    if (!currentInvoiceId) {
+        console.warn('Invoice ID was missing, generated a temporary ID:', invoiceWorkflowData.invoice_id);
+    }
     
     // Start the perfect workflow instead of showing buttons
     html += `
@@ -3890,4 +3895,134 @@ window.onclick = function(event) {
     if (event.target.className === 'modal') {
         event.target.style.display = 'none';
     }
+}
+
+/* ==================== NETSUITE SYNC FUNCTIONS ==================== */
+async function syncVendorToNetSuite(vendorId, force = false) {
+    if (!vendorId) {
+        console.error('No vendor ID provided for sync');
+        return;
+    }
+
+    const confirmed = confirm(`Sync vendor ${vendorId} to NetSuite?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/netsuite/vendor/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vendor_id: vendorId,
+                force_resync: force
+            })
+        });
+
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert(`✅ Vendor synced to NetSuite!\nNetSuite ID: ${result.netsuite_id}`);
+            // Refresh vendor list to show updated sync status
+            searchVendors();
+        } else {
+            alert(`❌ Sync failed: ${result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        alert(`❌ Sync error: ${error.message}`);
+    }
+}
+
+async function syncAllVendorsToNetSuite(vendorIds) {
+    if (!vendorIds || vendorIds.length === 0) {
+        alert('No vendors to sync');
+        return;
+    }
+
+    const confirmed = confirm(`Sync ${vendorIds.length} vendors to NetSuite?\nThis may take a few minutes.`);
+    if (!confirmed) return;
+
+    // Show progress modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        z-index: 10000;
+        min-width: 400px;
+    `;
+    modal.innerHTML = `
+        <h3>Syncing Vendors to NetSuite</h3>
+        <div id="sync-progress-container" style="margin-top: 20px;">
+            <div id="sync-status" style="color: #666; margin-bottom: 10px;">Initializing...</div>
+            <div style="background: #f0f0f0; border-radius: 5px; height: 30px; overflow: hidden;">
+                <div id="sync-progress-bar" style="background: #667eea; height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+            <div id="sync-details" style="margin-top: 15px; max-height: 200px; overflow-y: auto;"></div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Connect to SSE endpoint for progress updates
+    const eventSource = new EventSource('/api/vendors/csv/sync-netsuite');
+    let syncResults = { success: 0, failed: 0, skipped: 0 };
+
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        
+        if (data.status === 'progress') {
+            const percent = Math.round(data.progress * 100);
+            document.getElementById('sync-progress-bar').style.width = percent + '%';
+            document.getElementById('sync-status').innerHTML = `
+                Processing: ${data.current}/${data.total} vendors (${percent}%)
+                <br>✅ Success: ${syncResults.success} | ❌ Failed: ${syncResults.failed} | ⚠️ Skipped: ${syncResults.skipped}
+            `;
+        } else if (data.status === 'vendor_result') {
+            if (data.success) syncResults.success++;
+            else if (data.skipped) syncResults.skipped++;
+            else syncResults.failed++;
+            
+            const detailsDiv = document.getElementById('sync-details');
+            const icon = data.success ? '✅' : data.skipped ? '⚠️' : '❌';
+            detailsDiv.innerHTML += `<div>${icon} ${data.vendor_name}: ${data.message}</div>`;
+            detailsDiv.scrollTop = detailsDiv.scrollHeight;
+        } else if (data.status === 'complete') {
+            document.getElementById('sync-status').innerHTML = `
+                <strong style="color: green;">Sync Complete!</strong>
+                <br>✅ Success: ${syncResults.success} | ❌ Failed: ${syncResults.failed} | ⚠️ Skipped: ${syncResults.skipped}
+            `;
+            document.getElementById('sync-progress-bar').style.width = '100%';
+            
+            // Add close button
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = 'margin-top: 20px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;';
+            closeBtn.onclick = () => {
+                document.body.removeChild(modal);
+                searchVendors(); // Refresh vendor list
+            };
+            modal.appendChild(closeBtn);
+            
+            eventSource.close();
+        } else if (data.status === 'error') {
+            document.getElementById('sync-status').innerHTML = `<strong style="color: red;">Error: ${data.error}</strong>`;
+            eventSource.close();
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error('SSE Error:', error);
+        document.getElementById('sync-status').innerHTML = '<strong style="color: red;">Connection lost</strong>';
+        eventSource.close();
+    };
+
+    // Send the sync request with vendor IDs
+    fetch('/api/vendors/csv/sync-netsuite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_ids: vendorIds })
+    });
 }

@@ -400,7 +400,8 @@ class BigQueryService:
         {where_clause}
         """
         
-        # Get paginated vendors with NetSuite sync status
+        # Get paginated vendors - only query columns that exist
+        # NetSuite sync fields will be handled separately or via custom_attributes
         vendors_query = f"""
         SELECT 
             vendor_id,
@@ -412,11 +413,6 @@ class BigQueryService:
             custom_attributes,
             source_system,
             netsuite_internal_id,
-            netsuite_sync_status,
-            netsuite_last_sync,
-            netsuite_sync_error,
-            payment_status,
-            payment_date,
             last_updated,
             created_at
         FROM `{self.full_table_id}`
@@ -462,23 +458,30 @@ class BigQueryService:
                 else:
                     custom_attrs = {}
                 
+                # Extract NetSuite sync info from custom_attributes if available
+                netsuite_sync_status = custom_attrs.get('netsuite_sync_status', 'not_synced')
+                netsuite_last_sync = custom_attrs.get('netsuite_last_sync', None)
+                netsuite_sync_error = custom_attrs.get('netsuite_sync_error', None)
+                payment_status = custom_attrs.get('payment_status', None)
+                payment_date = custom_attrs.get('payment_date', None)
+                
                 vendors.append({
                     "vendor_id": row.vendor_id,
                     "global_name": row.global_name,
-                    "normalized_name": row.normalized_name,
+                    "normalized_name": getattr(row, 'normalized_name', None),
                     "emails": list(row.emails) if row.emails else [],
                     "domains": list(row.domains) if row.domains else [],
                     "countries": list(row.countries) if row.countries else [],
                     "custom_attributes": custom_attrs,
-                    "source_system": row.source_system,
+                    "source_system": getattr(row, 'source_system', None),
                     "netsuite_internal_id": getattr(row, 'netsuite_internal_id', None),
-                    "netsuite_sync_status": getattr(row, 'netsuite_sync_status', None) or 'not_synced',
-                    "netsuite_last_sync": getattr(row, 'netsuite_last_sync', None).isoformat() if getattr(row, 'netsuite_last_sync', None) else None,
-                    "netsuite_sync_error": getattr(row, 'netsuite_sync_error', None),
-                    "payment_status": getattr(row, 'payment_status', None),
-                    "payment_date": getattr(row, 'payment_date', None).isoformat() if getattr(row, 'payment_date', None) else None,
-                    "last_updated": row.last_updated.isoformat() if row.last_updated else None,
-                    "created_at": row.created_at.isoformat() if row.created_at else None
+                    "netsuite_sync_status": netsuite_sync_status,
+                    "netsuite_last_sync": netsuite_last_sync,
+                    "netsuite_sync_error": netsuite_sync_error,
+                    "payment_status": payment_status,
+                    "payment_date": payment_date,
+                    "last_updated": row.last_updated.isoformat() if getattr(row, 'last_updated', None) else None,
+                    "created_at": row.created_at.isoformat() if getattr(row, 'created_at', None) else None
                 })
             
             return {

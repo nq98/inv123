@@ -127,7 +127,17 @@ class VertexSearchService:
             
             return results
         except Exception as e:
-            print(f"Error searching vendor: {e}")
+            error_str = str(e)
+            # Handle 404 errors gracefully - datastore may not exist
+            if '404' in error_str or 'NOT_FOUND' in error_str.upper() or 'not found' in error_str.lower():
+                print(f"⚠️ Vertex AI Search datastore not found or not configured. Continuing without RAG search.")
+                return []
+            # Handle permission errors
+            elif 'permission' in error_str.lower() or '403' in error_str:
+                print(f"⚠️ Permission denied for Vertex AI Search. Check service account permissions.")
+                return []
+            else:
+                print(f"⚠️ Error searching vendor in Vertex AI: {e}")
             return []
     
     def format_context(self, search_results):
@@ -215,7 +225,17 @@ class VertexSearchService:
             
             return results
         except Exception as e:
-            print(f"Error searching similar invoices: {e}")
+            error_str = str(e)
+            # Handle 404 errors gracefully - datastore may not exist
+            if '404' in error_str or 'NOT_FOUND' in error_str.upper() or 'not found' in error_str.lower():
+                print(f"⚠️ Vertex AI Search datastore not found. Skipping similar invoice search.")
+                return []
+            # Handle permission errors
+            elif 'permission' in error_str.lower() or '403' in error_str:
+                print(f"⚠️ Permission denied for Vertex AI Search. Check service account permissions.")
+                return []
+            else:
+                print(f"⚠️ Error searching similar invoices: {e}")
             return []
     
     def format_invoice_extraction_context(self, search_results):
