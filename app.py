@@ -1034,7 +1034,8 @@ def upload_invoice():
                     
                     # Build vendor match response with invoice and database vendor data
                     verdict = match_result.get('verdict')
-                    vendor_id = match_result.get('vendor_id')
+                    # CRITICAL FIX: Supreme Judge returns 'selected_vendor_id', not 'vendor_id'
+                    vendor_id = match_result.get('selected_vendor_id') or match_result.get('vendor_id')
                     
                     vendor_match_result = {
                         'verdict': verdict,
@@ -1063,7 +1064,7 @@ def upload_invoice():
                     # If match found, fetch database vendor details
                     if verdict == 'MATCH' and vendor_id:
                         try:
-                            vendor_id = match_result['vendor_id']
+                            # vendor_id already set correctly above from selected_vendor_id
                             print(f"✓ Fetching database vendor details for {vendor_id}...")
                             
                             # Query BigQuery for vendor details
@@ -1185,9 +1186,20 @@ def upload_invoice():
         
         # Extract invoice data (try multiple possible keys for invoice_id)
         invoice_id = validated_data.get('invoiceId') or validated_data.get('invoiceNumber') or 'Unknown'
-        total_amount = validated_data.get('totalAmount', 0)
-        currency_code = validated_data.get('currencyCode', 'USD')
-        invoice_date = validated_data.get('invoiceDate', None)
+        
+        # CRITICAL FIX: Extract amount from correct nested structure
+        totals = validated_data.get('totals', {})
+        total_amount = totals.get('total', 0) if totals else validated_data.get('totalAmount', 0)
+        
+        # Extract currency from totals or fallback to top level
+        currency_code = totals.get('currency', 'USD') if totals else validated_data.get('currencyCode', 'USD')
+        
+        # CRITICAL FIX: Try multiple possible date field names
+        invoice_date = (validated_data.get('invoiceDate') or 
+                       validated_data.get('documentDate') or 
+                       validated_data.get('issueDate') or 
+                       validated_data.get('invoice_date') or 
+                       None)
         vendor_data = validated_data.get('vendor', {})
         vendor_name = vendor_data.get('name', 'Unknown')
         
