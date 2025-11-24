@@ -41,16 +41,28 @@ async function simpleCreateBill(invoiceId) {
                 location.reload();
             }, 2000);
         } else {
-            // Error
-            button.innerHTML = '❌ Failed';
-            button.style.backgroundColor = '#ef4444';
-            
-            // Reset after 3 seconds
-            setTimeout(() => {
-                button.innerHTML = originalText;
-                button.disabled = false;
-                button.style.backgroundColor = '';
-            }, 3000);
+            // Check if it's because bill already exists (needs update)
+            if (result.needs_update || result.error?.includes('already exists')) {
+                // Bill already exists with wrong amount - reload to show Update button
+                button.innerHTML = '🔄 Bill exists - refreshing...';
+                button.style.backgroundColor = '#fbbf24';
+                
+                // Reload immediately to show the Update Bill button
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                // Other error
+                button.innerHTML = '❌ Failed';
+                button.style.backgroundColor = '#ef4444';
+                
+                // Reset after 3 seconds
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    button.style.backgroundColor = '';
+                }, 3000);
+            }
         }
     } catch (error) {
         // Network error

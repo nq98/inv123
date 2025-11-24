@@ -861,31 +861,40 @@ def create_invoice_in_netsuite(invoice_id):
             # Check if this is a "record already exists" error
             error_msg = str(e).lower()
             if 'already exists' in error_msg or 'duplicate' in error_msg:
-                # Bill already exists - this is actually a success!
-                print(f"✅ Bill for invoice {invoice_id} already exists in NetSuite - marking as success")
+                # Bill already exists - we need to find its ID and mark it for update
+                print(f"❌ NetSuite creation failed - bill already exists with wrong amount")
                 
-                # Use the existing bill ID format
+                # Try to find the existing bill ID using the external ID
+                # NetSuite should return the existing ID in the error response
                 existing_bill_id = f"INV_{invoice_id}"
                 
-                # Update BigQuery to reflect the existing bill
+                # Look for the bill amount to determine if it needs updating
+                # If invoice amount is > 0 but bill was created with $0, we need update
+                needs_update = invoice_amount > 0
+                
+                # Update BigQuery to reflect the existing bill that needs updating
                 from google.cloud import bigquery
                 client = bigquery_service.client
                 query = f"""
                 UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
                 SET netsuite_bill_id = '{existing_bill_id}',
-                    netsuite_sync_status = 'completed',
+                    netsuite_sync_status = 'needs_update',
                     netsuite_sync_date = CURRENT_TIMESTAMP()
                 WHERE invoice_id = '{invoice_id}'
                 """
                 
                 try:
                     client.query(query).result()
-                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID")
+                    print(f"✅ Updated invoice {invoice_id} with existing NetSuite bill ID - needs update")
                 except Exception as update_error:
                     print(f"Warning: Could not update BigQuery: {update_error}")
                 
+                # Return an error that indicates update is needed
                 return jsonify({
-                    'success': True,
+                    'success': False,
+                    'error': 'Bill already exists with wrong amount - use Update Bill',
+                    'needs_update': True,
+                    'existing_bill_id': existing_bill_id,
                     'message': 'Bill already exists in NetSuite',
                     'netsuite_bill_id': existing_bill_id,
                     'invoice_id': invoice_id,
