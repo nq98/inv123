@@ -2735,6 +2735,10 @@ def gmail_import_stream():
                 except Exception as ckpt_err:
                     print(f"⚠️ Could not create checkpoint: {ckpt_err}")
             
+            # Import time module for keepalive tracking
+            import time
+            from datetime import datetime, timedelta
+            
             yield send_event('progress', {'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})
             yield send_event('keepalive', {'ts': time.time()})  # Keepalive after each major step
             yield send_event('progress', {'type': 'status', 'message': f'⏰ Time range: Last {time_label}'})
@@ -2748,8 +2752,6 @@ def gmail_import_stream():
             yield send_event('keepalive', {'ts': time.time()})
             
             # Get ACCURATE total count by fetching all message IDs in time range
-            from datetime import datetime, timedelta
-            import time
             after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
             yield send_event('progress', {'type': 'status', 'message': f'\n📊 Counting total emails in last {time_label}...'})
             
