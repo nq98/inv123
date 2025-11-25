@@ -1378,21 +1378,22 @@ function displayInvoiceData(invoices) {
                     </div>
                 </div>
                 
-                <!-- Invoice Timeline Section -->
-                <div style="margin-top: 15px; padding: 15px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; border: 1px solid #dee2e6;">
+                <!-- Invoice Timeline Section - Bill Lifecycle Tracking -->
+                <div style="margin-top: 15px; padding: 15px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 8px; border: 2px solid #1976d2; box-shadow: 0 2px 8px rgba(25,118,210,0.15);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 18px;">📊</span>
-                            <strong style="color: #495057;">Invoice Timeline</strong>
+                            <span style="font-size: 20px;">📊</span>
+                            <strong style="color: #1565c0; font-size: 15px;">Bill Lifecycle Timeline</strong>
+                            <span style="font-size: 11px; color: #1976d2; background: white; padding: 2px 8px; border-radius: 10px; border: 1px solid #1976d2;">Approvals & Payments</span>
                         </div>
                         <button onclick="loadInvoiceTimeline('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${globalIdx})" 
-                                style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                            🔄 Refresh
+                                style="padding: 6px 12px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+                            🔄 Refresh Timeline
                         </button>
                     </div>
-                    <div id="invoiceTimeline${globalIdx}" style="min-height: 40px;">
-                        <div style="color: #6c757d; font-size: 13px; text-align: center; padding: 15px;">
-                            <span style="opacity: 0.7;">Loading timeline...</span>
+                    <div id="invoiceTimeline${globalIdx}" style="min-height: 50px; background: white; border-radius: 6px; padding: 10px;">
+                        <div style="color: #1976d2; font-size: 13px; text-align: center; padding: 15px;">
+                            <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Loading bill lifecycle events...
                         </div>
                     </div>
                 </div>
