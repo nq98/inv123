@@ -903,17 +903,29 @@ p {{ margin: 4px 0; }}
                             'reasoning': f'Auth-wall fast-exit: URL contains {pattern} (no token = requires login)'
                         }
             
-            # FAST PRE-CHECK 1: Skip obvious non-invoice images (no AI needed)
-            if any(x in url_lower for x in ['/icons/', '/images/', '/assets/', '/logos/', '/notifications/icons/']):
-                if any(url_lower.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg']):
-                    return {
-                        'success': False,
-                        'type': 'skipped',
-                        'filename': None,
-                        'data': None,
-                        'link_classification': 'not_invoice',
-                        'reasoning': 'Fast-skip: Decoration image/icon (not invoice)'
-                    }
+            # FAST PRE-CHECK 1: Skip obvious non-invoice images (no AI needed) - EXPANDED
+            # Check for image hosting patterns
+            image_path_patterns = [
+                '/icons/', '/images/', '/assets/', '/logos/', '/notifications/icons/',
+                '/static/', '/img/', '/media/', '/cdn/', '/avatar/', '/thumb/',
+                'stripe-images.s3', 'images.s3', '-images.s3', 'cdn.', 'static.',
+                '/unsubscribe', '/tracking', '/beacon', '/pixel', '/click/',
+                'mailtrack', 'sendgrid', 'mailchimp', 'campaign-archive'
+            ]
+            
+            is_image_url = any(p in url_lower for p in image_path_patterns)
+            is_image_ext = any(url_lower.endswith(ext) or f'{ext}?' in url_lower 
+                              for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'])
+            
+            if is_image_url or is_image_ext:
+                return {
+                    'success': False,
+                    'type': 'skipped',
+                    'filename': None,
+                    'data': None,
+                    'link_classification': 'not_invoice',
+                    'reasoning': 'Fast-skip: Image/icon/tracking URL (not invoice)'
+                }
             
             # FAST PRE-CHECK 2: Direct PDF links (no AI needed)
             if url_lower.endswith('.pdf') or '/pdf?' in url_lower or '/pdf/' in url_lower:
