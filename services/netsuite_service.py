@@ -98,6 +98,65 @@ class NetSuiteService:
         
         logger.info(f"NetSuite service initialized for account: {self.account_id}")
     
+    def track_event(self, entity_type: str, entity_id: str = None, netsuite_id: str = None,
+                    action: str = None, request_data: Dict = None, response_data: Dict = None,
+                    error_message: str = None) -> bool:
+        """
+        Track a NetSuite event to BigQuery for auditing
+        
+        Args:
+            entity_type: Type of entity (bill, vendor, payment)
+            entity_id: Local entity ID
+            netsuite_id: NetSuite internal ID
+            action: Action performed (CREATE, UPDATE, etc.)
+            request_data: Request payload sent to NetSuite
+            response_data: Response received from NetSuite
+            error_message: Error message if operation failed
+            
+        Returns:
+            True if event was logged successfully
+        """
+        try:
+            if not self.bigquery:
+                logger.warning("BigQuery not available for event tracking")
+                return False
+            
+            status = 'FAILED' if error_message else 'SUCCESS'
+            
+            event_category = 'BILL' if 'bill' in entity_type.lower() else \
+                            'VENDOR' if 'vendor' in entity_type.lower() else \
+                            'PAYMENT' if 'payment' in entity_type.lower() else 'OTHER'
+            
+            direction = 'OUTBOUND' if action in ['CREATE', 'UPDATE', 'SYNC', 'SEND'] else 'INBOUND'
+            
+            from datetime import datetime
+            event = {
+                'event_id': str(uuid.uuid4()),
+                'timestamp': datetime.utcnow().isoformat(),
+                'direction': direction,
+                'event_type': f"{entity_type.upper()}_{action}" if action else entity_type.upper(),
+                'event_category': event_category,
+                'status': status,
+                'entity_type': entity_type,
+                'entity_id': entity_id,
+                'netsuite_id': netsuite_id,
+                'action': action,
+                'request_data': json.dumps(request_data) if request_data else None,
+                'response_data': json.dumps(response_data) if response_data else None,
+                'error_message': error_message
+            }
+            
+            self.bigquery.ensure_netsuite_events_table()
+            table_id = f"{self.bigquery.project_id}.vendors_ai.netsuite_events"
+            self.bigquery.client.insert_rows_json(table_id, [event])
+            
+            logger.info(f"✓ Tracked event: {event_category} {action} for {entity_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to track event: {e}")
+            return False
+    
     def _generate_oauth_signature(self, method: str, url: str, oauth_params: Dict, 
                                  query_params: Dict = None) -> str:
         """
