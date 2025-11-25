@@ -2299,6 +2299,7 @@ def gmail_import_stream():
                     # Process links with AI-semantic intelligent processing
                     link_success = False
                     all_links_auth_failed = True
+                    all_screenshots_failed = True  # Track if all web_receipt screenshots failed
                     
                     for link_url in links[:2]:  # Limit to first 2 links per email
                         yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
@@ -2411,6 +2412,8 @@ def gmail_import_stream():
                             # Processing failed - show why
                             link_type = link_result.get('type', 'failed')
                             reasoning = link_result['reasoning']
+                            link_classification = link_result.get('link_classification', {})
+                            classified_as = link_classification.get('link_type', 'unknown')
                             
                             # Check if this link was skipped as not an invoice (icon, logo, etc)
                             if link_type == 'skipped':
@@ -2423,12 +2426,21 @@ def gmail_import_stream():
                                     pass  # Keep all_links_auth_failed = True
                                 else:
                                     all_links_auth_failed = False
+                                
+                                # Check if this was a web_receipt that failed to screenshot (expired token, HTTP error)
+                                if classified_as == 'web_receipt' and ('http' in reasoning.lower() or 'screenshot' in reasoning.lower() or 'err_' in reasoning.lower()):
+                                    print(f"[DEBUG] Web receipt screenshot failed: {reasoning[:100]}")
+                                    # Keep all_screenshots_failed = True
+                                else:
+                                    all_screenshots_failed = False
                     
-                    # If we had links but all failed due to authentication, try HTML body extraction
-                    print(f"[DEBUG Stage 3] FALLBACK CHECK: links={len(links) if links else 0}, link_success={link_success}, attachments={len(attachments) if attachments else 0}, all_links_auth_failed={all_links_auth_failed}")
-                    if links and not link_success and not attachments and all_links_auth_failed:
+                    # If we had links but all failed (auth OR screenshot failures), try HTML body extraction
+                    should_fallback = all_links_auth_failed or all_screenshots_failed
+                    print(f"[DEBUG Stage 3] FALLBACK CHECK: links={len(links) if links else 0}, link_success={link_success}, attachments={len(attachments) if attachments else 0}, all_links_auth_failed={all_links_auth_failed}, all_screenshots_failed={all_screenshots_failed}, should_fallback={should_fallback}")
+                    if links and not link_success and not attachments and should_fallback:
                         print(f"[DEBUG Stage 3] FALLBACK TRIGGERED - attempting email body extraction")
-                        yield send_event('progress', {'type': 'info', 'message': f'  📧 Links require auth, trying email body extraction...'})
+                        fallback_reason = "expired/inaccessible" if all_screenshots_failed else "require auth"
+                        yield send_event('progress', {'type': 'info', 'message': f'  📧 Links {fallback_reason}, trying email body extraction...'})
                         
                         html_body = gmail_service.extract_html_body(message)
                         plain_text_fallback = None
