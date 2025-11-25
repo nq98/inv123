@@ -977,34 +977,48 @@ class BigQueryService:
             metadata: Optional dict with extra info
         """
         try:
+            import json as json_module
             events_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.netsuite_events"
             
-            row = {
-                "event_id": str(uuid.uuid4()),
-                "timestamp": datetime.utcnow().isoformat(),
-                "direction": "OUTBOUND",
-                "event_type": event_type,
-                "event_category": "BILL",
-                "status": status,
-                "entity_type": "invoice",
-                "entity_id": invoice_id,
-                "netsuite_id": netsuite_id,
-                "action": event_type.lower().replace('_', ' '),
-                "error_message": description if status == 'FAILED' else None,
-                "metadata": metadata or {}
-            }
+            # Convert metadata to JSON string for BigQuery
+            metadata_json = json_module.dumps(metadata) if metadata else None
             
-            errors = self.client.insert_rows_json(events_table_id, [row])
+            # Use SQL INSERT to handle JSON properly
+            insert_query = f"""
+            INSERT INTO `{events_table_id}` 
+            (event_id, timestamp, direction, event_type, event_category, status, 
+             entity_type, entity_id, netsuite_id, action, error_message, metadata)
+            VALUES 
+            (@event_id, CURRENT_TIMESTAMP(), @direction, @event_type, @event_category, @status,
+             @entity_type, @entity_id, @netsuite_id, @action, @error_message, 
+             PARSE_JSON(@metadata))
+            """
             
-            if errors:
-                print(f"⚠️ Error logging timeline event: {errors}")
-                return False
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("event_id", "STRING", str(uuid.uuid4())),
+                    bigquery.ScalarQueryParameter("direction", "STRING", "INBOUND"),
+                    bigquery.ScalarQueryParameter("event_type", "STRING", event_type),
+                    bigquery.ScalarQueryParameter("event_category", "STRING", "BILL"),
+                    bigquery.ScalarQueryParameter("status", "STRING", status),
+                    bigquery.ScalarQueryParameter("entity_type", "STRING", "bill"),
+                    bigquery.ScalarQueryParameter("entity_id", "STRING", invoice_id),
+                    bigquery.ScalarQueryParameter("netsuite_id", "STRING", netsuite_id),
+                    bigquery.ScalarQueryParameter("action", "STRING", event_type.lower().replace('_', ' ')),
+                    bigquery.ScalarQueryParameter("error_message", "STRING", description if status == 'FAILED' else None),
+                    bigquery.ScalarQueryParameter("metadata", "STRING", metadata_json or '{}'),
+                ]
+            )
+            
+            self.client.query(insert_query, job_config=job_config).result()
             
             print(f"✓ Logged timeline event: {event_type} for invoice {invoice_id}")
             return True
             
         except Exception as e:
             print(f"❌ Error logging timeline event: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def query(self, sql_query, params=None):
