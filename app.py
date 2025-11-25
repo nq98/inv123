@@ -2155,25 +2155,35 @@ def gmail_import_stream():
                     links = gmail_service.extract_links_from_body(message)
                     
                     if not attachments and not links:
-                        yield send_event('progress', {'type': 'info', 'message': f'  📧 No attachments/links found, trying HTML body extraction...'})
+                        yield send_event('progress', {'type': 'info', 'message': f'  📧 No attachments/links found, trying email body extraction...'})
+                        
                         html_body = gmail_service.extract_html_body(message)
+                        plain_text_body = None
+                        
+                        if not html_body:
+                            yield send_event('progress', {'type': 'info', 'message': '  📝 No HTML found, trying plain text...'})
+                            plain_text_body = gmail_service.extract_plain_text_body(message)
+                            if plain_text_body:
+                                html_body = gmail_service.plain_text_to_html(plain_text_body, subject, sender)
+                                yield send_event('progress', {'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
+                        
                         if html_body:
-                            yield send_event('progress', {'type': 'status', 'message': '  📸 Converting email body to image...'})
-                            html_result = gmail_service.html_to_image(html_body, subject)
-                            if html_result:
-                                filename, image_data = html_result
+                            yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
+                            pdf_result = gmail_service.html_to_pdf(html_body, subject)
+                            if pdf_result:
+                                filename, pdf_data = pdf_result
                                 secure_name = secure_filename(filename)
                                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
                                 
                                 with open(filepath, 'wb') as f:
-                                    f.write(image_data)
+                                    f.write(pdf_data)
                                 
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body)...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body PDF)...'})
                                 yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
                                 yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
                                 
                                 try:
-                                    invoice_result = processor.process_local_file(filepath, 'image/png')
+                                    invoice_result = processor.process_local_file(filepath, 'application/pdf')
                                     os.remove(filepath)
                                     
                                     validated = invoice_result.get('validated_data', {})
@@ -2185,8 +2195,9 @@ def gmail_import_stream():
                                     currency = validated.get('currency', 'USD')
                                     invoice_num = validated.get('invoiceNumber', 'N/A')
                                     
+                                    source_label = 'PLAIN TEXT EMAIL' if plain_text_body else 'HTML EMAIL BODY'
                                     if vendor and vendor != 'Unknown' and total and total > 0:
-                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM EMAIL BODY: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                         imported_invoices.append({
                                             'subject': subject,
                                             'sender': sender,
@@ -2197,19 +2208,19 @@ def gmail_import_stream():
                                             'currency': currency,
                                             'line_items': validated.get('lineItems', []),
                                             'full_data': validated,
-                                            'source_type': 'email_body'
+                                            'source_type': 'email_body_pdf'
                                         })
                                         continue
                                     else:
-                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
+                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete (vendor={vendor}, total={total})'})
                                 except Exception as html_proc_err:
                                     if os.path.exists(filepath):
                                         os.remove(filepath)
                                     yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_proc_err)[:80]}'})
                             else:
-                                yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ Could not convert email body to image'})
+                                yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ PDF rendering failed (Playwright error)'})
                         else:
-                            yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ No HTML content found in email'})
+                            yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ No HTML or plain text content found in email'})
                         extraction_failures.append(subject)
                         continue
                     
@@ -2396,60 +2407,71 @@ def gmail_import_stream():
                     # If we had links but all failed due to authentication, try HTML body extraction
                     if links and not link_success and not attachments and all_links_auth_failed:
                         yield send_event('progress', {'type': 'info', 'message': f'  📧 Links require auth, trying email body extraction...'})
+                        
                         html_body = gmail_service.extract_html_body(message)
+                        plain_text_fallback = None
+                        
+                        if not html_body:
+                            yield send_event('progress', {'type': 'info', 'message': '  📝 No HTML found, trying plain text...'})
+                            plain_text_fallback = gmail_service.extract_plain_text_body(message)
+                            if plain_text_fallback:
+                                html_body = gmail_service.plain_text_to_html(plain_text_fallback, subject, sender)
+                                yield send_event('progress', {'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
+                        
                         if html_body:
-                            yield send_event('progress', {'type': 'status', 'message': '  📸 Converting email body to image...'})
-                            html_result = gmail_service.html_to_image(html_body, subject)
-                            if not html_result:
-                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ HTML to image conversion failed'})
+                            yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
+                            pdf_result = gmail_service.html_to_pdf(html_body, subject)
+                            if not pdf_result:
+                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF rendering failed (Playwright error)'})
                                 extraction_failures.append(subject)
                             else:
-                                html_filename, html_image_data = html_result
-                                secure_html_name = secure_filename(html_filename)
-                                html_filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_html_name)
+                                pdf_filename, pdf_data = pdf_result
+                                secure_pdf_name = secure_filename(pdf_filename)
+                                pdf_filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_pdf_name)
                                 
-                                with open(html_filepath, 'wb') as f:
-                                    f.write(html_image_data)
+                                with open(pdf_filepath, 'wb') as f:
+                                    f.write(pdf_data)
                                 
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body)...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body PDF)...'})
                                 yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
                                 yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
                                 
                                 try:
-                                    html_invoice_result = processor.process_local_file(html_filepath, 'image/png')
-                                    os.remove(html_filepath)
+                                    pdf_invoice_result = processor.process_local_file(pdf_filepath, 'application/pdf')
+                                    os.remove(pdf_filepath)
                                     
-                                    html_validated = html_invoice_result.get('validated_data', {})
-                                    html_vendor = html_validated.get('vendor', {}).get('name', 'Unknown')
-                                    html_invoice_num = html_validated.get('invoiceNumber', 'N/A')
-                                    html_totals = html_validated.get('totals', {})
-                                    html_total = html_totals.get('total', 0)
-                                    html_currency = html_validated.get('currency', 'USD')
+                                    pdf_validated = pdf_invoice_result.get('validated_data', {})
+                                    pdf_vendor = pdf_validated.get('vendor', {}).get('name', 'Unknown')
+                                    pdf_invoice_num = pdf_validated.get('invoiceNumber', 'N/A')
+                                    pdf_totals = pdf_validated.get('totals', {})
+                                    pdf_total = pdf_totals.get('total', 0)
+                                    pdf_currency = pdf_validated.get('currency', 'USD')
                                     
-                                    if html_vendor and html_vendor != 'Unknown' and html_total and html_total > 0:
-                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM EMAIL BODY: {html_vendor} | Invoice #{html_invoice_num} | {html_currency} {html_total}'})
+                                    source_label = 'PLAIN TEXT EMAIL' if plain_text_fallback else 'HTML EMAIL BODY'
+                                    if pdf_vendor and pdf_vendor != 'Unknown' and pdf_total and pdf_total > 0:
+                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM {source_label}: {pdf_vendor} | Invoice #{pdf_invoice_num} | {pdf_currency} {pdf_total}'})
                                         imported_invoices.append({
                                             'subject': subject,
                                             'sender': sender,
                                             'date': metadata.get('date'),
-                                            'vendor': html_vendor,
-                                            'invoice_number': html_invoice_num,
-                                            'total': html_total,
-                                            'currency': html_currency,
-                                            'line_items': html_validated.get('lineItems', []),
-                                            'full_data': html_validated,
-                                            'source_type': 'email_body'
+                                            'vendor': pdf_vendor,
+                                            'invoice_number': pdf_invoice_num,
+                                            'total': pdf_total,
+                                            'currency': pdf_currency,
+                                            'line_items': pdf_validated.get('lineItems', []),
+                                            'full_data': pdf_validated,
+                                            'source_type': 'email_body_pdf'
                                         })
                                     else:
-                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
+                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete (vendor={pdf_vendor}, total={pdf_total})'})
                                         extraction_failures.append(subject)
-                                except Exception as html_err:
-                                    if os.path.exists(html_filepath):
-                                        os.remove(html_filepath)
-                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_err)[:80]}'})
+                                except Exception as pdf_err:
+                                    if os.path.exists(pdf_filepath):
+                                        os.remove(pdf_filepath)
+                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(pdf_err)[:80]}'})
                                     extraction_failures.append(subject)
                         else:
-                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No HTML content found in email body'})
+                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No HTML or plain text content found in email body'})
                             extraction_failures.append(subject)
                     
                 except Exception as e:

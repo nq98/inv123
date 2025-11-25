@@ -351,40 +351,168 @@ class GmailService:
             print(f"Error extracting HTML body: {e}")
             return None
     
-    def html_to_image(self, html_content, subject='email_receipt'):
+    def extract_plain_text_body(self, message):
         """
-        Convert HTML email content to a PNG image using Playwright
+        Extract plain text body from email message
         
-        Returns: (filename, image_data) or None if failed
+        Returns: Plain text string or None
+        """
+        try:
+            plain_text = ''
+            parts = message.get('payload', {}).get('parts', [])
+            
+            def extract_plain_recursive(part):
+                nonlocal plain_text
+                if part.get('mimeType') == 'text/plain' and 'data' in part.get('body', {}):
+                    plain_text = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                    return True
+                if 'parts' in part:
+                    for subpart in part['parts']:
+                        if extract_plain_recursive(subpart):
+                            return True
+                return False
+            
+            for part in parts:
+                if extract_plain_recursive(part):
+                    break
+            
+            if not plain_text and 'body' in message.get('payload', {}) and 'data' in message['payload']['body']:
+                payload_type = message.get('payload', {}).get('mimeType', '')
+                if 'plain' in payload_type.lower() or not payload_type:
+                    plain_text = base64.urlsafe_b64decode(message['payload']['body']['data']).decode('utf-8', errors='ignore')
+            
+            return plain_text if plain_text else None
+            
+        except Exception as e:
+            print(f"Error extracting plain text body: {e}")
+            return None
+    
+    def plain_text_to_html(self, plain_text, subject='Email Receipt', sender='Unknown'):
+        """
+        Convert plain text email to a styled HTML document for PDF rendering
+        
+        Returns: HTML string
+        """
+        escaped_text = plain_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        lines = escaped_text.split('\n')
+        formatted_lines = '<br>'.join(lines)
+        
+        html_template = f'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f5f5f5;
+        }}
+        .email-container {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 30px;
+        }}
+        .email-header {{
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }}
+        .email-subject {{
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin: 0 0 8px 0;
+        }}
+        .email-from {{
+            font-size: 14px;
+            color: #666;
+        }}
+        .email-body {{
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }}
+        .email-footer {{
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #999;
+        }}
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-header">
+            <h1 class="email-subject">{subject}</h1>
+            <div class="email-from">From: {sender}</div>
+        </div>
+        <div class="email-body">{formatted_lines}</div>
+        <div class="email-footer">
+            Extracted from email for invoice processing
+        </div>
+    </div>
+</body>
+</html>
+'''
+        return html_template
+    
+    def html_to_pdf(self, html_content, subject='email_receipt'):
+        """
+        Convert HTML email content to a PDF using Playwright
+        
+        Returns: (filename, pdf_data) or None if failed
         """
         try:
             from playwright.sync_api import sync_playwright
-            import hashlib
             import time
             
             timestamp = int(time.time())
             safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
-            filename = f"email_receipt_{safe_subject}_{timestamp}.png"
+            filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
             
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page(viewport={'width': 800, 'height': 1200})
                 
                 page.set_content(html_content)
-                page.wait_for_load_state('networkidle', timeout=10000)
+                page.wait_for_load_state('networkidle', timeout=15000)
                 
-                time.sleep(0.5)
+                time.sleep(0.3)
                 
-                screenshot_data = page.screenshot(full_page=True, type='png')
+                pdf_data = page.pdf(
+                    format='A4',
+                    print_background=True,
+                    margin={'top': '20px', 'right': '20px', 'bottom': '20px', 'left': '20px'}
+                )
                 
                 browser.close()
                 
-            print(f"📸 HTML email converted to image: {filename}")
-            return (filename, screenshot_data)
+            print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
+            return (filename, pdf_data)
             
         except Exception as e:
-            print(f"Error converting HTML to image: {e}")
+            print(f"Error converting HTML to PDF: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def html_to_image(self, html_content, subject='email_receipt'):
+        """
+        Convert HTML email content to a PDF (backwards compatible wrapper)
+        Now generates PDF instead of PNG for better Document AI processing.
+        
+        Returns: (filename, pdf_data) or None if failed
+        """
+        return self.html_to_pdf(html_content, subject)
     
     def download_pdf_from_link(self, url, timeout=30):
         """
