@@ -2616,6 +2616,95 @@ def gmail_import_stream():
             yield send_event('progress', {'type': 'status', 'message': f'  📎 PDF Lane: {len(pdf_lane)} emails (Document AI + Vertex + Gemini)'})
             yield send_event('progress', {'type': 'status', 'message': f'  📧 Text Lane: {len(text_lane)} emails (Batch extraction - INSTANT!)'})
             
+            # ========== VENDOR MATCHING HELPER (defined early for all lanes) ==========
+            def run_vendor_matching_for_invoice(vendor_name, vendor_info, invoice_num, total_amount):
+                """Run vendor matching for an extracted invoice and return match result.
+                
+                Uses cached service singletons to avoid per-invoice credential refresh.
+                Gracefully handles missing fields and errors by returning None.
+                """
+                if not vendor_name or vendor_name == 'Unknown':
+                    return None
+                
+                try:
+                    from services.vendor_matcher import VendorMatcher as VendorMatcherClass
+                    
+                    # Use cached service singletons instead of creating new instances
+                    bigquery_svc = get_bigquery_service()
+                    vertex_search_svc = get_vertex_search_service()
+                    gemini_svc = gemini_service  # Already available in scope
+                    
+                    vendor_matcher = VendorMatcherClass(bigquery_svc, vertex_search_svc, gemini_svc)
+                    
+                    # Safely extract vendor info with defaults for missing fields
+                    vendor_info = vendor_info or {}
+                    
+                    invoice_vendor = {
+                        'name': vendor_name,
+                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber') or 'Unknown',
+                        'address': vendor_info.get('address') or 'Unknown',
+                        'country': vendor_info.get('country') or 'Unknown',
+                        'email': vendor_info.get('email') or 'Unknown',
+                        'phone': vendor_info.get('phone') or 'Unknown'
+                    }
+                    
+                    # Build invoice data with safe field access
+                    email_str = vendor_info.get('email') or ''
+                    email_domain = None
+                    if email_str and '@' in email_str:
+                        try:
+                            email_domain = email_str.split('@')[-1]
+                        except:
+                            pass
+                    
+                    invoice_data = {
+                        'vendor_name': vendor_name,
+                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber'),
+                        'address': vendor_info.get('address'),
+                        'email_domain': email_domain,
+                        'phone': vendor_info.get('phone'),
+                        'country': vendor_info.get('country')
+                    }
+                    
+                    match_result = vendor_matcher.match_vendor(invoice_data)
+                    
+                    if not match_result:
+                        return None
+                    
+                    vendor_match_result = {
+                        'verdict': match_result.get('verdict', 'NEW_VENDOR'),
+                        'confidence': match_result.get('confidence', 0),
+                        'method': match_result.get('method', 'UNKNOWN'),
+                        'reasoning': match_result.get('reasoning', 'No reasoning provided'),
+                        'invoice_vendor': invoice_vendor,
+                        'selected_vendor_id': match_result.get('vendor_id'),
+                        'evidence_breakdown': match_result.get('evidence_breakdown')
+                    }
+                    
+                    if match_result.get('vendor_id'):
+                        try:
+                            db_vendor = bigquery_svc.get_vendor_by_id(match_result['vendor_id'])
+                            if db_vendor:
+                                vendor_match_result['database_vendor'] = {
+                                    'vendor_id': db_vendor.get('vendor_id'),
+                                    'name': db_vendor.get('global_name') or db_vendor.get('name'),
+                                    'tax_id': db_vendor.get('tax_registration_id'),
+                                    'netsuite_id': db_vendor.get('netsuite_internal_id'),
+                                    'addresses': db_vendor.get('addresses', []),
+                                    'countries': db_vendor.get('countries', []),
+                                    'emails': db_vendor.get('emails', []),
+                                    'domains': db_vendor.get('domains', [])
+                                }
+                        except Exception as db_err:
+                            print(f"⚠️ Could not fetch vendor details: {db_err}")
+                    
+                    return vendor_match_result
+                except Exception as e:
+                    print(f"⚠️ Vendor matching failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
+            
             # ========== STEP 3.2: FAST LANE - Batch Text Extraction ==========
             batch_extracted = []
             
@@ -2836,95 +2925,6 @@ def gmail_import_stream():
             # OPTIMIZATION 4: Thread-safe queue for progress messages
             progress_queue = queue.Queue()
             results_lock = threading.Lock()
-            
-            # ========== VENDOR MATCHING HELPER ==========
-            def run_vendor_matching_for_invoice(vendor_name, vendor_info, invoice_num, total_amount):
-                """Run vendor matching for an extracted invoice and return match result.
-                
-                Uses cached service singletons to avoid per-invoice credential refresh.
-                Gracefully handles missing fields and errors by returning None.
-                """
-                if not vendor_name or vendor_name == 'Unknown':
-                    return None
-                
-                try:
-                    from services.vendor_matcher import VendorMatcher as VendorMatcherClass
-                    
-                    # Use cached service singletons instead of creating new instances
-                    bigquery_svc = get_bigquery_service()
-                    vertex_search_svc = get_vertex_search_service()
-                    gemini_svc = gemini_service  # Already available in scope
-                    
-                    vendor_matcher = VendorMatcherClass(bigquery_svc, vertex_search_svc, gemini_svc)
-                    
-                    # Safely extract vendor info with defaults for missing fields
-                    vendor_info = vendor_info or {}
-                    
-                    invoice_vendor = {
-                        'name': vendor_name,
-                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber') or 'Unknown',
-                        'address': vendor_info.get('address') or 'Unknown',
-                        'country': vendor_info.get('country') or 'Unknown',
-                        'email': vendor_info.get('email') or 'Unknown',
-                        'phone': vendor_info.get('phone') or 'Unknown'
-                    }
-                    
-                    # Build invoice data with safe field access
-                    email_str = vendor_info.get('email') or ''
-                    email_domain = None
-                    if email_str and '@' in email_str:
-                        try:
-                            email_domain = email_str.split('@')[-1]
-                        except:
-                            pass
-                    
-                    invoice_data = {
-                        'vendor_name': vendor_name,
-                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber'),
-                        'address': vendor_info.get('address'),
-                        'email_domain': email_domain,
-                        'phone': vendor_info.get('phone'),
-                        'country': vendor_info.get('country')
-                    }
-                    
-                    match_result = vendor_matcher.match_vendor(invoice_data)
-                    
-                    if not match_result:
-                        return None
-                    
-                    vendor_match_result = {
-                        'verdict': match_result.get('verdict', 'NEW_VENDOR'),
-                        'confidence': match_result.get('confidence', 0),
-                        'method': match_result.get('method', 'UNKNOWN'),
-                        'reasoning': match_result.get('reasoning', 'No reasoning provided'),
-                        'invoice_vendor': invoice_vendor,
-                        'selected_vendor_id': match_result.get('vendor_id'),
-                        'evidence_breakdown': match_result.get('evidence_breakdown')
-                    }
-                    
-                    if match_result.get('vendor_id'):
-                        try:
-                            db_vendor = bigquery_svc.get_vendor_by_id(match_result['vendor_id'])
-                            if db_vendor:
-                                vendor_match_result['database_vendor'] = {
-                                    'vendor_id': db_vendor.get('vendor_id'),
-                                    'name': db_vendor.get('global_name') or db_vendor.get('name'),
-                                    'tax_id': db_vendor.get('tax_registration_id'),
-                                    'netsuite_id': db_vendor.get('netsuite_internal_id'),
-                                    'addresses': db_vendor.get('addresses', []),
-                                    'countries': db_vendor.get('countries', []),
-                                    'emails': db_vendor.get('emails', []),
-                                    'domains': db_vendor.get('domains', [])
-                                }
-                        except Exception as db_err:
-                            print(f"⚠️ Could not fetch vendor details: {db_err}")
-                    
-                    return vendor_match_result
-                except Exception as e:
-                    print(f"⚠️ Vendor matching failed: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    return None
             
             # OPTIMIZATION 4: Worker function for parallel processing
             def process_single_email(idx, message, metadata, confidence, gmail_svc, proc, gemini_svc, upload_folder):
