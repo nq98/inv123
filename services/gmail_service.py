@@ -492,65 +492,92 @@ class GmailService:
     
     def _simplify_html_for_pdf(self, html_content):
         """
-        Simplify HTML to speed up PDF generation.
-        Removes external resources, tracking pixels, and unnecessary elements.
+        ULTRA-aggressive HTML simplification for fast PDF generation.
+        Strips everything except text content and basic structure.
         """
         import re
+        from html.parser import HTMLParser
         
-        simplified = html_content
+        class TextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.text_blocks = []
+                self.current_block = []
+                self.in_style = False
+                self.in_script = False
+                self.block_tags = {'p', 'div', 'tr', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr'}
+                
+            def handle_starttag(self, tag, attrs):
+                if tag == 'style':
+                    self.in_style = True
+                elif tag == 'script':
+                    self.in_script = True
+                elif tag in self.block_tags:
+                    if self.current_block:
+                        text = ' '.join(self.current_block).strip()
+                        if text:
+                            self.text_blocks.append(text)
+                        self.current_block = []
+                elif tag == 'td' or tag == 'th':
+                    self.current_block.append(' | ')
+                    
+            def handle_endtag(self, tag):
+                if tag == 'style':
+                    self.in_style = False
+                elif tag == 'script':
+                    self.in_script = False
+                elif tag in self.block_tags or tag == 'table':
+                    if self.current_block:
+                        text = ' '.join(self.current_block).strip()
+                        if text:
+                            self.text_blocks.append(text)
+                        self.current_block = []
+                        
+            def handle_data(self, data):
+                if not self.in_style and not self.in_script:
+                    text = data.strip()
+                    if text:
+                        self.current_block.append(text)
+            
+            def get_text(self):
+                if self.current_block:
+                    text = ' '.join(self.current_block).strip()
+                    if text:
+                        self.text_blocks.append(text)
+                return '\n'.join(self.text_blocks)
         
-        # Remove external image sources (tracking pixels, icons) - replace with placeholder
-        simplified = re.sub(
-            r'<img[^>]*src=["\']https?://[^"\']+["\'][^>]*>',
-            '',
-            simplified,
-            flags=re.IGNORECASE
-        )
-        
-        # Remove external stylesheets
-        simplified = re.sub(
-            r'<link[^>]*rel=["\']stylesheet["\'][^>]*>',
-            '',
-            simplified,
-            flags=re.IGNORECASE
-        )
-        
-        # Remove scripts
-        simplified = re.sub(
-            r'<script[^>]*>.*?</script>',
-            '',
-            simplified,
-            flags=re.IGNORECASE | re.DOTALL
-        )
-        
-        # Remove tracking/analytics elements
-        simplified = re.sub(
-            r'<img[^>]*width=["\']1["\'][^>]*>',
-            '',
-            simplified,
-            flags=re.IGNORECASE
-        )
-        
-        # Remove background images in style attributes
-        simplified = re.sub(
-            r'background(-image)?:\s*url\([^)]+\)',
-            '',
-            simplified,
-            flags=re.IGNORECASE
-        )
-        
-        # Add inline styles for basic readability if no styles exist
-        if '<style' not in simplified.lower():
-            style_block = '''<style>
-body { font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; padding: 20px; }
-table { border-collapse: collapse; width: 100%; }
-td, th { padding: 8px; border: 1px solid #ddd; }
-</style>'''
-            simplified = simplified.replace('<head>', f'<head>{style_block}', 1)
-            if '<head>' not in simplified:
-                simplified = f'{style_block}{simplified}'
-        
-        return simplified
+        try:
+            parser = TextExtractor()
+            parser.feed(html_content)
+            text_content = parser.get_text()
+            
+            # Build ultra-minimal HTML
+            lines = [f'<p>{line}</p>' for line in text_content.split('\n') if line.strip()]
+            body_content = '\n'.join(lines)
+            
+            minimal_html = f'''<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; padding: 20px; max-width: 800px; }}
+p {{ margin: 4px 0; }}
+</style>
+</head>
+<body>
+{body_content}
+</body>
+</html>'''
+            return minimal_html
+            
+        except Exception as e:
+            print(f"   HTML simplification failed: {e}, using fallback")
+            # Fallback: just strip tags aggressively
+            text_only = re.sub(r'<[^>]+>', ' ', html_content)
+            text_only = re.sub(r'\s+', ' ', text_only).strip()
+            return f'''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>body{{font-family:Arial;font-size:12px;padding:20px;}}</style></head>
+<body><p>{text_only[:50000]}</p></body></html>'''
     
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
