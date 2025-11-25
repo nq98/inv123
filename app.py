@@ -2302,137 +2302,150 @@ def gmail_import_stream():
                     all_screenshots_failed = True  # Track if all web_receipt screenshots failed
                     
                     for link_url in links[:2]:  # Limit to first 2 links per email
-                        yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
-                        
-                        # AI-semantic intelligent link processing
-                        email_context = f"{subject} - {metadata.get('snippet', '')[:100]}"
-                        link_result = gmail_service.process_link_intelligently(link_url, email_context, gemini_service)
-                        
-                        if link_result['success']:
-                            filename = link_result['filename']
-                            file_data = link_result['data']
-                            link_type = link_result['type']  # 'pdf' or 'screenshot'
-                            classification = link_result['link_classification']
+                        try:
+                            yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
                             
-                            # Show appropriate message based on processing type
-                            if link_type == 'screenshot':
-                                yield send_event('progress', {'type': 'success', 'message': f'  📸 Screenshot captured: {filename}'})
-                                yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Source: Web receipt (screenshot)'})
-                            else:
-                                yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
+                            # AI-semantic intelligent link processing
+                            email_context = f"{subject} - {metadata.get('snippet', '')[:100]}"
+                            link_result = gmail_service.process_link_intelligently(link_url, email_context, gemini_service)
                             
-                            secure_name = secure_filename(filename)
-                            filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
-                            
-                            with open(filepath, 'wb') as f:
-                                f.write(file_data)
-                            
-                            # Determine file type for processing
-                            if link_type == 'screenshot':
-                                file_mimetype = 'image/png'
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Image)...'})
-                            else:
-                                file_mimetype = 'application/pdf'
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
-                            
-                            yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
-                            yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
-                            yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing file...'})
-                            
-                            try:
-                                invoice_result = processor.process_local_file(filepath, file_mimetype)
-                            except Exception as link_proc_error:
-                                os.remove(filepath)
-                                yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(link_proc_error)[:100]}'})
+                            if not isinstance(link_result, dict):
+                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Invalid link result format'})
                                 continue
                             
-                            os.remove(filepath)
-                            
-                            validated = invoice_result.get('validated_data', {})
-                            vendor = validated.get('vendor', {}).get('name', 'Unknown')
-                            invoice_num = validated.get('invoiceNumber', 'N/A')
-                            totals = validated.get('totals', {})
-                            total = totals.get('total', 0)
-                            currency = validated.get('currency', 'USD')
-                            
-                            # Save to BigQuery if extraction succeeded
-                            if invoice_result.get('status') == 'completed' and validated:
-                                invoice_id = validated.get('invoiceId', 'Unknown')
-                                total_amount = validated.get('totalAmount', 0)
-                                currency_code = validated.get('currencyCode', 'USD')
-                                invoice_date = validated.get('invoiceDate', None)
+                            if link_result.get('success'):
+                                filename = link_result['filename']
+                                file_data = link_result['data']
+                                link_type = link_result['type']  # 'pdf' or 'screenshot'
+                                classification = link_result['link_classification']
                                 
-                                invoice_data = {
-                                    'invoice_id': invoice_id,
-                                    'vendor_id': None,
-                                    'vendor_name': vendor,
-                                    'client_id': 'default_client',
-                                    'amount': total_amount,
-                                    'currency': currency_code,
-                                    'invoice_date': invoice_date,
-                                    'status': 'unmatched',
-                                    'gcs_uri': invoice_result.get('gcs_uri'),
-                                    'file_type': invoice_result.get('file_type'),
-                                    'file_size': invoice_result.get('file_size'),
-                                    'metadata': {
-                                        'file_name': invoice_result.get('file_name'),
-                                        'validated_data': validated,
-                                        'gmail_metadata': {
-                                            'subject': subject,
-                                            'from': sender,
-                                            'date': metadata.get('date'),
-                                            'source_type': link_type
-                                        }
-                                    }
-                                }
+                                # Show appropriate message based on processing type
+                                if link_type == 'screenshot':
+                                    yield send_event('progress', {'type': 'success', 'message': f'  📸 Screenshot captured: {filename}'})
+                                    yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Source: Web receipt (screenshot)'})
+                                else:
+                                    yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
+                                
+                                secure_name = secure_filename(filename)
+                                filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
+                                
+                                with open(filepath, 'wb') as f:
+                                    f.write(file_data)
+                                
+                                # Determine file type for processing
+                                if link_type == 'screenshot':
+                                    file_mimetype = 'image/png'
+                                    yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Image)...'})
+                                else:
+                                    file_mimetype = 'application/pdf'
+                                    yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
+                                
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                                yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing file...'})
                                 
                                 try:
-                                    bigquery_service = get_bigquery_service()
-                                    bigquery_service.insert_invoice(invoice_data)
-                                except Exception as bq_error:
-                                    print(f"⚠️ Warning: Could not save Gmail invoice to BigQuery: {bq_error}")
-                            
-                            if vendor and vendor != 'Unknown' and total and total > 0:
-                                source_label = '📸 Screenshot' if link_type == 'screenshot' else '🔗 Link'
-                                yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
-                                imported_invoices.append({
-                                    'subject': subject,
-                                    'sender': sender,
-                                    'date': metadata.get('date'),
-                                    'vendor': vendor,
-                                    'invoice_number': invoice_num,
-                                    'total': total,
-                                    'currency': currency,
-                                    'line_items': validated.get('lineItems', []),
-                                    'full_data': validated,
-                                    'source_type': link_type  # Track if from screenshot or PDF
-                                })
-                                link_success = True
-                        else:
-                            # Processing failed - show why
-                            link_type = link_result.get('type', 'failed')
-                            reasoning = link_result['reasoning']
-                            link_classification = link_result.get('link_classification', {})
-                            classified_as = link_classification.get('link_type', 'unknown')
-                            
-                            # Check if this link was skipped as not an invoice (icon, logo, etc)
-                            if link_type == 'skipped':
-                                yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Skipped: {reasoning[:120]}'})
-                                # Skipped links don't count as auth failures
-                            else:
-                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
-                                # Check if this is an authentication failure
-                                if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
-                                    pass  # Keep all_links_auth_failed = True
-                                else:
-                                    all_links_auth_failed = False
+                                    invoice_result = processor.process_local_file(filepath, file_mimetype)
+                                except Exception as link_proc_error:
+                                    os.remove(filepath)
+                                    yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(link_proc_error)[:100]}'})
+                                    continue
                                 
-                                # Check if this was a web_receipt that failed to screenshot (expired token, HTTP error)
-                                if classified_as == 'web_receipt' and ('http' in reasoning.lower() or 'screenshot' in reasoning.lower() or 'err_' in reasoning.lower()):
-                                    print(f"[DEBUG] Web receipt screenshot failed: {reasoning[:100]}")
-                                    # Keep all_screenshots_failed = True
+                                os.remove(filepath)
+                                
+                                validated = invoice_result.get('validated_data', {})
+                                vendor = validated.get('vendor', {}).get('name', 'Unknown')
+                                invoice_num = validated.get('invoiceNumber', 'N/A')
+                                totals = validated.get('totals', {})
+                                total = totals.get('total', 0)
+                                currency = validated.get('currency', 'USD')
+                                
+                                # Save to BigQuery if extraction succeeded
+                                if invoice_result.get('status') == 'completed' and validated:
+                                    invoice_id = validated.get('invoiceId', 'Unknown')
+                                    total_amount = validated.get('totalAmount', 0)
+                                    currency_code = validated.get('currencyCode', 'USD')
+                                    invoice_date = validated.get('invoiceDate', None)
+                                    
+                                    invoice_data = {
+                                        'invoice_id': invoice_id,
+                                        'vendor_id': None,
+                                        'vendor_name': vendor,
+                                        'client_id': 'default_client',
+                                        'amount': total_amount,
+                                        'currency': currency_code,
+                                        'invoice_date': invoice_date,
+                                        'status': 'unmatched',
+                                        'gcs_uri': invoice_result.get('gcs_uri'),
+                                        'file_type': invoice_result.get('file_type'),
+                                        'file_size': invoice_result.get('file_size'),
+                                        'metadata': {
+                                            'file_name': invoice_result.get('file_name'),
+                                            'validated_data': validated,
+                                            'gmail_metadata': {
+                                                'subject': subject,
+                                                'from': sender,
+                                                'date': metadata.get('date'),
+                                                'source_type': link_type
+                                            }
+                                        }
+                                    }
+                                    
+                                    try:
+                                        bigquery_service = get_bigquery_service()
+                                        bigquery_service.insert_invoice(invoice_data)
+                                    except Exception as bq_error:
+                                        print(f"⚠️ Warning: Could not save Gmail invoice to BigQuery: {bq_error}")
+                                
+                                if vendor and vendor != 'Unknown' and total and total > 0:
+                                    source_label = '📸 Screenshot' if link_type == 'screenshot' else '🔗 Link'
+                                    yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                    imported_invoices.append({
+                                        'subject': subject,
+                                        'sender': sender,
+                                        'date': metadata.get('date'),
+                                        'vendor': vendor,
+                                        'invoice_number': invoice_num,
+                                        'total': total,
+                                        'currency': currency,
+                                        'line_items': validated.get('lineItems', []),
+                                        'full_data': validated,
+                                        'source_type': link_type  # Track if from screenshot or PDF
+                                    })
+                                    link_success = True
+                            else:
+                                # Processing failed - show why
+                                link_type = link_result.get('type', 'failed')
+                                reasoning = link_result.get('reasoning', 'Unknown error')
+                                link_classification = link_result.get('link_classification', {})
+                                # Safely get link_type even if link_classification is a string
+                                if isinstance(link_classification, dict):
+                                    classified_as = link_classification.get('link_type', 'unknown')
                                 else:
-                                    all_screenshots_failed = False
+                                    classified_as = 'unknown'
+                                
+                                # Check if this link was skipped as not an invoice (icon, logo, etc)
+                                if link_type == 'skipped':
+                                    yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Skipped: {reasoning[:120]}'})
+                                    # Skipped links don't count as auth failures
+                                else:
+                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
+                                    # Check if this is an authentication failure
+                                    if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
+                                        pass  # Keep all_links_auth_failed = True
+                                    else:
+                                        all_links_auth_failed = False
+                                    
+                                    # Check if this was a web_receipt that failed to screenshot (expired token, HTTP error)
+                                    if classified_as == 'web_receipt' and ('http' in reasoning.lower() or 'screenshot' in reasoning.lower() or 'err_' in reasoning.lower()):
+                                        print(f"[DEBUG] Web receipt screenshot failed: {reasoning[:100]}")
+                                        # Keep all_screenshots_failed = True
+                                    else:
+                                        all_screenshots_failed = False
+                        except Exception as link_loop_err:
+                            print(f"[DEBUG] Error processing link {link_url[:50]}: {type(link_loop_err).__name__}: {str(link_loop_err)}")
+                            yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(link_loop_err)[:80]}'})
+                            all_screenshots_failed = False
                     
                     # If we had links but all failed (auth OR screenshot failures), try HTML body extraction
                     should_fallback = all_links_auth_failed or all_screenshots_failed
