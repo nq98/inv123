@@ -490,6 +490,68 @@ class GmailService:
             
         return None
     
+    def _simplify_html_for_pdf(self, html_content):
+        """
+        Simplify HTML to speed up PDF generation.
+        Removes external resources, tracking pixels, and unnecessary elements.
+        """
+        import re
+        
+        simplified = html_content
+        
+        # Remove external image sources (tracking pixels, icons) - replace with placeholder
+        simplified = re.sub(
+            r'<img[^>]*src=["\']https?://[^"\']+["\'][^>]*>',
+            '',
+            simplified,
+            flags=re.IGNORECASE
+        )
+        
+        # Remove external stylesheets
+        simplified = re.sub(
+            r'<link[^>]*rel=["\']stylesheet["\'][^>]*>',
+            '',
+            simplified,
+            flags=re.IGNORECASE
+        )
+        
+        # Remove scripts
+        simplified = re.sub(
+            r'<script[^>]*>.*?</script>',
+            '',
+            simplified,
+            flags=re.IGNORECASE | re.DOTALL
+        )
+        
+        # Remove tracking/analytics elements
+        simplified = re.sub(
+            r'<img[^>]*width=["\']1["\'][^>]*>',
+            '',
+            simplified,
+            flags=re.IGNORECASE
+        )
+        
+        # Remove background images in style attributes
+        simplified = re.sub(
+            r'background(-image)?:\s*url\([^)]+\)',
+            '',
+            simplified,
+            flags=re.IGNORECASE
+        )
+        
+        # Add inline styles for basic readability if no styles exist
+        if '<style' not in simplified.lower():
+            style_block = '''<style>
+body { font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; padding: 20px; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 8px; border: 1px solid #ddd; }
+</style>'''
+            simplified = simplified.replace('<head>', f'<head>{style_block}', 1)
+            if '<head>' not in simplified:
+                simplified = f'{style_block}{simplified}'
+        
+        return simplified
+    
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
         Convert HTML email content to a PDF using Playwright
@@ -508,6 +570,10 @@ class GmailService:
         
         print(f"📄 Starting PDF generation via subprocess...")
         
+        # Simplify HTML to speed up PDF generation
+        simplified_html = self._simplify_html_for_pdf(html_content)
+        print(f"   HTML simplified: {len(html_content)} -> {len(simplified_html)} bytes")
+        
         try:
             script_path = os.path.join(os.path.dirname(__file__), 'html_to_pdf_subprocess.py')
             
@@ -520,9 +586,9 @@ class GmailService:
             )
             
             try:
-                stdout, stderr = process.communicate(input=html_content, timeout=25)
+                stdout, stderr = process.communicate(input=simplified_html, timeout=45)
             except subprocess.TimeoutExpired:
-                print(f"⚠️ PDF generation timed out after 25 seconds - terminating process")
+                print(f"⚠️ PDF generation timed out after 45 seconds - terminating process")
                 process.kill()
                 process.wait()
                 return None
