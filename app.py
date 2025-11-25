@@ -233,6 +233,50 @@ def upload_email_snapshot_to_gcs(snapshot_html, vendor_name, invoice_number, inv
         print(f"❌ Error uploading email snapshot to GCS: {e}")
         return None
 
+def upload_pdf_attachment_to_gcs(pdf_data, original_filename, vendor_name, invoice_number, invoice_date=None):
+    """
+    Upload PDF attachment to GCS for permanent storage.
+    
+    Args:
+        pdf_data: Binary PDF content
+        original_filename: Original attachment filename
+        vendor_name: Vendor name for organizing in GCS
+        invoice_number: Invoice number for filename
+        invoice_date: Optional invoice date for filename
+    
+    Returns:
+        dict with 'gcs_uri', 'file_type', 'file_size' or None on failure
+    """
+    try:
+        storage_client = get_gcs_client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        
+        safe_vendor = "".join(c if c.isalnum() or c in '-_' else '_' for c in (vendor_name or 'Unknown')[:50])
+        safe_invoice = "".join(c if c.isalnum() or c in '-_' else '_' for c in str(invoice_number or 'N_A')[:30])
+        date_str = invoice_date if invoice_date else datetime.now().strftime('%Y-%m-%d')
+        timestamp = datetime.now().strftime('%H%M%S')
+        
+        ext = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else 'pdf'
+        blob_name = f"uploads/{safe_vendor}/{date_str}_{safe_invoice}_{timestamp}.{ext}"
+        blob = bucket.blob(blob_name)
+        
+        content_type = 'application/pdf' if ext == 'pdf' else f'image/{ext}'
+        blob.upload_from_string(pdf_data, content_type=content_type)
+        
+        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
+        
+        print(f"✅ PDF attachment uploaded to GCS: {gcs_uri}")
+        
+        return {
+            'gcs_uri': gcs_uri,
+            'file_type': ext,
+            'file_size': len(pdf_data)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error uploading PDF attachment to GCS: {e}")
+        return None
+
 app = Flask(__name__)
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -2897,12 +2941,28 @@ def gmail_import_stream():
                                     dup_count += 1
                                     progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                 else:
-                                    progress_msgs.append({'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                    gcs_upload_result = None
+                                    try:
+                                        gcs_upload_result = upload_pdf_attachment_to_gcs(
+                                            pdf_data=file_data,
+                                            original_filename=filename,
+                                            vendor_name=vendor,
+                                            invoice_number=invoice_num,
+                                            invoice_date=invoice_date
+                                        )
+                                    except Exception as gcs_err:
+                                        print(f"⚠️ GCS upload failed for {filename}: {gcs_err}")
+                                    
+                                    doc_icon = '📄' if gcs_upload_result else ''
+                                    progress_msgs.append({'type': 'success', 'message': f'  ✅ {doc_icon} SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                     extracted.append({
                                         'subject': subject, 'sender': sender, 'date': metadata.get('date'),
                                         'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
                                         'currency': currency, 'line_items': validated.get('lineItems', []),
-                                        'full_data': validated, 'source_type': 'pdf_attachment'
+                                        'full_data': validated, 'source_type': 'pdf_attachment',
+                                        'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
+                                        'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
+                                        'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
                                     })
                             else:
                                 progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Extraction incomplete'})
@@ -2956,13 +3016,29 @@ def gmail_import_stream():
                                             dup_count += 1
                                             progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                         else:
+                                            gcs_upload_result = None
+                                            try:
+                                                gcs_upload_result = upload_pdf_attachment_to_gcs(
+                                                    pdf_data=fdata,
+                                                    original_filename=fname,
+                                                    vendor_name=vendor,
+                                                    invoice_number=invoice_num,
+                                                    invoice_date=invoice_date
+                                                )
+                                            except Exception as gcs_err:
+                                                print(f"⚠️ GCS upload failed for link file: {gcs_err}")
+                                            
                                             source_label = '📸 Screenshot' if ltype == 'screenshot' else '🔗 Link'
-                                            progress_msgs.append({'type': 'success', 'message': f'  ✅ {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                            doc_icon = '📄' if gcs_upload_result else ''
+                                            progress_msgs.append({'type': 'success', 'message': f'  ✅ {doc_icon} {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                             extracted.append({
                                                 'subject': subject, 'sender': sender, 'date': metadata.get('date'),
                                                 'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
                                                 'currency': currency, 'line_items': validated.get('lineItems', []),
-                                                'full_data': validated, 'source_type': ltype
+                                                'full_data': validated, 'source_type': ltype,
+                                                'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
+                                                'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
+                                                'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
                                             })
                                             link_extraction_succeeded = True
                                 except Exception as err:
