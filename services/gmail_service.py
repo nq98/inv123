@@ -633,6 +633,17 @@ class GmailService:
                     'reasoning': f'Requires authentication: {classification_reasoning}'
                 }
             
+            if link_type == 'not_invoice':
+                # Skip - this is an icon, logo, or decoration image, not an invoice
+                return {
+                    'success': False,
+                    'type': 'skipped',
+                    'filename': None,
+                    'data': None,
+                    'link_classification': link_type,
+                    'reasoning': f'Skipped (not an invoice): {classification_reasoning}'
+                }
+            
             # Unknown link type
             return {
                 'success': False,

@@ -754,23 +754,31 @@ Classify as ONE of:
 1. **direct_pdf**: Direct PDF download link (ends in .pdf, has content-disposition, direct file download)
 2. **web_receipt**: Web-based receipt page that renders in a browser (public receipt view, invoice display page, bill summary)
 3. **auth_required**: Requires login/authentication to access (dashboard, account portal, authenticated session)
+4. **not_invoice**: NOT a receipt/invoice - just an image, icon, logo, tracking pixel, or email decoration
 
-Use PURE SEMANTIC INTELLIGENCE (NO hardcoded domain rules):
+CRITICAL - FILTER OUT NON-INVOICES:
+- URLs pointing to small images/icons (e.g., "/icons/", "/images/", ".png", ".jpg", ".gif" that are clearly decorative)
+- URLs containing "/notifications/icons/", "/email-images/", "/logos/", "/assets/" = NOT receipts
+- S3/CDN hosted email decoration images (stripe-images.s3.amazonaws.com, cloudfront, etc with /icons/ or /assets/)
+- Tracking pixels, 1x1 images, email header/footer graphics
+
+Use PURE SEMANTIC INTELLIGENCE:
 - Analyze the URL structure: Does it look like a file download, public view page, or protected dashboard?
 - Path semantics: "/receipt/", "/invoice/", "/view/", "/download/" suggest public access
 - Auth indicators: "/dashboard/", "/account/", "/login/", "/api/" often require authentication
 - Parameters: Tokens like "?token=", "?key=", "?signature=" suggest pre-authenticated public access
 - File extensions: .pdf at the end means direct download
-- Consider whether a headless browser can access it without logging in
+- Image URLs that are clearly icons/logos = not_invoice (don't waste processing on these!)
 
 Think step-by-step:
-1. Does the URL end in .pdf or have download parameters? → direct_pdf
-2. Does it have public receipt/invoice view tokens/signatures? → web_receipt  
-3. Does it require dashboard/account login? → auth_required
+1. Is this clearly an icon, logo, or email decoration image? → not_invoice
+2. Does the URL end in .pdf or have download parameters? → direct_pdf
+3. Does it have public receipt/invoice view tokens/signatures? → web_receipt  
+4. Does it require dashboard/account login? → auth_required
 
 Return ONLY valid JSON:
 {{
-  "linkType": "direct_pdf" | "web_receipt" | "auth_required",
+  "linkType": "direct_pdf" | "web_receipt" | "auth_required" | "not_invoice",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of classification"
 }}"""

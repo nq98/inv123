@@ -2378,13 +2378,20 @@ def gmail_import_stream():
                                 link_success = True
                         else:
                             # Processing failed - show why
+                            link_type = link_result.get('type', 'failed')
                             reasoning = link_result['reasoning']
-                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
-                            # Check if this is an authentication failure
-                            if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
-                                pass  # Keep all_links_auth_failed = True
+                            
+                            # Check if this link was skipped as not an invoice (icon, logo, etc)
+                            if link_type == 'skipped':
+                                yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Skipped: {reasoning[:120]}'})
+                                # Skipped links don't count as auth failures
                             else:
-                                all_links_auth_failed = False
+                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
+                                # Check if this is an authentication failure
+                                if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
+                                    pass  # Keep all_links_auth_failed = True
+                                else:
+                                    all_links_auth_failed = False
                     
                     # If we had links but all failed due to authentication, try HTML body extraction
                     if links and not link_success and not attachments and all_links_auth_failed:
@@ -2393,7 +2400,10 @@ def gmail_import_stream():
                         if html_body:
                             yield send_event('progress', {'type': 'status', 'message': '  📸 Converting email body to image...'})
                             html_result = gmail_service.html_to_image(html_body, subject)
-                            if html_result:
+                            if not html_result:
+                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ HTML to image conversion failed'})
+                                extraction_failures.append(subject)
+                            else:
                                 html_filename, html_image_data = html_result
                                 secure_html_name = secure_filename(html_filename)
                                 html_filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_html_name)
@@ -2438,6 +2448,9 @@ def gmail_import_stream():
                                         os.remove(html_filepath)
                                     yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_err)[:80]}'})
                                     extraction_failures.append(subject)
+                        else:
+                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No HTML content found in email body'})
+                            extraction_failures.append(subject)
                     
                 except Exception as e:
                     yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
