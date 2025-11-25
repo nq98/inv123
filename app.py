@@ -2101,7 +2101,7 @@ def get_invoice_download_url(invoice_id):
         # Generate signed URL
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=datetime.timedelta(seconds=expiration_seconds),
+            expiration=timedelta(seconds=expiration_seconds),
             method="GET"
         )
         
@@ -2188,7 +2188,7 @@ def get_gcs_signed_url():
         # Generate signed URL with proper content type for viewing
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=datetime.timedelta(seconds=expiration_seconds),
+            expiration=timedelta(seconds=expiration_seconds),
             method="GET",
             response_type=content_type
         )
