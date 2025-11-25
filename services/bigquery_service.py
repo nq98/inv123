@@ -847,7 +847,7 @@ class BigQueryService:
     
     def insert_invoice(self, invoice_data):
         """
-        Insert invoice data into vendors_ai.invoices table
+        Insert invoice data into vendors_ai.invoices table with validation and deduplication
         
         Args:
             invoice_data: Dict with invoice fields:
@@ -865,10 +865,71 @@ class BigQueryService:
                 - metadata: dict (will be converted to JSON)
         
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise, "duplicate" if already exists
         """
         invoices_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices"
         
+        # ========== VALIDATION GATE: Reject Junk Data ==========
+        invoice_id = invoice_data.get("invoice_id", "")
+        vendor_name = invoice_data.get("vendor_name", "")
+        amount = invoice_data.get("amount", 0)
+        
+        # Normalize "Unknown" to "N/A" for invoice_id
+        if not invoice_id or invoice_id == "Unknown" or invoice_id.lower() == "unknown":
+            invoice_id = "N/A"
+            invoice_data["invoice_id"] = "N/A"
+        
+        # REJECT: Zero or negative amounts (not valid invoices)
+        if not amount or float(amount) <= 0:
+            print(f"🚫 REJECTED: Zero/negative amount invoice - {vendor_name} | ${amount}")
+            return False
+        
+        # REJECT: Missing vendor name
+        if not vendor_name or vendor_name == "Unknown":
+            print(f"🚫 REJECTED: No vendor name - invoice_id={invoice_id}")
+            return False
+        
+        # REJECT: Payment processor notifications (not invoices)
+        processor_keywords = ["stripe", "paypal", "wise", "transferwise", "square", "adyen"]
+        if vendor_name.lower().strip() in processor_keywords:
+            # Check if this looks like a notification rather than an actual bill FROM the processor
+            # Real processor invoices have specific invoice numbers like "pi_xxx" or specific amounts
+            if invoice_id == "N/A" or invoice_id.lower() == "unknown":
+                print(f"🚫 REJECTED: Payment processor notification - {vendor_name}")
+                return False
+        
+        # ========== CROSS-SESSION DEDUPLICATION ==========
+        try:
+            # Check if this invoice already exists in BigQuery
+            # Use composite key: invoice_id + vendor_name (first word) + amount (rounded)
+            vendor_key = vendor_name.split()[0] if vendor_name else "UNKNOWN"
+            amount_rounded = round(float(amount), 2)
+            
+            dedup_query = f"""
+            SELECT COUNT(*) as cnt
+            FROM `{invoices_table_id}`
+            WHERE invoice_id = @invoice_id
+              AND UPPER(SPLIT(vendor_name, ' ')[SAFE_OFFSET(0)]) = UPPER(@vendor_key)
+              AND ROUND(amount, 2) = @amount
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                    bigquery.ScalarQueryParameter("vendor_key", "STRING", vendor_key),
+                    bigquery.ScalarQueryParameter("amount", "FLOAT64", amount_rounded),
+                ]
+            )
+            
+            result = self.client.query(dedup_query, job_config=job_config).result()
+            for row in result:
+                if row.cnt > 0:
+                    print(f"🔄 DUPLICATE: Invoice already exists - {invoice_id} | {vendor_name} | ${amount}")
+                    return "duplicate"
+        except Exception as dedup_err:
+            print(f"⚠️ Dedup check failed (continuing): {dedup_err}")
+        
+        # ========== INSERT INTO BIGQUERY ==========
         try:
             # First, ensure the new columns exist
             try:
@@ -891,12 +952,12 @@ class BigQueryService:
                 metadata_json = json.dumps({})
             
             row = {
-                "invoice_id": invoice_data.get("invoice_id"),
+                "invoice_id": invoice_id,
                 "vendor_id": invoice_data.get("vendor_id"),
-                "vendor_name": invoice_data.get("vendor_name"),
+                "vendor_name": vendor_name,
                 "client_id": invoice_data.get("client_id", "default_client"),
-                "amount": invoice_data.get("amount"),
-                "currency": invoice_data.get("currency"),
+                "amount": float(amount),
+                "currency": invoice_data.get("currency", "USD"),
                 "invoice_date": invoice_data.get("invoice_date"),
                 "status": invoice_data.get("status"),
                 "gcs_uri": invoice_data.get("gcs_uri"),
@@ -912,7 +973,7 @@ class BigQueryService:
                 print(f"❌ Error inserting invoice: {errors}")
                 return False
             
-            print(f"✓ Inserted invoice {invoice_data.get('invoice_id')} into BigQuery")
+            print(f"✓ Inserted invoice {invoice_id} | {vendor_name} | ${amount} into BigQuery")
             return True
             
         except Exception as e:

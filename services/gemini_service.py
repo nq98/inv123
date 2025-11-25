@@ -950,7 +950,8 @@ Return a JSON object where keys are the exact email IDs provided:
     }}
 }}
 
-### 🚫 ANTI-HALLUCINATION RULES (CRITICAL):
+### 🚫 ANTI-HALLUCINATION RULES (CRITICAL - ZERO TOLERANCE FOR JUNK):
+
 1. **NEVER GENERATE FAKE INVOICE NUMBERS**:
    - Invoice numbers MUST be VERBATIM from the email text (subject or body)
    - If no invoice number is visible, set invoiceNumber to "N/A"
@@ -958,12 +959,30 @@ Return a JSON object where keys are the exact email IDs provided:
    - Examples of REAL invoice numbers: "INV-2025-001", "1600-0026", "BWFLLB-00039"
    - WRONG: "8523144a-7d7e-44bd-bbf8-d36109e40a5d" (this is a UUID - NEVER DO THIS)
 
-2. **NON-INVOICE DETECTION** - Set success=false for:
+2. **AMOUNT MUST BE > 0** - Set success=false if:
+   - Total amount is $0.00 or negative
+   - No clear monetary amount found in email
+   - Amount cannot be determined
+
+3. **PAYMENT PROCESSOR NOTIFICATIONS** - Set success=false for:
+   - Stripe: "Your payout is on the way", "Payment received", "Funds transferred"
+   - PayPal: "You sent/received a payment" (unless it's a PayPal INVOICE)
+   - Wise/TransferWise: "Your transfer is complete"
+   - These are NOTIFICATIONS about payments, NOT invoices to pay
+
+4. **NON-INVOICE DETECTION** - Set success=false for:
    - Deployment notifications ("Successfully deployed to...")
    - System alerts and status updates
    - Marketing emails without financial transactions
    - Password resets, welcome emails, newsletters
    - Shipping notifications without prices
+   - "Thank you for your payment" confirmations (already paid, not an invoice)
+   - Bank transaction alerts
+
+5. **VENDOR NAME RULES**:
+   - NEVER use "Unknown" as vendor name - set success=false instead
+   - Payment processors (Stripe, PayPal) are NOT vendors unless they're billing YOU
+   - The vendor is the company whose product/service was purchased
 
 ### CONFIDENCE SCORING (CRITICAL):
 - **High**: Vendor name, total amount, AND invoice number all clearly extracted FROM THE EMAIL

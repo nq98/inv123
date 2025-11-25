@@ -3,6 +3,13 @@
 ## Recent Changes
 
 ### November 25, 2025
+- **🚫 ZERO TOLERANCE ANTI-JUNK SYSTEM**: Comprehensive data quality enforcement
+  - **Anti-Hallucination Rules**: AI explicitly forbidden from generating fake UUIDs as invoice numbers
+  - **Amount Validation**: Zero-amount invoices automatically rejected (amount > 0 required)
+  - **Vendor Validation**: "Unknown" vendor names rejected, "Unknown" invoice IDs normalized to "N/A"
+  - **Payment Processor Filter**: Stripe/PayPal/Wise notifications rejected (not real invoices)
+  - **Cross-Session Deduplication**: BigQuery checked before insert to prevent duplicates across scans
+  - **Two-Tier Dedup Strategy**: With invoice number uses `inv_id|vendor|amount`, without uses `vendor|amount|date|subject_hash`
 - **Email Snapshot Document Storage**: Text-based emails now generate HTML snapshots for audit trail
   - `generate_email_snapshot_html()` creates professional HTML documents from email content
   - `upload_email_snapshot_to_gcs()` uploads snapshots to GCS `payouts-invoices/uploads/` bucket
@@ -21,10 +28,6 @@
   - **Step 4: Honest Confidence Scoring** - Real scores based on data quality (no fake 85%)
   - **Step 5: Buyer Extraction** - Finds buyer from greetings/payer fields
   - UI displays Chain of Thought: Processor, Vendor, Buyer, Math, OCR Fixes
-- **Improved Smart Deduplication**: Fixed false negative deduplication issue when vendor is "Unknown"
-  - Added email subject hash to deduplication key when vendor cannot be identified
-  - Prevents false duplicates across different emails with the same invoice number
-  - Uses MD5 hash of email subject for differentiation (UNK_HASH format)
 
 ### November 24, 2025
 - **Fixed Critical Bug**: Resolved vendor_id NULL issue in invoice storage despite successful vendor matching (95% confidence)
