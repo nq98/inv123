@@ -1264,10 +1264,11 @@ def create_invoice_in_netsuite(invoice_id):
     import json
     
     try:
-        # Get optional vendor_name and amount from request body (for fallback lookup)
+        # Get request data (may include full invoice data for auto-save)
         request_data = request.get_json(silent=True) or {}
         fallback_vendor_name = request_data.get('vendor_name')
         fallback_amount = request_data.get('amount')
+        auto_save = request_data.get('auto_save', False)
         
         # Get invoice details from BigQuery - try by ID first, then by invoice_number
         bigquery_service = BigQueryService()
@@ -1281,6 +1282,43 @@ def create_invoice_in_netsuite(invoice_id):
         if not invoice and fallback_vendor_name and fallback_amount:
             print(f"📋 Invoice not found by ID, trying vendor+amount lookup: {fallback_vendor_name} | ${fallback_amount}")
             invoice = bigquery_service.get_invoice_by_vendor_and_amount(fallback_vendor_name, float(fallback_amount))
+        
+        # AUTO-SAVE: If invoice not found but we have full data, save it first
+        if not invoice and auto_save and request_data.get('full_data'):
+            print(f"📋 Invoice not in database, auto-saving from Gmail data: {invoice_id}")
+            
+            full_data = request_data.get('full_data', {})
+            vendor_match = request_data.get('vendor_match', {})
+            
+            # Build invoice record for BigQuery
+            invoice_record = {
+                'invoice_id': invoice_id,
+                'invoice_number': request_data.get('invoice_number', invoice_id),
+                'vendor_name': fallback_vendor_name or full_data.get('vendor', {}).get('name', 'Unknown'),
+                'vendor_id': vendor_match.get('database_vendor', {}).get('vendor_id') if vendor_match else None,
+                'total_amount': float(fallback_amount or 0),
+                'currency': request_data.get('currency', 'USD'),
+                'issue_date': request_data.get('issue_date'),
+                'due_date': request_data.get('due_date'),
+                'status': 'pending',
+                'gcs_uri': request_data.get('gcs_uri'),
+                'extraction_confidence': full_data.get('extractionConfidence', 0.85),
+                'raw_extraction': json.dumps(full_data) if full_data else None,
+                'source': 'gmail_create_bill_autosave'
+            }
+            
+            # Save to BigQuery
+            try:
+                saved_id = bigquery_service.save_invoice(invoice_record)
+                print(f"✓ Auto-saved invoice to BigQuery: {saved_id}")
+                
+                # Re-fetch the saved invoice
+                invoice = bigquery_service.get_invoice_details(saved_id)
+                if not invoice:
+                    invoice = bigquery_service.get_invoice_by_number(invoice_id)
+            except Exception as save_error:
+                print(f"⚠️ Auto-save failed: {save_error}")
+                # Continue anyway - might find by vendor lookup
         
         if not invoice:
             return jsonify({

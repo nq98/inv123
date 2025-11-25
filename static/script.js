@@ -857,10 +857,19 @@ gmailImportBtn.addEventListener('click', async () => {
     }
 });
 
+// Global storage for Gmail extracted invoices - used for Create Bill
+window.__gmailExtractedInvoices = window.__gmailExtractedInvoices || [];
+
 function displayInvoiceData(invoices) {
     if (!invoices || invoices.length === 0) {
         return;
     }
+    
+    // Store invoices globally so Create Bill can access full data
+    const startIdx = window.__gmailExtractedInvoices.length;
+    invoices.forEach((inv, i) => {
+        window.__gmailExtractedInvoices[startIdx + i] = inv;
+    });
     
     let html = `
         <div style="margin-top: 30px;">
@@ -868,6 +877,8 @@ function displayInvoiceData(invoices) {
     `;
     
     invoices.forEach((invoice, idx) => {
+        // Use global index for button onclick handlers
+        const globalIdx = startIdx + idx;
         const fullData = invoice.full_data || {};
         const vendor = fullData.vendor || {};
         const buyer = fullData.buyer || {};
@@ -1206,19 +1217,19 @@ function displayInvoiceData(invoices) {
                                         `<span style="color: #f57c00;">⚠️ Vendor not yet synced to NetSuite</span>`}
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 8px;" id="billActionsContainer${idx}">
-                                <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx}, '${encodeURIComponent(fullData.vendor?.name || invoice.vendor_name || '')}', ${fullData.totalAmount || invoice.amount || 0})" 
+                            <div style="display: flex; gap: 8px;" id="billActionsContainer${globalIdx}">
+                                <button onclick="createBillFromGmail(${globalIdx})" 
                                         style="padding: 8px 16px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
                                     <span>📝</span> Create Bill
                                 </button>
-                                <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx}, '${encodeURIComponent(fullData.vendor?.name || invoice.vendor_name || '')}', ${fullData.totalAmount || invoice.amount || 0})" 
+                                <button onclick="updateBillFromGmail(${globalIdx})" 
                                         style="padding: 8px 16px; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
                                     <span>🔄</span> Update Bill
                                 </button>
                             </div>
                         </div>
                         <!-- Status Container for error/success messages (keeps buttons visible on error) -->
-                        <div id="billStatusContainer${idx}" style="display: none;"></div>
+                        <div id="billStatusContainer${globalIdx}" style="display: none;"></div>
                     </div>
                 </div>
                 
@@ -1283,13 +1294,25 @@ window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
     }
 };
 
-window.createBillFromGmail = async function(encodedInvoiceId, idx, encodedVendorName, amount) {
-    const invoiceId = decodeURIComponent(encodedInvoiceId);
-    const vendorName = encodedVendorName ? decodeURIComponent(encodedVendorName) : null;
-    console.log('📝 Creating bill for invoice:', invoiceId, 'vendor:', vendorName, 'amount:', amount);
+window.createBillFromGmail = async function(globalIdx) {
+    // Get full invoice data from global storage
+    const storedInvoice = window.__gmailExtractedInvoices?.[globalIdx];
+    if (!storedInvoice) {
+        console.error('Invoice not found in global storage at index:', globalIdx);
+        alert('Invoice data not found. Please re-scan from Gmail.');
+        return;
+    }
     
-    const container = document.getElementById(`billActionsContainer${idx}`);
-    const statusContainer = document.getElementById(`billStatusContainer${idx}`);
+    const fullData = storedInvoice.full_data || {};
+    const invoiceId = fullData.invoiceNumber || storedInvoice.invoice_number || 'unknown';
+    const vendorName = fullData.vendor?.name || storedInvoice.vendor_name || '';
+    const amount = fullData.totalAmount || fullData.totals?.total || storedInvoice.amount || 0;
+    
+    console.log('📝 Creating bill for invoice:', invoiceId, 'vendor:', vendorName, 'amount:', amount);
+    console.log('📝 Full invoice data available:', Object.keys(fullData).length > 0);
+    
+    const container = document.getElementById(`billActionsContainer${globalIdx}`);
+    const statusContainer = document.getElementById(`billStatusContainer${globalIdx}`);
     const originalContent = container ? container.innerHTML : '';
     
     // Show loading status
@@ -1299,15 +1322,30 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx, encodedVendor
     }
     
     try {
-        // Use existing invoice create endpoint with proper dedup and audit logging
-        // Pass vendor_name and amount for fallback lookup if invoice not found by ID
+        // Pass FULL invoice data so backend can save it if not already in database
+        const invoicePayload = {
+            vendor_name: vendorName,
+            amount: parseFloat(amount) || 0,
+            invoice_number: invoiceId,
+            currency: fullData.currency || 'USD',
+            issue_date: fullData.issueDate || null,
+            due_date: fullData.dueDate || null,
+            vendor_data: fullData.vendor || {},
+            buyer_data: fullData.buyer || {},
+            totals: fullData.totals || {},
+            line_items: fullData.lineItems || [],
+            gcs_uri: storedInvoice.gcs_uri || null,
+            email_subject: storedInvoice.subject || null,
+            email_sender: storedInvoice.sender || null,
+            vendor_match: storedInvoice.vendor_match || null,
+            full_data: fullData,
+            auto_save: true  // Flag to save invoice if not in database
+        };
+        
         const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                vendor_name: vendorName,
-                amount: amount
-            })
+            body: JSON.stringify(invoicePayload)
         });
         const result = await response.json();
         
@@ -1343,13 +1381,24 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx, encodedVendor
     }
 };
 
-window.updateBillFromGmail = async function(encodedInvoiceId, idx, encodedVendorName, amount) {
-    const invoiceId = decodeURIComponent(encodedInvoiceId);
-    const vendorName = encodedVendorName ? decodeURIComponent(encodedVendorName) : null;
+window.updateBillFromGmail = async function(globalIdx) {
+    // Get full invoice data from global storage
+    const storedInvoice = window.__gmailExtractedInvoices?.[globalIdx];
+    if (!storedInvoice) {
+        console.error('Invoice not found in global storage at index:', globalIdx);
+        alert('Invoice data not found. Please re-scan from Gmail.');
+        return;
+    }
+    
+    const fullData = storedInvoice.full_data || {};
+    const invoiceId = fullData.invoiceNumber || storedInvoice.invoice_number || 'unknown';
+    const vendorName = fullData.vendor?.name || storedInvoice.vendor_name || '';
+    const amount = fullData.totalAmount || fullData.totals?.total || storedInvoice.amount || 0;
+    
     console.log('🔄 Updating bill for invoice:', invoiceId, 'vendor:', vendorName, 'amount:', amount);
     
-    const container = document.getElementById(`billActionsContainer${idx}`);
-    const statusContainer = document.getElementById(`billStatusContainer${idx}`);
+    const container = document.getElementById(`billActionsContainer${globalIdx}`);
+    const statusContainer = document.getElementById(`billStatusContainer${globalIdx}`);
     
     // Show loading status
     if (statusContainer) {
@@ -1358,15 +1407,30 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx, encodedVendor
     }
     
     try {
-        // Use existing invoice update endpoint with proper dedup and audit logging
-        // Pass vendor_name and amount for fallback lookup if invoice not found by ID
+        // Pass FULL invoice data so backend can save it if not already in database
+        const invoicePayload = {
+            vendor_name: vendorName,
+            amount: parseFloat(amount) || 0,
+            invoice_number: invoiceId,
+            currency: fullData.currency || 'USD',
+            issue_date: fullData.issueDate || null,
+            due_date: fullData.dueDate || null,
+            vendor_data: fullData.vendor || {},
+            buyer_data: fullData.buyer || {},
+            totals: fullData.totals || {},
+            line_items: fullData.lineItems || [],
+            gcs_uri: storedInvoice.gcs_uri || null,
+            email_subject: storedInvoice.subject || null,
+            email_sender: storedInvoice.sender || null,
+            vendor_match: storedInvoice.vendor_match || null,
+            full_data: fullData,
+            auto_save: true  // Flag to save invoice if not in database
+        };
+        
         const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/update`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                vendor_name: vendorName,
-                amount: amount
-            })
+            body: JSON.stringify(invoicePayload)
         });
         const result = await response.json();
         
