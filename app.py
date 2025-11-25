@@ -2370,6 +2370,7 @@ def gmail_import_stream():
                             failures.append(subject)
                     
                     # Process links (simplified for parallel processing)
+                    link_extraction_succeeded = False
                     for link_url in links[:2]:
                         try:
                             progress_msgs.append({'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:60]}...'})
@@ -2418,6 +2419,7 @@ def gmail_import_stream():
                                                 'currency': currency, 'line_items': validated.get('lineItems', []),
                                                 'full_data': validated, 'source_type': ltype
                                             })
+                                            link_extraction_succeeded = True
                                 except Exception as err:
                                     if os.path.exists(filepath):
                                         os.remove(filepath)
@@ -2427,6 +2429,42 @@ def gmail_import_stream():
                                 progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Link failed: {reasoning}'})
                         except Exception as link_err:
                             progress_msgs.append({'type': 'error', 'message': f'  ❌ Link error: {str(link_err)[:60]}'})
+                    
+                    # TEXT-FIRST FALLBACK: If no attachments extracted and all links failed, try email body
+                    if not extracted and not link_extraction_succeeded and not attachments:
+                        progress_msgs.append({'type': 'info', 'message': '  📧 Links failed - trying TEXT-FIRST extraction from email body...'})
+                        
+                        html_body = gmail_svc.extract_html_body(message)
+                        plain_text_body = gmail_svc.extract_plain_text_body(message)
+                        email_content = html_body or plain_text_body
+                        
+                        if email_content:
+                            text_result = gemini_svc.extract_invoice_from_text(email_content, email_subject=subject, sender_email=sender)
+                            
+                            if text_result:
+                                vendor = text_result.get('vendor', {}).get('name', 'Unknown')
+                                total = text_result.get('totals', {}).get('total', 0)
+                                currency = text_result.get('currency', 'USD')
+                                invoice_num = text_result.get('invoiceNumber', 'N/A')
+                                
+                                if vendor and vendor != 'Unknown' and total and total > 0:
+                                    if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                        dup_count += 1
+                                        progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
+                                    else:
+                                        progress_msgs.append({'type': 'success', 'message': f'  ✅ TEXT-FIRST FALLBACK: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                        extracted.append({
+                                            'subject': subject, 'sender': sender, 'date': metadata.get('date'),
+                                            'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
+                                            'currency': currency, 'line_items': text_result.get('lineItems', []),
+                                            'full_data': text_result, 'source_type': 'text_first_fallback'
+                                        })
+                                else:
+                                    progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Text extraction incomplete: vendor={vendor}, total={total}'})
+                            else:
+                                progress_msgs.append({'type': 'warning', 'message': '  ⚠️ Text-first extraction returned no result'})
+                        else:
+                            progress_msgs.append({'type': 'warning', 'message': '  ⚠️ No email body content found for fallback'})
                     
                 except Exception as e:
                     progress_msgs.append({'type': 'error', 'message': f'  ❌ Error: {str(e)[:80]}'})
