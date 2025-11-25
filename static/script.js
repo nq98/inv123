@@ -767,11 +767,20 @@ function startGmailScan(days, resumeScanId = null) {
             retryCount: 0,
             maxRetries: 5,
             lastKeepalive: Date.now(),
-            importResults: { imported: 0, skipped: 0, total: 0, invoices: [] }
+            importResults: { imported: 0, skipped: 0, total: 0, invoices: [] },
+            stopRetrying: false  // Flag to prevent retry loops on auth errors
         };
     }
     
     const state = window.__gmailScanState;
+    
+    // Check if we should stop retrying (auth error occurred)
+    if (state.stopRetrying) {
+        console.log('Stopping retry - auth error previously occurred');
+        gmailImportBtn.disabled = false;
+        gmailImportBtn.textContent = '🔍 Start Smart Scan';
+        return;
+    }
     let url = `/api/ap-automation/gmail/import/stream?days=${days}`;
     if (resumeScanId) {
         url += `&resume_scan_id=${resumeScanId}`;
@@ -807,6 +816,13 @@ function startGmailScan(days, resumeScanId = null) {
     
     function handleReconnect() {
         cleanup();
+        
+        // Don't retry if auth error occurred
+        if (state.stopRetrying) {
+            console.log('handleReconnect: Stopping due to auth error');
+            return;
+        }
+        
         state.retryCount++;
         
         if (state.retryCount > state.maxRetries) {
@@ -921,7 +937,8 @@ function startGmailScan(days, resumeScanId = null) {
                 cleanup();
                 handleReconnect();
             } else if (errorMessage.includes('Gmail not connected') || errorMessage.includes('session expired')) {
-                // Auth error - can't retry
+                // Auth error - can't retry, set flag to stop all retries
+                state.stopRetrying = true;
                 cleanup();
                 addTerminalLine(`❌ ${errorMessage}`, 'error');
                 showError('Gmail Authentication Required', 'Please connect your Gmail account first.');
@@ -959,6 +976,13 @@ function startGmailScan(days, resumeScanId = null) {
     // Handle connection errors (browser EventSource onerror)
     eventSource.onerror = (error) => {
         console.error('Gmail SSE connection error:', error, 'readyState:', eventSource.readyState);
+        
+        // Don't do anything if we should stop retrying (auth error)
+        if (state.stopRetrying) {
+            console.log('onerror: Ignoring due to stopRetrying flag');
+            cleanup();
+            return;
+        }
         
         if (eventSource.readyState === EventSource.CLOSED) {
             // Connection was closed, try to reconnect if we have a scan ID
