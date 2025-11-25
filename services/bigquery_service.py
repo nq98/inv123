@@ -754,6 +754,247 @@ class BigQueryService:
                 "last_sync": None
             }
     
+    def get_invoice_timeline(self, invoice_id):
+        """
+        Get clean timeline events for a specific invoice.
+        Returns user-friendly events showing the journey through NetSuite.
+        
+        Args:
+            invoice_id: The invoice ID to get timeline for
+            
+        Returns:
+            List of timeline events with icon, title, description, timestamp
+        """
+        try:
+            events_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.netsuite_events"
+            sync_log_table_id = self.full_sync_log_table_id
+            
+            timeline = []
+            
+            query = f"""
+            SELECT 
+                timestamp,
+                direction,
+                event_type,
+                event_category,
+                status,
+                action,
+                netsuite_id,
+                error_message,
+                metadata
+            FROM `{events_table_id}`
+            WHERE entity_id = @invoice_id
+              AND entity_type = 'invoice'
+            ORDER BY timestamp ASC
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+                ]
+            )
+            
+            try:
+                results = self.client.query(query, job_config=job_config).result()
+                
+                for row in results:
+                    event = self._format_timeline_event(
+                        timestamp=row.timestamp,
+                        direction=row.direction,
+                        event_type=row.event_type,
+                        event_category=row.event_category,
+                        status=row.status,
+                        action=row.action,
+                        netsuite_id=row.netsuite_id,
+                        error_message=row.error_message,
+                        metadata=row.metadata
+                    )
+                    if event:
+                        timeline.append(event)
+            except Exception as events_err:
+                print(f"⚠️ Events table query failed, trying sync log: {events_err}")
+            
+            if not timeline:
+                sync_query = f"""
+                SELECT 
+                    timestamp,
+                    action,
+                    status,
+                    netsuite_id,
+                    error_message,
+                    response_data
+                FROM `{sync_log_table_id}`
+                WHERE entity_id = @invoice_id
+                  AND entity_type = 'invoice'
+                ORDER BY timestamp ASC
+                """
+                
+                try:
+                    results = self.client.query(sync_query, job_config=job_config).result()
+                    
+                    for row in results:
+                        event = self._format_timeline_event_from_sync(
+                            timestamp=row.timestamp,
+                            action=row.action,
+                            status=row.status,
+                            netsuite_id=row.netsuite_id,
+                            error_message=row.error_message,
+                            response_data=row.response_data
+                        )
+                        if event:
+                            timeline.append(event)
+                except Exception as sync_err:
+                    print(f"⚠️ Sync log query also failed: {sync_err}")
+            
+            return timeline
+            
+        except Exception as e:
+            print(f"❌ Error fetching invoice timeline: {e}")
+            return []
+    
+    def _format_timeline_event(self, timestamp, direction, event_type, event_category, 
+                               status, action, netsuite_id, error_message, metadata):
+        """Format a netsuite_events record into a clean timeline event"""
+        
+        event_configs = {
+            'BILL_CREATE': {
+                'icon': '📝',
+                'title': 'Bill Created',
+                'success_desc': 'Bill created in NetSuite',
+                'failed_desc': 'Failed to create bill'
+            },
+            'BILL_UPDATE': {
+                'icon': '🔄',
+                'title': 'Bill Updated',
+                'success_desc': 'Bill updated with correct amount',
+                'failed_desc': 'Failed to update bill'
+            },
+            'APPROVAL_STATUS_CHANGE': {
+                'icon': '✅',
+                'title': 'Approval Status Changed',
+                'success_desc': 'Bill approval status updated',
+                'failed_desc': 'Failed to update approval'
+            },
+            'BILL_APPROVAL': {
+                'icon': '✅',
+                'title': 'Bill Approved',
+                'success_desc': 'Bill approved in NetSuite',
+                'failed_desc': 'Approval check failed'
+            },
+            'PAYMENT_SCHEDULED': {
+                'icon': '💰',
+                'title': 'Payment Scheduled',
+                'success_desc': 'Payment scheduled for processing',
+                'failed_desc': 'Failed to schedule payment'
+            },
+            'PAYMENT_COMPLETED': {
+                'icon': '💵',
+                'title': 'Payment Completed',
+                'success_desc': 'Payment processed successfully',
+                'failed_desc': 'Payment processing failed'
+            }
+        }
+        
+        config = event_configs.get(event_type, {
+            'icon': '📋',
+            'title': event_type.replace('_', ' ').title() if event_type else 'Event',
+            'success_desc': f'{event_type} completed',
+            'failed_desc': f'{event_type} failed'
+        })
+        
+        is_success = status and status.upper() in ['SUCCESS', 'COMPLETED', 'APPROVED']
+        
+        description = config['success_desc'] if is_success else config['failed_desc']
+        if netsuite_id:
+            description += f" (ID: {netsuite_id})"
+        if error_message and not is_success:
+            description = error_message[:100]
+        
+        return {
+            'icon': config['icon'],
+            'title': config['title'],
+            'description': description,
+            'timestamp': timestamp.isoformat() if timestamp else None,
+            'status': 'success' if is_success else 'failed',
+            'direction': direction,
+            'netsuite_id': netsuite_id
+        }
+    
+    def _format_timeline_event_from_sync(self, timestamp, action, status, netsuite_id, 
+                                         error_message, response_data):
+        """Format a sync log record into a clean timeline event"""
+        
+        action_configs = {
+            'create': {'icon': '📝', 'title': 'Bill Created'},
+            'update': {'icon': '🔄', 'title': 'Bill Updated'},
+            'sync': {'icon': '🔗', 'title': 'Synced to NetSuite'},
+            'approval_check': {'icon': '✅', 'title': 'Approval Check'},
+            'test': {'icon': '🧪', 'title': 'Connection Test'}
+        }
+        
+        config = action_configs.get(action, {'icon': '📋', 'title': action.title() if action else 'Event'})
+        
+        is_success = status and status.lower() == 'success'
+        
+        description = f"{config['title']} {'succeeded' if is_success else 'failed'}"
+        if netsuite_id:
+            description = f"NetSuite ID: {netsuite_id}"
+        if error_message and not is_success:
+            description = error_message[:100]
+        
+        return {
+            'icon': config['icon'],
+            'title': config['title'],
+            'description': description,
+            'timestamp': timestamp.isoformat() if timestamp else None,
+            'status': 'success' if is_success else 'failed',
+            'netsuite_id': netsuite_id
+        }
+    
+    def log_invoice_timeline_event(self, invoice_id, event_type, status='SUCCESS', 
+                                   netsuite_id=None, description=None, metadata=None):
+        """
+        Log a timeline event for an invoice (simplified helper method)
+        
+        Args:
+            invoice_id: The invoice ID
+            event_type: Type like BILL_CREATE, BILL_UPDATE, BILL_APPROVAL, PAYMENT_SCHEDULED
+            status: SUCCESS or FAILED
+            netsuite_id: NetSuite internal ID if applicable
+            description: Optional custom description
+            metadata: Optional dict with extra info
+        """
+        try:
+            events_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.netsuite_events"
+            
+            row = {
+                "event_id": str(uuid.uuid4()),
+                "timestamp": datetime.utcnow().isoformat(),
+                "direction": "OUTBOUND",
+                "event_type": event_type,
+                "event_category": "BILL",
+                "status": status,
+                "entity_type": "invoice",
+                "entity_id": invoice_id,
+                "netsuite_id": netsuite_id,
+                "action": event_type.lower().replace('_', ' '),
+                "error_message": description if status == 'FAILED' else None,
+                "metadata": metadata or {}
+            }
+            
+            errors = self.client.insert_rows_json(events_table_id, [row])
+            
+            if errors:
+                print(f"⚠️ Error logging timeline event: {errors}")
+                return False
+            
+            print(f"✓ Logged timeline event: {event_type} for invoice {invoice_id}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error logging timeline event: {e}")
+            return False
+    
     def query(self, sql_query, params=None):
         """
         Execute a parameterized BigQuery query and return results as list of dicts

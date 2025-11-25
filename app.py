@@ -1547,6 +1547,20 @@ def create_invoice_in_netsuite(invoice_id):
             }), 409  # Return 409 Conflict for duplicate resources
         
         if result and result.get('success'):
+            bill_id = result.get('bill_id')
+            
+            # Log timeline event for bill creation
+            try:
+                bigquery_service.log_invoice_timeline_event(
+                    invoice_id=invoice_id,
+                    event_type='BILL_CREATE',
+                    status='SUCCESS',
+                    netsuite_id=str(bill_id),
+                    metadata={'amount': invoice_amount, 'vendor_name': invoice.get('vendor_name')}
+                )
+            except Exception as log_err:
+                print(f"⚠️ Failed to log timeline event: {log_err}")
+            
             # Try to update BigQuery with NetSuite bill ID
             # Note: This may fail if invoice was just inserted (streaming buffer)
             try:
@@ -1560,21 +1574,21 @@ def create_invoice_in_netsuite(invoice_id):
                 job_config = bigquery.QueryJobConfig(
                     query_parameters=[
                         bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
-                        bigquery.ScalarQueryParameter("bill_id", "STRING", str(result.get('bill_id')))
+                        bigquery.ScalarQueryParameter("bill_id", "STRING", str(bill_id))
                     ]
                 )
                 client.query(query, job_config=job_config).result()
-                print(f"✓ Updated invoice {invoice_id} with bill ID {result.get('bill_id')}")
+                print(f"✓ Updated invoice {invoice_id} with bill ID {bill_id}")
             except Exception as update_err:
                 # Handle streaming buffer error gracefully - bill was still created!
                 if "streaming buffer" in str(update_err).lower():
-                    print(f"⚠️ Cannot update invoice (streaming buffer) - bill was created: {result.get('bill_id')}")
+                    print(f"⚠️ Cannot update invoice (streaming buffer) - bill was created: {bill_id}")
                 else:
                     print(f"⚠️ Failed to update invoice with bill ID: {update_err}")
             
             return jsonify({
                 'success': True,
-                'netsuite_bill_id': result.get('bill_id'),
+                'netsuite_bill_id': bill_id,
                 'message': 'Bill created successfully in NetSuite'
             })
         else:
@@ -1718,6 +1732,18 @@ def update_bill_in_netsuite(invoice_id):
         result = netsuite.update_vendor_bill(bill_update_data)
         
         if result and result.get('success'):
+            # Log timeline event for bill update
+            try:
+                bigquery_service.log_invoice_timeline_event(
+                    invoice_id=invoice_id,
+                    event_type='BILL_UPDATE',
+                    status='SUCCESS',
+                    netsuite_id=str(netsuite_bill_id),
+                    metadata={'amount': total_amount, 'vendor_name': invoice.get('vendor_name')}
+                )
+            except Exception as log_err:
+                print(f"⚠️ Failed to log timeline event: {log_err}")
+            
             # Update BigQuery to reflect the update
             from google.cloud import bigquery
             client = bigquery_service.client
@@ -7302,6 +7328,32 @@ def log_netsuite_event():
         return jsonify({
             'success': False,
             'error': str(e)
+        }), 500
+
+@app.route('/api/invoice/<invoice_id>/timeline', methods=['GET'])
+def get_invoice_timeline(invoice_id):
+    """
+    Get clean, visual timeline of invoice events through NetSuite.
+    Shows: Bill Created → Updated → Approved → Payment Scheduled
+    """
+    try:
+        bigquery_service = BigQueryService()
+        
+        timeline = bigquery_service.get_invoice_timeline(invoice_id)
+        
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_id,
+            'timeline': timeline,
+            'count': len(timeline)
+        })
+        
+    except Exception as e:
+        print(f"Error getting invoice timeline: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timeline': []
         }), 500
 
 @app.route('/api/netsuite/bill/<invoice_id>/approval', methods=['GET'])
