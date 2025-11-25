@@ -465,6 +465,31 @@ class GmailService:
 '''
         return html_template
     
+    def _find_chromium_executable(self):
+        """Find system Chromium executable (Nix-installed or system)"""
+        import glob
+        import shutil
+        
+        possible_paths = [
+            '/nix/store/*/bin/chromium',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+        ]
+        
+        for pattern in possible_paths:
+            if '*' in pattern:
+                matches = glob.glob(pattern)
+                if matches:
+                    return matches[0]
+            elif os.path.exists(pattern):
+                return pattern
+        
+        path_chromium = shutil.which('chromium') or shutil.which('chromium-browser')
+        if path_chromium:
+            return path_chromium
+            
+        return None
+    
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
         Convert HTML email content to a PDF using Playwright
@@ -479,8 +504,25 @@ class GmailService:
             safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
             filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
             
+            chromium_path = self._find_chromium_executable()
+            
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                launch_options = {
+                    'headless': True,
+                    'args': [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--single-process'
+                    ]
+                }
+                
+                if chromium_path:
+                    launch_options['executable_path'] = chromium_path
+                    print(f"📄 Using Chromium at: {chromium_path}")
+                
+                browser = p.chromium.launch(**launch_options)
                 page = browser.new_page(viewport={'width': 800, 'height': 1200})
                 
                 page.set_content(html_content)
