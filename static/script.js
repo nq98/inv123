@@ -1086,9 +1086,16 @@ function displayInvoiceData(invoices) {
                     </div>
                 ` : ''}
                 
-                <button onclick="toggleFullData(${idx})" style="margin-top: 15px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
-                    📄 View Complete JSON Schema
-                </button>
+                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    ${invoice.gcs_uri ? `
+                        <button onclick="viewGmailInvoiceDocument('${encodeURIComponent(invoice.gcs_uri)}')" style="padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                            📄 View Source Document
+                        </button>
+                    ` : ''}
+                    <button onclick="toggleFullData(${idx})" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                        📋 View Complete JSON Schema
+                    </button>
+                </div>
                 
                 <div id="fullData${idx}" style="display: none; margin-top: 15px; background: #1e1e1e; padding: 15px; border-radius: 4px; max-height: 500px; overflow-y: auto;">
                     <pre style="margin: 0; font-size: 12px; white-space: pre-wrap; color: #d4d4d4; font-family: 'Courier New', monospace;">${JSON.stringify(fullData, null, 2)}</pre>
@@ -1108,6 +1115,25 @@ window.toggleFullData = function(idx) {
         element.style.display = 'block';
     } else {
         element.style.display = 'none';
+    }
+};
+
+window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
+    const gcsUri = decodeURIComponent(encodedGcsUri);
+    console.log('📄 View Gmail invoice document:', gcsUri);
+    
+    try {
+        const response = await fetch(`/api/invoices/gcs/signed-url?gcs_uri=${encodeURIComponent(gcsUri)}`);
+        const data = await response.json();
+        
+        if (data.success && data.download_url) {
+            window.open(data.download_url, '_blank');
+        } else {
+            alert('Failed to get document URL: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error viewing document:', error);
+        alert('Failed to view document: ' + error.message);
     }
 };
 

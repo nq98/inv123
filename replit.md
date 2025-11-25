@@ -3,6 +3,12 @@
 ## Recent Changes
 
 ### November 25, 2025
+- **Email Snapshot Document Storage**: Text-based emails now generate HTML snapshots for audit trail
+  - `generate_email_snapshot_html()` creates professional HTML documents from email content
+  - `upload_email_snapshot_to_gcs()` uploads snapshots to GCS `payouts-invoices/uploads/` bucket
+  - All invoices now have source documents (PDF attachments OR HTML snapshots)
+  - UI displays "View Source Document" button for Gmail imports with gcs_uri
+  - New API endpoint `/api/invoices/gcs/signed-url` generates time-limited viewing URLs
 - **OpenRouter Gemini 3 Pro Integration**: Added flagship model with 1M context window
   - Integrated OpenRouter API with `google/gemini-3-pro-preview` model
   - Uses `OPENROUTERA` secret for API authentication

@@ -28,8 +28,210 @@ from services.netsuite_service import NetSuiteService
 from services.sync_manager import SyncManager
 from services.audit_sync_manager import AuditSyncManager
 from config import config
+from google.cloud import storage
+from google.oauth2 import service_account
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+# ========== EMAIL SNAPSHOT & GCS UPLOAD HELPERS ==========
+# These functions generate HTML snapshots of text-based emails and upload to GCS
+# for permanent storage (source document proof for accounting)
+
+GCS_BUCKET_NAME = "payouts-invoices"
+
+def get_gcs_client():
+    """Get authenticated GCS client using service account credentials"""
+    credentials = None
+    sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+    if sa_json:
+        try:
+            sa_info = json.loads(sa_json)
+            credentials = service_account.Credentials.from_service_account_info(sa_info)
+        except json.JSONDecodeError:
+            print("Warning: Failed to parse GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON for GCS")
+    elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+        credentials = service_account.Credentials.from_service_account_file(
+            config.VERTEX_RUNNER_SA_PATH
+        )
+    
+    return storage.Client(
+        project=config.GOOGLE_CLOUD_PROJECT_ID,
+        credentials=credentials
+    )
+
+def generate_email_snapshot_html(email_metadata, email_body, extracted_data=None):
+    """
+    Generate a clean HTML snapshot of an email receipt for permanent storage.
+    This serves as the "source document" proof for text-based emails.
+    
+    Args:
+        email_metadata: dict with subject, from, date
+        email_body: The email body content (HTML or plain text)
+        extracted_data: Optional extracted invoice data to include
+    
+    Returns:
+        str: Complete HTML document ready for storage
+    """
+    subject = email_metadata.get('subject', 'No Subject')
+    sender = email_metadata.get('from', 'Unknown Sender')
+    date = email_metadata.get('date', 'Unknown Date')
+    
+    clean_body = email_body or ''
+    if '<html' in clean_body.lower() or '<body' in clean_body.lower():
+        pass
+    else:
+        clean_body = f"<pre style='white-space: pre-wrap; font-family: inherit;'>{clean_body}</pre>"
+    
+    extracted_section = ""
+    if extracted_data:
+        vendor = extracted_data.get('vendor', {}).get('name', 'Unknown')
+        total = extracted_data.get('totals', {}).get('total', 0)
+        currency = extracted_data.get('currency', 'USD')
+        invoice_num = extracted_data.get('invoiceNumber', 'N/A')
+        line_items = extracted_data.get('lineItems', [])
+        
+        line_items_html = ""
+        if line_items:
+            line_items_html = "<table style='width: 100%; border-collapse: collapse; margin-top: 10px;'>"
+            line_items_html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>Description</th><th style='padding: 8px; text-align: right; border: 1px solid #ddd;'>Amount</th></tr>"
+            for item in line_items:
+                desc = item.get('description', 'Item')
+                qty = item.get('quantity', 1)
+                unit_price = item.get('unitPrice', 0)
+                line_total = item.get('lineSubtotal', item.get('lineTotal', unit_price * qty if qty else unit_price))
+                line_items_html += f"<tr><td style='padding: 8px; border: 1px solid #ddd;'>{desc}</td><td style='padding: 8px; text-align: right; border: 1px solid #ddd;'>{currency} {line_total}</td></tr>"
+            line_items_html += "</table>"
+        
+        extracted_section = f"""
+        <div style="background: #e8f5e9; border: 1px solid #4caf50; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 15px 0; color: #2e7d32;">AI Extracted Invoice Data</h3>
+            <table style="width: 100%;">
+                <tr><td style="padding: 5px 0; font-weight: bold;">Vendor:</td><td>{vendor}</td></tr>
+                <tr><td style="padding: 5px 0; font-weight: bold;">Invoice #:</td><td>{invoice_num}</td></tr>
+                <tr><td style="padding: 5px 0; font-weight: bold;">Total:</td><td><strong>{currency} {total}</strong></td></tr>
+            </table>
+            {line_items_html}
+        </div>
+        """
+    
+    snapshot_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Receipt - {subject}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f4f4f4;
+            padding: 40px;
+            margin: 0;
+            color: #333;
+        }}
+        .invoice-container {{
+            background: white;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }}
+        .header {{
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }}
+        .header h1 {{
+            margin: 0 0 10px 0;
+            color: #1a73e8;
+            font-size: 1.5em;
+        }}
+        .meta {{
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.8;
+        }}
+        .meta strong {{
+            color: #333;
+        }}
+        .content {{
+            line-height: 1.6;
+        }}
+        .footer {{
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 0.85em;
+            color: #999;
+            text-align: center;
+        }}
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <div class="header">
+            <h1>Email Receipt Snapshot</h1>
+            <div class="meta">
+                <strong>Subject:</strong> {subject}<br>
+                <strong>From:</strong> {sender}<br>
+                <strong>Date:</strong> {date}<br>
+                <strong>Captured:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+            </div>
+        </div>
+        {extracted_section}
+        <div class="content">
+            {clean_body}
+        </div>
+        <div class="footer">
+            This document was automatically generated by the Invoice Extraction System.<br>
+            It serves as a permanent record of the original email receipt.
+        </div>
+    </div>
+</body>
+</html>"""
+    return snapshot_html
+
+def upload_email_snapshot_to_gcs(snapshot_html, vendor_name, invoice_number, invoice_date=None):
+    """
+    Upload email snapshot HTML to GCS for permanent storage.
+    
+    Args:
+        snapshot_html: The HTML content to upload
+        vendor_name: Vendor name for organizing in GCS
+        invoice_number: Invoice number for filename
+        invoice_date: Optional invoice date for filename
+    
+    Returns:
+        dict with 'gcs_uri', 'file_type', 'file_size' or None on failure
+    """
+    try:
+        storage_client = get_gcs_client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        
+        safe_vendor = "".join(c if c.isalnum() or c in '-_' else '_' for c in (vendor_name or 'Unknown')[:50])
+        safe_invoice = "".join(c if c.isalnum() or c in '-_' else '_' for c in str(invoice_number or 'N_A')[:30])
+        date_str = invoice_date if invoice_date else datetime.now().strftime('%Y-%m-%d')
+        timestamp = datetime.now().strftime('%H%M%S')
+        
+        blob_name = f"email_snapshots/{safe_vendor}/{date_str}_{safe_invoice}_{timestamp}.html"
+        blob = bucket.blob(blob_name)
+        
+        content_bytes = snapshot_html.encode('utf-8')
+        blob.upload_from_string(content_bytes, content_type='text/html')
+        
+        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
+        
+        print(f"✅ Email snapshot uploaded to GCS: {gcs_uri}")
+        
+        return {
+            'gcs_uri': gcs_uri,
+            'file_type': 'html',
+            'file_size': len(content_bytes)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error uploading email snapshot to GCS: {e}")
+        return None
 
 app = Flask(__name__)
 
@@ -1920,6 +2122,93 @@ def get_invoice_download_url(invoice_id):
             'error': str(e)
         }), 500
 
+@app.route('/api/invoices/gcs/signed-url', methods=['GET'])
+def get_gcs_signed_url():
+    """Generate signed URL for any GCS document"""
+    try:
+        gcs_uri = request.args.get('gcs_uri')
+        expiration_seconds = int(request.args.get('expiration', 3600))
+        
+        if not gcs_uri:
+            return jsonify({
+                'success': False,
+                'error': 'Missing gcs_uri parameter'
+            }), 400
+        
+        if not gcs_uri.startswith('gs://'):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid GCS URI format'
+            }), 400
+        
+        uri_parts = gcs_uri[5:].split('/', 1)
+        bucket_name = uri_parts[0]
+        blob_name = uri_parts[1] if len(uri_parts) > 1 else ''
+        
+        # Initialize GCS client with credentials
+        credentials = None
+        sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+        if sa_json:
+            try:
+                sa_info = json.loads(sa_json)
+                credentials = service_account.Credentials.from_service_account_info(sa_info)
+            except json.JSONDecodeError:
+                print("Warning: Failed to parse GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON")
+        elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+            credentials = service_account.Credentials.from_service_account_file(
+                config.VERTEX_RUNNER_SA_PATH
+            )
+        
+        storage_client = storage.Client(
+            project=config.GOOGLE_CLOUD_PROJECT_ID,
+            credentials=credentials
+        )
+        
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        # Check if blob exists
+        if not blob.exists():
+            return jsonify({
+                'success': False,
+                'error': 'File not found in storage'
+            }), 404
+        
+        # Determine content type for proper rendering
+        file_extension = blob_name.split('.')[-1].lower() if '.' in blob_name else ''
+        content_type_map = {
+            'html': 'text/html',
+            'pdf': 'application/pdf',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg'
+        }
+        content_type = content_type_map.get(file_extension, 'application/octet-stream')
+        
+        # Generate signed URL with proper content type for viewing
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(seconds=expiration_seconds),
+            method="GET",
+            response_type=content_type
+        )
+        
+        return jsonify({
+            'success': True,
+            'download_url': signed_url,
+            'gcs_uri': gcs_uri,
+            'file_type': file_extension,
+            'content_type': content_type,
+            'expires_in': expiration_seconds
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error generating signed URL: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/ap-automation/gmail/auth', methods=['GET'])
 def gmail_auth():
     """Initiate Gmail OAuth flow"""
@@ -2257,6 +2546,7 @@ def gmail_import_stream():
                     # Raw HTML contains CSS that wastes context window
                     plain_body = gmail_service.extract_plain_text_body(message)
                     snippet = metadata.get('snippet', '')
+                    html_body_original = gmail_service.extract_html_body(message)  # Keep original for snapshot
                     
                     # Use plain text first, then snippet, HTML as last resort
                     if plain_body and len(plain_body) > 50:
@@ -2266,12 +2556,11 @@ def gmail_import_stream():
                         body_content = snippet
                     else:
                         # HTML fallback - try to extract text content
-                        html_body = gmail_service.extract_html_body(message)
-                        if html_body:
+                        if html_body_original:
                             # Strip HTML tags to get text content
                             import re
                             # Remove style/script blocks first
-                            text = re.sub(r'<style[^>]*>.*?</style>', '', html_body, flags=re.DOTALL | re.IGNORECASE)
+                            text = re.sub(r'<style[^>]*>.*?</style>', '', html_body_original, flags=re.DOTALL | re.IGNORECASE)
                             text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
                             # Remove HTML tags
                             text = re.sub(r'<[^>]+>', ' ', text)
@@ -2286,7 +2575,8 @@ def gmail_import_stream():
                         'subject': metadata.get('subject', '(no subject)'),
                         'sender': metadata.get('from', 'unknown'),
                         'date': metadata.get('date', 'unknown'),
-                        'body': body_content[:3000]  # Increased limit for actual content
+                        'body': body_content[:3000],  # Increased limit for actual content
+                        'html_body': html_body_original or plain_body or snippet  # Store for snapshot
                     })
                     email_lookup[email_id] = (message, metadata, confidence)
                 
@@ -2337,6 +2627,25 @@ def gmail_import_stream():
                                 pdf_lane.append((message, metadata, confidence, []))  # No attachments, but use deep extraction
                             else:
                                 # High/Medium confidence - accept result
+                                # ========== GENERATE & UPLOAD EMAIL SNAPSHOT TO GCS ==========
+                                gcs_upload_result = None
+                                try:
+                                    html_body_for_snapshot = email_data.get('html_body', '')
+                                    snapshot_html = generate_email_snapshot_html(
+                                        email_metadata=metadata,
+                                        email_body=html_body_for_snapshot,
+                                        extracted_data=result
+                                    )
+                                    invoice_date = result.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else None
+                                    gcs_upload_result = upload_email_snapshot_to_gcs(
+                                        snapshot_html=snapshot_html,
+                                        vendor_name=vendor,
+                                        invoice_number=invoice_num,
+                                        invoice_date=invoice_date
+                                    )
+                                except Exception as e:
+                                    print(f"⚠️ Email snapshot upload failed: {e}")
+                                
                                 batch_extracted.append({
                                     'subject': subject,
                                     'sender': sender,
@@ -2348,11 +2657,15 @@ def gmail_import_stream():
                                     'line_items': result.get('lineItems', []),
                                     'full_data': result,
                                     'source_type': 'batch_text_extraction',
-                                    'confidence_score': confidence_score
+                                    'confidence_score': confidence_score,
+                                    'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
+                                    'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
+                                    'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
                                 })
                                 success_count += 1
                                 conf_icon = '🟢' if confidence_score == 'High' else '🟡'
-                                yield send_event('progress', {'type': 'success', 'message': f'    ✅ {conf_icon} {vendor} | #{invoice_num} | {currency} {total}'})
+                                doc_icon = '📄' if gcs_upload_result else ''
+                                yield send_event('progress', {'type': 'success', 'message': f'    ✅ {conf_icon} {doc_icon} {vendor} | #{invoice_num} | {currency} {total}'})
                         else:
                             reasoning = result.get('reasoning', 'Extraction failed')[:60]
                             # Failed extraction - reroute to Heavy Lane for deep analysis
@@ -2669,12 +2982,34 @@ def gmail_import_stream():
                                         dup_count += 1
                                         progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                     else:
-                                        progress_msgs.append({'type': 'success', 'message': f'  ✅ TEXT-FIRST FALLBACK: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                        # Generate and upload email snapshot to GCS
+                                        gcs_upload_result = None
+                                        try:
+                                            snapshot_html = generate_email_snapshot_html(
+                                                email_metadata=metadata,
+                                                email_body=email_content,
+                                                extracted_data=text_result
+                                            )
+                                            invoice_date = text_result.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else None
+                                            gcs_upload_result = upload_email_snapshot_to_gcs(
+                                                snapshot_html=snapshot_html,
+                                                vendor_name=vendor,
+                                                invoice_number=invoice_num,
+                                                invoice_date=invoice_date
+                                            )
+                                        except Exception as e:
+                                            print(f"⚠️ Email snapshot upload failed: {e}")
+                                        
+                                        doc_icon = '📄' if gcs_upload_result else ''
+                                        progress_msgs.append({'type': 'success', 'message': f'  ✅ {doc_icon} TEXT-FIRST FALLBACK: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
                                         extracted.append({
                                             'subject': subject, 'sender': sender, 'date': metadata.get('date'),
                                             'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
                                             'currency': currency, 'line_items': text_result.get('lineItems', []),
-                                            'full_data': text_result, 'source_type': 'text_first_fallback'
+                                            'full_data': text_result, 'source_type': 'text_first_fallback',
+                                            'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
+                                            'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
+                                            'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
                                         })
                                 else:
                                     progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Text extraction incomplete: vendor={vendor}, total={total}'})
