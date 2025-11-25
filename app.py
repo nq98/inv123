@@ -7592,7 +7592,42 @@ def sync_all_bill_approvals():
                             bigquery_service.client.query(update_query).result()
                             stats['updated'] += 1
                             
-                            # Log status change
+                            # Log to invoice timeline (user-friendly)
+                            status_lower = new_status.lower()
+                            if 'approved' in status_lower:
+                                bigquery_service.log_invoice_timeline_event(
+                                    invoice_id=bill.invoice_id,
+                                    event_type='BILL_APPROVAL',
+                                    status='SUCCESS',
+                                    netsuite_id=bill.netsuite_bill_id,
+                                    metadata={'approval_status': new_status}
+                                )
+                            elif 'paid' in status_lower:
+                                bigquery_service.log_invoice_timeline_event(
+                                    invoice_id=bill.invoice_id,
+                                    event_type='PAYMENT_COMPLETED',
+                                    status='SUCCESS',
+                                    netsuite_id=bill.netsuite_bill_id,
+                                    metadata={'payment_status': new_status}
+                                )
+                            elif 'rejected' in status_lower:
+                                bigquery_service.log_invoice_timeline_event(
+                                    invoice_id=bill.invoice_id,
+                                    event_type='BILL_REJECTED',
+                                    status='FAILED',
+                                    netsuite_id=bill.netsuite_bill_id,
+                                    metadata={'rejection_status': new_status}
+                                )
+                            elif 'pending' in status_lower:
+                                bigquery_service.log_invoice_timeline_event(
+                                    invoice_id=bill.invoice_id,
+                                    event_type='APPROVAL_PENDING',
+                                    status='SUCCESS',
+                                    netsuite_id=bill.netsuite_bill_id,
+                                    metadata={'pending_status': new_status}
+                                )
+                            
+                            # Log status change (detailed audit)
                             tracker.log_event(
                                 direction='INBOUND',
                                 event_type='bill_approval_status_change',

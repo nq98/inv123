@@ -881,6 +881,18 @@ class BigQueryService:
                 'success_desc': 'Bill approved in NetSuite',
                 'failed_desc': 'Approval check failed'
             },
+            'BILL_REJECTED': {
+                'icon': '❌',
+                'title': 'Bill Rejected',
+                'success_desc': 'Bill rejected - requires correction',
+                'failed_desc': 'Bill was rejected'
+            },
+            'APPROVAL_PENDING': {
+                'icon': '⏳',
+                'title': 'Pending Approval',
+                'success_desc': 'Bill submitted for approval',
+                'failed_desc': 'Approval pending'
+            },
             'PAYMENT_SCHEDULED': {
                 'icon': '💰',
                 'title': 'Payment Scheduled',
