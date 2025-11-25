@@ -1012,6 +1012,46 @@ function displayInvoiceData(invoices) {
                     </div>
                 ` : ''}
 
+                ${fullData.chainOfThought ? `
+                    <div style="margin-top: 15px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4caf50;">
+                        <strong style="color: #2e7d32; font-size: 14px;">🧠 Semantic Chain of Thought</strong>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 12px;">
+                            ${fullData.chainOfThought.processorIdentified ? `
+                                <div style="background: white; padding: 8px; border-radius: 4px;">
+                                    <strong style="color: #1565c0;">🏦 Processor:</strong>
+                                    <span style="color: #666;">${fullData.chainOfThought.processorIdentified}</span>
+                                </div>
+                            ` : ''}
+                            ${fullData.chainOfThought.vendorIdentified ? `
+                                <div style="background: white; padding: 8px; border-radius: 4px;">
+                                    <strong style="color: #2e7d32;">🏢 Vendor:</strong>
+                                    <span style="color: #333; font-weight: 500;">${fullData.chainOfThought.vendorIdentified}</span>
+                                </div>
+                            ` : ''}
+                            ${fullData.chainOfThought.buyerIdentified ? `
+                                <div style="background: white; padding: 8px; border-radius: 4px;">
+                                    <strong style="color: #7b1fa2;">👤 Buyer:</strong>
+                                    <span style="color: #333;">${fullData.chainOfThought.buyerIdentified}</span>
+                                </div>
+                            ` : ''}
+                            ${fullData.chainOfThought.mathVerification ? `
+                                <div style="background: white; padding: 8px; border-radius: 4px;">
+                                    <strong style="color: #e65100;">📊 Math:</strong>
+                                    <span style="color: #666;">${fullData.chainOfThought.mathVerification}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        ${fullData.chainOfThought.ocrFixesApplied && fullData.chainOfThought.ocrFixesApplied.length > 0 ? `
+                            <div style="margin-top: 10px; background: #fff3e0; padding: 8px; border-radius: 4px;">
+                                <strong style="color: #e65100; font-size: 12px;">🔧 OCR Fixes Applied:</strong>
+                                <ul style="margin: 5px 0 0 15px; font-size: 11px; color: #666;">
+                                    ${fullData.chainOfThought.ocrFixesApplied.map(fix => `<li>${fix}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+                
                 ${fullData.reasoning || fullData.warnings ? `
                     <div style="margin-top: 15px; padding: 12px; background: #fff9e6; border-radius: 6px; border-left: 3px solid #ffc107;">
                         ${fullData.reasoning ? `

@@ -807,7 +807,7 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
             clean_text = re.sub(r'\s+', ' ', clean_text).strip()
             clean_text = clean_text[:8000]
             
-            prompt = f"""You are the **Omni-Global Financial AI** extracting invoice/receipt data from email text.
+            prompt = f"""You are a **Semantic Financial AI** that THINKS before extracting. This is NOT regex extraction.
 
 ### EMAIL CONTEXT
 - **Subject:** {email_subject}
@@ -816,52 +816,108 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
 ### EMAIL BODY TEXT
 {clean_text}
 
-### EXTRACTION RULES
-1. Extract ALL financial data visible in the email text
-2. Look for: vendor name, invoice number, amounts, dates, line items
-3. Currency detection: Use symbols ($, €, £, ₪) or codes (USD, EUR, ILS)
-4. Date format: Normalize to YYYY-MM-DD
-5. If email is a receipt (payment confirmation), set documentType="RECEIPT"
-6. If email is an invoice (payment request), set documentType="INVOICE"
+---
+## CHAIN OF THOUGHT EXTRACTION (You MUST complete ALL steps)
 
-### CRITICAL - VENDOR EXTRACTION
-- The VENDOR is the company/person RECEIVING payment (not the buyer)
-- Look for: company name in header, "From:", payment recipient, billing entity
-- Use sender email domain as hint (e.g., @stripe.com → vendor might be Stripe)
+### STEP 1: ENTITY CLASSIFICATION (Critical!)
+Identify and classify every entity in this document:
 
-### OUTPUT SCHEMA (Strict JSON)
+**PROCESSOR vs VENDOR distinction:**
+- PROCESSOR: Company that SENDS the email/handles the payment (PBA Transactions, Stripe, PayPal, Payoneer)
+- VENDOR: Company/person who PROVIDED the goods/services and RECEIVES the money
+
+**Think:** 
+- Who is the email sender? → Usually the PROCESSOR
+- Who is listed as "beneficiary" or "payee"? → This is the VENDOR
+- Look for company names in the body that are NOT the sender domain
+- "accountName", "beneficiary.name", "payee" fields → These contain the VENDOR
+
+**BUYER identification:**
+- Look for greetings: "Hello [COMPANY]", "Dear [NAME]", "Hi [BUYER]"
+- Look for "payer", "customer", "client" fields
+- The BUYER is the entity making the payment
+
+### STEP 2: FIX OCR/TEXT ERRORS (Semantic Cleanup)
+Read every text field and fix obvious errors:
+- "ofAugustActivity" → "of August Activity" (missing spaces)
+- "lnvoice" → "Invoice" (OCR l/I confusion)  
+- "Amoun t" → "Amount" (broken words)
+- "INTER MEDIA DIGITAL MARKETING LLC" → Keep as-is (valid company name)
+
+Report what you fixed in reasoning.
+
+### STEP 3: MATHEMATICAL VERIFICATION (Do the Math!)
+Calculate and verify all amounts:
+- If subtotal = 20000 and total = 20020, then fees/tax = 20
+- If you see "feeAmount": 20, use it
+- If tax is visible anywhere, extract it
+- NEVER output "tax": 0 if you see fee amounts
+
+**Formula:** Total = Subtotal + Tax + Fees
+If you only have Total and see a fee, calculate: Subtotal = Total - Fee
+
+### STEP 4: CONFIDENCE SCORING (Honest Assessment)
+Real confidence based on data quality:
+- 0.95+: All fields clear, no OCR errors, math verified
+- 0.85-0.94: Most fields clear, minor ambiguity
+- 0.70-0.84: Some fields missing or unclear
+- <0.70: Major data quality issues
+
+NEVER give 0.85 if there are uncorrected OCR errors!
+
+### STEP 5: GENERATE OUTPUT
+
 Return ONLY valid JSON (NO markdown, NO code blocks):
 {{
+  "chainOfThought": {{
+    "processorIdentified": "Company that sent email (e.g., PBA Transactions)",
+    "vendorIdentified": "Company that receives payment (e.g., Flexera Software)",
+    "buyerIdentified": "Company/person paying (from greeting or payer field)",
+    "ocrFixesApplied": ["List of text corrections made"],
+    "mathVerification": "Subtotal X + Tax Y + Fee Z = Total W (verified/calculated)"
+  }},
   "vendor": {{
-    "name": "Vendor/merchant name (who receives payment)",
+    "name": "VENDOR name (NOT the processor/sender)",
     "email": "vendor email or null",
-    "address": "vendor address or null",
+    "address": "Full address with city, country",
     "taxId": "VAT/Tax ID or null"
   }},
-  "invoiceNumber": "Invoice/receipt number or null",
+  "buyer": {{
+    "name": "Buyer/payer company name",
+    "address": "Buyer address if available"
+  }},
+  "invoiceNumber": "Invoice/receipt number",
   "documentType": "INVOICE|RECEIPT",
-  "documentDate": "YYYY-MM-DD or null",
-  "dueDate": "YYYY-MM-DD or null (for invoices)",
-  "paymentDate": "YYYY-MM-DD or null (for receipts)",
-  "currency": "USD|EUR|ILS|GBP|etc (ISO 4217)",
+  "documentDate": "YYYY-MM-DD",
+  "dueDate": "YYYY-MM-DD or null",
+  "paymentDate": "YYYY-MM-DD or null",
+  "currency": "USD|EUR|ILS|GBP (ISO 4217)",
   "totals": {{
-    "subtotal": float or 0,
-    "tax": float or 0,
-    "taxPercent": float or 0,
-    "total": float (REQUIRED - the main amount)
+    "subtotal": float (calculated if needed),
+    "tax": float (0 if no tax, calculated from difference if visible),
+    "fees": float (platform fees, wire fees, etc),
+    "taxPercent": float or null,
+    "total": float (REQUIRED)
   }},
   "lineItems": [
     {{
-      "description": "Item description",
-      "quantity": float or 1,
+      "description": "Clean description (OCR errors fixed)",
+      "quantity": float,
       "unitPrice": float,
       "lineTotal": float
     }}
   ],
-  "extractionConfidence": 0.0-1.0,
-  "reasoning": "Brief explanation of extraction decisions",
-  "warnings": ["List any issues or ambiguities"]
+  "extractionConfidence": 0.0-1.0 (HONEST score),
+  "reasoning": "Step-by-step explanation of how you identified vendor vs processor, fixes applied, math done",
+  "warnings": ["List any remaining ambiguities"]
 }}
+
+### CRITICAL RULES:
+1. The SENDER EMAIL is usually NOT the vendor (it's the processor)
+2. Look for "beneficiary", "payee", "accountName" → These are the VENDOR
+3. If you see JSON data in the email, parse it for structured fields
+4. Calculate tax/fees - NEVER say N/A if math is possible
+5. Fix ALL obvious OCR errors before outputting
 
 IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extraction_incomplete": true, "reason": "Missing vendor/total"}}
 """
@@ -889,8 +945,21 @@ IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extract
                 print(f"⚠️ Text-first extraction incomplete: vendor={vendor}, total={total}")
                 return None
             
+            chain_of_thought = result.get('chainOfThought', {})
+            processor = chain_of_thought.get('processorIdentified', '')
+            ocr_fixes = chain_of_thought.get('ocrFixesApplied', [])
+            math_verification = chain_of_thought.get('mathVerification', '')
+            
+            if ocr_fixes:
+                print(f"🔧 OCR FIXES APPLIED: {ocr_fixes}")
+            if math_verification:
+                print(f"📊 MATH VERIFIED: {math_verification}")
+            if processor:
+                print(f"🏦 PROCESSOR: {processor} → VENDOR: {vendor}")
+            
             validated_data = {
                 'vendor': result.get('vendor', {}),
+                'buyer': result.get('buyer', {}),
                 'invoiceNumber': result.get('invoiceNumber'),
                 'documentType': result.get('documentType', 'RECEIPT'),
                 'documentDate': result.get('documentDate'),
@@ -902,11 +971,25 @@ IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extract
                 'lineItems': result.get('lineItems', []),
                 'extractionConfidence': result.get('extractionConfidence', 0.7),
                 'auditReasoning': result.get('reasoning', 'Extracted from email text'),
+                'chainOfThought': chain_of_thought,
                 'warnings': result.get('warnings', []),
                 'source': 'text_first_extraction'
             }
             
-            print(f"✅ Text-first extraction SUCCESS: {vendor} | {result.get('currency', 'USD')} {total}")
+            confidence = result.get('extractionConfidence', 0.7)
+            buyer_name = result.get('buyer', {}).get('name', 'Unknown')
+            fees = result.get('totals', {}).get('fees', 0)
+            tax = result.get('totals', {}).get('tax', 0)
+            
+            print(f"✅ SEMANTIC EXTRACTION: {vendor} | {result.get('currency', 'USD')} {total}")
+            if buyer_name and buyer_name != 'Unknown':
+                print(f"   👤 Buyer: {buyer_name}")
+            if fees > 0:
+                print(f"   💰 Fees calculated: {fees}")
+            if tax > 0:
+                print(f"   📋 Tax: {tax}")
+            print(f"   🎯 Confidence: {confidence*100:.0f}%")
+            
             return validated_data
             
         except Exception as e:

@@ -8,6 +8,13 @@
   - Uses `OPENROUTERA` secret for API authentication
   - 3-tier fallback chain: **Gemini 3 Pro (PRIMARY)** → AI Studio → Replit AI Integrations
   - Best-in-class reasoning for complex invoice extraction and vendor matching
+- **Chain of Thought Semantic Extraction**: Complete rewrite of text-first extraction with true AI reasoning
+  - **Step 1: Entity Classification** - Distinguishes PROCESSOR (PBA, Stripe) from VENDOR (Flexera, Wise)
+  - **Step 2: OCR/Text Cleanup** - Fixes errors like "ofAugustActivity" → "of August Activity"
+  - **Step 3: Mathematical Verification** - Calculates Tax = Total - Subtotal, extracts fees
+  - **Step 4: Honest Confidence Scoring** - Real scores based on data quality (no fake 85%)
+  - **Step 5: Buyer Extraction** - Finds buyer from greetings/payer fields
+  - UI displays Chain of Thought: Processor, Vendor, Buyer, Math, OCR Fixes
 - **Improved Smart Deduplication**: Fixed false negative deduplication issue when vendor is "Unknown"
   - Added email subject hash to deduplication key when vendor cannot be identified
   - Prevents false duplicates across different emails with the same invoice number
