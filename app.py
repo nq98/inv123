@@ -2733,6 +2733,13 @@ def gmail_import_stream():
                                 except Exception as e:
                                     print(f"⚠️ Email snapshot upload failed: {e}")
                                 
+                                vendor_match_result = run_vendor_matching_for_invoice(
+                                    vendor_name=vendor,
+                                    vendor_info=result.get('vendor', {}),
+                                    invoice_num=invoice_num,
+                                    total_amount=total
+                                )
+                                
                                 batch_extracted.append({
                                     'subject': subject,
                                     'sender': sender,
@@ -2747,7 +2754,8 @@ def gmail_import_stream():
                                     'confidence_score': confidence_score,
                                     'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
                                     'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
-                                    'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
+                                    'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None,
+                                    'vendor_match': vendor_match_result
                                 })
                                 success_count += 1
                                 conf_icon = '🟢' if confidence_score == 'High' else '🟡'
@@ -2829,6 +2837,71 @@ def gmail_import_stream():
             progress_queue = queue.Queue()
             results_lock = threading.Lock()
             
+            # ========== VENDOR MATCHING HELPER ==========
+            def run_vendor_matching_for_invoice(vendor_name, vendor_info, invoice_num, total_amount):
+                """Run vendor matching for an extracted invoice and return match result."""
+                if not vendor_name or vendor_name == 'Unknown':
+                    return None
+                
+                try:
+                    from services.vendor_matcher import VendorMatcher as VendorMatcherClass
+                    from services.vertex_search_service import VertexSearchService
+                    
+                    bigquery_svc = BigQueryService()
+                    vertex_search_svc = VertexSearchService()
+                    gemini_svc = GeminiService()
+                    
+                    vendor_matcher = VendorMatcherClass(bigquery_svc, vertex_search_svc, gemini_svc)
+                    
+                    invoice_vendor = {
+                        'name': vendor_name,
+                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber') or 'Unknown',
+                        'address': vendor_info.get('address', 'Unknown'),
+                        'country': vendor_info.get('country', 'Unknown'),
+                        'email': vendor_info.get('email', 'Unknown'),
+                        'phone': vendor_info.get('phone', 'Unknown')
+                    }
+                    
+                    invoice_data = {
+                        'vendor_name': vendor_name,
+                        'tax_id': vendor_info.get('taxId') or vendor_info.get('registrationNumber'),
+                        'address': vendor_info.get('address'),
+                        'email_domain': vendor_info.get('email', '').split('@')[-1] if vendor_info.get('email') and '@' in vendor_info.get('email', '') else None,
+                        'phone': vendor_info.get('phone'),
+                        'country': vendor_info.get('country')
+                    }
+                    
+                    match_result = vendor_matcher.match_vendor(invoice_data)
+                    
+                    vendor_match_result = {
+                        'verdict': match_result.get('verdict', 'NEW_VENDOR'),
+                        'confidence': match_result.get('confidence', 0),
+                        'method': match_result.get('method', 'UNKNOWN'),
+                        'reasoning': match_result.get('reasoning', 'No reasoning provided'),
+                        'invoice_vendor': invoice_vendor,
+                        'selected_vendor_id': match_result.get('vendor_id'),
+                        'evidence_breakdown': match_result.get('evidence_breakdown')
+                    }
+                    
+                    if match_result.get('vendor_id'):
+                        db_vendor = bigquery_svc.get_vendor_by_id(match_result['vendor_id'])
+                        if db_vendor:
+                            vendor_match_result['database_vendor'] = {
+                                'vendor_id': db_vendor.get('vendor_id'),
+                                'name': db_vendor.get('global_name') or db_vendor.get('name'),
+                                'tax_id': db_vendor.get('tax_registration_id'),
+                                'netsuite_id': db_vendor.get('netsuite_internal_id'),
+                                'addresses': db_vendor.get('addresses', []),
+                                'countries': db_vendor.get('countries', []),
+                                'emails': db_vendor.get('emails', []),
+                                'domains': db_vendor.get('domains', [])
+                            }
+                    
+                    return vendor_match_result
+                except Exception as e:
+                    print(f"⚠️ Vendor matching failed: {e}")
+                    return None
+            
             # OPTIMIZATION 4: Worker function for parallel processing
             def process_single_email(idx, message, metadata, confidence, gmail_svc, proc, gemini_svc, upload_folder):
                 """Process a single email and return progress messages and results (thread-safe)"""
@@ -2890,7 +2963,8 @@ def gmail_import_stream():
                                         'currency': currency,
                                         'line_items': text_result.get('lineItems', []),
                                         'full_data': text_result,
-                                        'source_type': 'text_first_extraction'
+                                        'source_type': 'text_first_extraction',
+                                        'vendor_match': run_vendor_matching_for_invoice(vendor, text_result.get('vendor', {}), invoice_num, total)
                                     })
                                 return {'progress': progress_msgs, 'extracted': extracted, 'failures': failures, 'duplicates': dup_count}
                             else:
@@ -2937,7 +3011,8 @@ def gmail_import_stream():
                                                 'subject': subject, 'sender': sender, 'date': metadata.get('date'),
                                                 'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
                                                 'currency': currency, 'line_items': validated.get('lineItems', []),
-                                                'full_data': validated, 'source_type': 'email_body_pdf'
+                                                'full_data': validated, 'source_type': 'email_body_pdf',
+                                                'vendor_match': run_vendor_matching_for_invoice(vendor, validated.get('vendor', {}), invoice_num, total)
                                             })
                                     else:
                                         progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
@@ -3005,7 +3080,8 @@ def gmail_import_stream():
                                         'full_data': validated, 'source_type': 'pdf_attachment',
                                         'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
                                         'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
-                                        'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
+                                        'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None,
+                                        'vendor_match': run_vendor_matching_for_invoice(vendor, validated.get('vendor', {}), invoice_num, total)
                                     })
                             else:
                                 progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Extraction incomplete'})
@@ -3081,7 +3157,8 @@ def gmail_import_stream():
                                                 'full_data': validated, 'source_type': ltype,
                                                 'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
                                                 'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
-                                                'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
+                                                'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None,
+                                                'vendor_match': run_vendor_matching_for_invoice(vendor, validated.get('vendor', {}), invoice_num, total)
                                             })
                                             link_extraction_succeeded = True
                                 except Exception as err:
@@ -3144,7 +3221,8 @@ def gmail_import_stream():
                                             'full_data': text_result, 'source_type': 'text_first_fallback',
                                             'gcs_uri': gcs_upload_result.get('gcs_uri') if gcs_upload_result else None,
                                             'file_type': gcs_upload_result.get('file_type') if gcs_upload_result else None,
-                                            'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None
+                                            'file_size': gcs_upload_result.get('file_size') if gcs_upload_result else None,
+                                            'vendor_match': run_vendor_matching_for_invoice(vendor, text_result.get('vendor', {}), invoice_num, total)
                                         })
                                 else:
                                     progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Text extraction incomplete: vendor={vendor}, total={total}'})

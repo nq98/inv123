@@ -1088,6 +1088,64 @@ function displayInvoiceData(invoices) {
                     </div>
                 ` : ''}
                 
+                ${invoice.vendor_match ? `
+                    <div style="margin-top: 20px; border: 2px solid ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'}; border-radius: 8px; padding: 15px; background: linear-gradient(to right, ${invoice.vendor_match.verdict === 'MATCH' ? '#e8f5e9' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#e3f2fd' : '#fff3e0'}, #ffffff);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4 style="margin: 0; color: ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'};">⚖️ Vendor Matching</h4>
+                            <span style="padding: 6px 12px; background: ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'}; color: white; border-radius: 15px; font-weight: bold; font-size: 12px;">
+                                ${invoice.vendor_match.verdict === 'MATCH' ? '✅ Matched' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '🆕 New Vendor' : '⚠️ Ambiguous'}
+                            </span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div style="background: white; padding: 10px; border-radius: 6px;">
+                                <div style="font-size: 11px; color: #666;">Method</div>
+                                <div style="font-weight: bold; color: #333;">${invoice.vendor_match.method === 'TAX_ID_HARD_MATCH' ? '🔐 Tax ID Match' : invoice.vendor_match.method === 'SEMANTIC_MATCH' ? '🧠 AI Semantic' : '🆕 Not in DB'}</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 6px;">
+                                <div style="font-size: 11px; color: #666;">Confidence</div>
+                                <div style="font-weight: bold; color: #333;">${((invoice.vendor_match.confidence || 0) * 100).toFixed(0)}%</div>
+                            </div>
+                        </div>
+                        ${invoice.vendor_match.database_vendor ? `
+                            <div style="margin-top: 12px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4caf50;">
+                                <div style="font-size: 12px; color: #2e7d32; font-weight: bold;">💾 Matched to Database:</div>
+                                <div style="margin-top: 6px; font-size: 13px; color: #333;">
+                                    <strong>${invoice.vendor_match.database_vendor.name}</strong>
+                                    ${invoice.vendor_match.database_vendor.vendor_id ? ` <code style="font-size: 10px; background: #fff; padding: 2px 4px; border-radius: 3px;">${invoice.vendor_match.database_vendor.vendor_id}</code>` : ''}
+                                    ${invoice.vendor_match.database_vendor.netsuite_id ? `<span style="margin-left: 8px; color: #1565c0;">📋 NetSuite ID: ${invoice.vendor_match.database_vendor.netsuite_id}</span>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                        <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px;">
+                            <div style="font-size: 11px; color: #888; margin-bottom: 4px;">⚖️ AI Reasoning:</div>
+                            <div style="font-size: 12px; color: #555;">${invoice.vendor_match.reasoning || 'No reasoning provided'}</div>
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="color: #495057;">📋 NetSuite Actions</strong>
+                            <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+                                ${invoice.vendor_match?.database_vendor?.netsuite_id ? 
+                                    `Vendor synced to NetSuite (ID: ${invoice.vendor_match.database_vendor.netsuite_id})` : 
+                                    'Vendor not yet synced to NetSuite'}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;" id="billActionsContainer${idx}">
+                            <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                    style="padding: 8px 16px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                                <span>📝</span> Create Bill
+                            </button>
+                            <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                    style="padding: 8px 16px; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                                <span>🔄</span> Update Bill
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
                     <div style="display: flex; gap: 10px; flex: 1;">
                         ${invoice.gcs_uri ? `
@@ -1146,6 +1204,78 @@ window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
     } catch (error) {
         console.error('Error viewing document:', error);
         alert('Failed to view document: ' + error.message);
+    }
+};
+
+window.createBillFromGmail = async function(encodedInvoiceId, idx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    console.log('📝 Creating bill for invoice:', invoiceId);
+    
+    const container = document.getElementById(`billActionsContainer${idx}`);
+    if (container) {
+        container.innerHTML = '<span style="color: #0d6efd;">Creating bill...</span>';
+    }
+    
+    try {
+        const response = await fetch(`/api/netsuite/bills/create/${encodeURIComponent(invoiceId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            if (container) {
+                container.innerHTML = `<span style="color: #198754;">✅ Bill created: ${result.netsuite_bill_id || 'Success'}</span>`;
+            }
+            alert('Bill created successfully in NetSuite!');
+        } else {
+            if (container) {
+                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || 'Failed'}</span>`;
+            }
+            alert('Failed to create bill: ' + (result.error || result.message || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error creating bill:', error);
+        if (container) {
+            container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
+        }
+        alert('Error creating bill: ' + error.message);
+    }
+};
+
+window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    console.log('🔄 Updating bill for invoice:', invoiceId);
+    
+    const container = document.getElementById(`billActionsContainer${idx}`);
+    if (container) {
+        container.innerHTML = '<span style="color: #198754;">Updating bill...</span>';
+    }
+    
+    try {
+        const response = await fetch(`/api/netsuite/bills/update/${encodeURIComponent(invoiceId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            if (container) {
+                container.innerHTML = `<span style="color: #198754;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'}</span>`;
+            }
+            alert('Bill updated successfully in NetSuite!');
+        } else {
+            if (container) {
+                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || 'Failed'}</span>`;
+            }
+            alert('Failed to update bill: ' + (result.error || result.message || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error updating bill:', error);
+        if (container) {
+            container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
+        }
+        alert('Error updating bill: ' + error.message);
     }
 };
 
