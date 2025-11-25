@@ -938,13 +938,23 @@ Return a JSON object where keys are the exact email IDs provided:
                 "category": "Software Subscription"
             }}
         ],
+        "confidenceScore": "High",
+        "missingCriticalData": false,
         "reasoning": "Replit receipt - extracted from body: Amount paid $50.06, Payment for invoice BWFLLB-00039"
     }},
     "text_email_2": {{
         "success": false,
+        "confidenceScore": "Low",
+        "missingCriticalData": true,
         "reasoning": "Not a receipt/invoice - just a notification"
     }}
 }}
+
+### CONFIDENCE SCORING (CRITICAL):
+- **High**: Vendor name, total amount, AND invoice number all clearly extracted
+- **Medium**: 2 out of 3 fields extracted, some inference required
+- **Low**: Major fields missing, ambiguous data, or confusing format
+- **missingCriticalData**: true if vendor OR total is missing/zero
 
 ### LINE ITEM EXTRACTION RULES:
 1. **ALWAYS include quantity** - Default to 1 if not specified

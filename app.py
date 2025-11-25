@@ -2290,6 +2290,9 @@ def gmail_import_stream():
                     })
                     email_lookup[email_id] = (message, metadata, confidence)
                 
+                # Store original PDF lane count to track rerouted emails
+                original_pdf_lane_count = len(pdf_lane)
+                
                 # Process in batches of 10
                 BATCH_SIZE = 10
                 num_batches = (len(emails_for_batch) + BATCH_SIZE - 1) // BATCH_SIZE
@@ -2319,27 +2322,52 @@ def gmail_import_stream():
                             currency = result.get('currency', 'USD')
                             invoice_num = result.get('invoiceNumber', 'N/A')
                             
-                            batch_extracted.append({
-                                'subject': subject,
-                                'sender': sender,
-                                'date': metadata.get('date'),
-                                'vendor': vendor,
-                                'invoice_number': invoice_num,
-                                'total': total,
-                                'currency': currency,
-                                'line_items': result.get('lineItems', []),
-                                'full_data': result,
-                                'source_type': 'batch_text_extraction'
-                            })
-                            success_count += 1
-                            yield send_event('progress', {'type': 'success', 'message': f'    ✅ {vendor} | #{invoice_num} | {currency} {total}'})
+                            # ========== SMART CONFIDENCE FALLBACK ==========
+                            confidence_score = result.get('confidenceScore', 'Medium')
+                            missing_critical = result.get('missingCriticalData', False)
+                            is_low_confidence = confidence_score == 'Low'
+                            is_zero_total = total == 0 or total is None
+                            is_no_vendor = not vendor or vendor == 'Unknown'
+                            
+                            # If low confidence or missing data, reroute to Heavy Lane
+                            if is_low_confidence or missing_critical or (is_zero_total and is_no_vendor):
+                                print(f"⚠️ LOW CONFIDENCE: {subject[:40]}... → Rerouting to Heavy Lane")
+                                yield send_event('progress', {'type': 'warning', 'message': f'    ⚠️ Low confidence → Rerouting to Deep Analysis: {subject[:40]}...'})
+                                # Add to pdf_lane for deep processing
+                                pdf_lane.append((message, metadata, confidence, []))  # No attachments, but use deep extraction
+                            else:
+                                # High/Medium confidence - accept result
+                                batch_extracted.append({
+                                    'subject': subject,
+                                    'sender': sender,
+                                    'date': metadata.get('date'),
+                                    'vendor': vendor,
+                                    'invoice_number': invoice_num,
+                                    'total': total,
+                                    'currency': currency,
+                                    'line_items': result.get('lineItems', []),
+                                    'full_data': result,
+                                    'source_type': 'batch_text_extraction',
+                                    'confidence_score': confidence_score
+                                })
+                                success_count += 1
+                                conf_icon = '🟢' if confidence_score == 'High' else '🟡'
+                                yield send_event('progress', {'type': 'success', 'message': f'    ✅ {conf_icon} {vendor} | #{invoice_num} | {currency} {total}'})
                         else:
                             reasoning = result.get('reasoning', 'Extraction failed')[:60]
-                            yield send_event('progress', {'type': 'warning', 'message': f'    ⚠️ {subject[:40]}... - {reasoning}'})
+                            # Failed extraction - reroute to Heavy Lane for deep analysis
+                            print(f"⚠️ BATCH FAILED: {subject[:40]}... → Rerouting to Heavy Lane")
+                            yield send_event('progress', {'type': 'warning', 'message': f'    ⚠️ Batch failed → Deep Analysis: {subject[:40]}...'})
+                            pdf_lane.append((message, metadata, confidence, []))
                     
                     yield send_event('progress', {'type': 'status', 'message': f'  📊 Batch {batch_num + 1} complete: {success_count}/{len(batch)} extracted'})
                 
-                yield send_event('progress', {'type': 'status', 'message': f'✅ FAST LANE complete: {len(batch_extracted)} invoices extracted instantly!'})
+                # Count how many were rerouted to Heavy Lane
+                rerouted_count = len(pdf_lane) - original_pdf_lane_count
+                if rerouted_count > 0:
+                    yield send_event('progress', {'type': 'status', 'message': f'✅ FAST LANE complete: {len(batch_extracted)} High/Medium confidence, {rerouted_count} rerouted to Deep Analysis'})
+                else:
+                    yield send_event('progress', {'type': 'status', 'message': f'✅ FAST LANE complete: {len(batch_extracted)} invoices extracted instantly!'})
             
             # ========== STEP 3.3: HEAVY LANE - PDF Processing (Full AI Pipeline) ==========
             
