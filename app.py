@@ -2720,7 +2720,23 @@ def gmail_import_stream():
                 # Update scan status to running
                 bigquery_svc.update_scan_checkpoint(scan_id, status='running')
             
+            # Create scan checkpoint EARLY so we can resume if connection drops
+            if not scan_id and bigquery_svc:
+                try:
+                    scan_id = bigquery_svc.create_scan_checkpoint(
+                        client_email=client_email,
+                        days_range=days,
+                        total_emails=0  # Will update later
+                    )
+                    if scan_id:
+                        # Emit scan_started event immediately for client to capture
+                        yield send_event('scan_started', {'scan_id': scan_id})
+                        yield send_event('progress', {'type': 'checkpoint', 'message': f'💾 Checkpoint created: {scan_id}'})
+                except Exception as ckpt_err:
+                    print(f"⚠️ Could not create checkpoint: {ckpt_err}")
+            
             yield send_event('progress', {'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})
+            yield send_event('keepalive', {'ts': time.time()})  # Keepalive after each major step
             yield send_event('progress', {'type': 'status', 'message': f'⏰ Time range: Last {time_label}'})
             yield send_event('progress', {'type': 'status', 'message': 'Authenticating with Gmail API...'})
             
@@ -2729,11 +2745,16 @@ def gmail_import_stream():
             
             email = credentials.get('email', 'Gmail account')
             yield send_event('progress', {'type': 'status', 'message': f'Connected to {email}'})
+            yield send_event('keepalive', {'ts': time.time()})
             
             # Get ACCURATE total count by fetching all message IDs in time range
             from datetime import datetime, timedelta
+            import time
             after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
             yield send_event('progress', {'type': 'status', 'message': f'\n📊 Counting total emails in last {time_label}...'})
+            
+            last_keepalive = time.time()
+            KEEPALIVE_INTERVAL = 15  # Send keepalive every 15 seconds
             
             try:
                 # Paginate through ALL emails in time range to get accurate count
@@ -2757,31 +2778,29 @@ def gmail_import_stream():
                     if not page_token:
                         break
                     
-                    # Show progress for large mailboxes - more frequent updates to prevent timeout
-                    if len(all_messages) % 250 == 0:  # Update every 250 messages instead of 1000
+                    # Send keepalive every 15 seconds to prevent timeout
+                    if time.time() - last_keepalive >= KEEPALIVE_INTERVAL:
+                        yield send_event('keepalive', {'ts': time.time(), 'count': len(all_messages)})
+                        last_keepalive = time.time()
+                    
+                    # Show progress for large mailboxes - more frequent updates
+                    if len(all_messages) % 100 == 0:  # Update every 100 messages
                         yield send_event('progress', {'type': 'status', 'message': f'  Counted {len(all_messages):,} emails so far...'})
-                        yield send_event('keepalive', {'type': 'ping', 'message': 'Still counting...'})
                 
                 total_inbox_count = len(all_messages)
+                
+                # Update checkpoint with actual count
+                if scan_id and bigquery_svc:
+                    try:
+                        bigquery_svc.update_scan_checkpoint(scan_id, total_emails=total_inbox_count)
+                    except:
+                        pass
             except Exception as e:
                 total_inbox_count = 0
                 yield send_event('progress', {'type': 'status', 'message': f'⚠️ Could not count emails: {str(e)}'})
             
             yield send_event('progress', {'type': 'status', 'message': f'📬 Total emails in selected time range ({time_label}): {total_inbox_count:,} emails'})
-            
-            # Create checkpoint for new scans (if not resuming)
-            if not scan_id and bigquery_svc:
-                try:
-                    scan_id = bigquery_svc.create_scan_checkpoint(
-                        client_email=client_email,
-                        days_range=days,
-                        total_emails=total_inbox_count
-                    )
-                    if scan_id:
-                        yield send_event('progress', {'type': 'checkpoint', 'message': f'💾 Checkpoint created: {scan_id}'})
-                        yield send_event('scan_id', {'scan_id': scan_id})
-                except Exception as ckpt_err:
-                    print(f"⚠️ Could not create checkpoint: {ckpt_err}")
+            yield send_event('keepalive', {'ts': time.time()})
             
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
@@ -2833,9 +2852,14 @@ def gmail_import_stream():
                 else:
                     fetch_errors += 1
                 
-                # Progress update every 10 emails
+                # Progress update every 10 emails + keepalive every 15 seconds
                 if idx % 10 == 0 or idx == total_found:
                     yield send_event('progress', {'type': 'status', 'message': f'  Fetched {idx}/{total_found} email metadata...'})
+                    
+                    # Send keepalive every 15 seconds during fetch
+                    if time.time() - last_keepalive >= KEEPALIVE_INTERVAL:
+                        yield send_event('keepalive', {'ts': time.time(), 'fetched': idx})
+                        last_keepalive = time.time()
             
             yield send_event('progress', {'type': 'status', 'message': f'✓ Metadata fetched: {len(all_emails_data)} emails ({fetch_errors} errors)'})
             
@@ -2870,6 +2894,9 @@ def gmail_import_stream():
                 batch_msg = f'🚀 Batch {batch_num + 1}/{num_batches}: Processing {len(batch)} emails in ONE API call...'
                 yield send_event('progress', {'type': 'status', 'message': batch_msg})
                 
+                # Send keepalive before AI call (which can take time)
+                yield send_event('keepalive', {'ts': time.time(), 'batch': batch_num + 1})
+                
                 # Call batch gatekeeper
                 batch_results = gemini_service.batch_gatekeeper_filter(batch)
                 all_gatekeeper_results.update(batch_results)
@@ -2877,6 +2904,13 @@ def gmail_import_stream():
                 # Show batch summary
                 kept = sum(1 for r in batch_results.values() if r.get('is_financial_document'))
                 yield send_event('progress', {'type': 'status', 'message': f'  ⚡ Batch {batch_num + 1} complete: {kept} KEEP, {len(batch) - kept} DISCARD'})
+                
+                # Update checkpoint with processed count
+                if scan_id and bigquery_svc and batch_num % 2 == 0:
+                    try:
+                        bigquery_svc.update_scan_checkpoint(scan_id, processed_count=end_idx)
+                    except:
+                        pass
             
             # Step 3: Apply gatekeeper results
             yield send_event('progress', {'type': 'status', 'message': '\n📋 Applying gatekeeper decisions...'})

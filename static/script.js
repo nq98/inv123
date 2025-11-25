@@ -749,113 +749,234 @@ const gmailTimeRange = document.getElementById('gmailTimeRange');
 
 gmailImportBtn.addEventListener('click', async () => {
     const days = parseInt(gmailTimeRange.value) || 7;
-    
+    startGmailScan(days);
+});
+
+// Robust Gmail SSE Scanner with auto-reconnection
+function startGmailScan(days, resumeScanId = null) {
     gmailImportBtn.disabled = true;
-    gmailImportBtn.textContent = '⏳ Importing...';
+    gmailImportBtn.innerHTML = '⏳ Importing... <span id="sseStatus" style="font-size: 10px; opacity: 0.8;">(connected)</span>';
     
-    // Show terminal
+    // Show terminal (only clear if not resuming)
     gmailProgressTerminal.classList.remove('hidden');
-    clearTerminal();
-    
-    gmailImportResults.innerHTML = '';
-    
-    try {
-        // Use Server-Sent Events for real-time progress (EventSource only supports GET)
-        const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?days=${days}`);
-        
-        let importResults = {
-            imported: 0,
-            skipped: 0,
-            total: 0
+    if (!resumeScanId) {
+        clearTerminal();
+        gmailImportResults.innerHTML = '';
+        window.__gmailScanState = {
+            scanId: null,
+            retryCount: 0,
+            maxRetries: 5,
+            lastKeepalive: Date.now(),
+            importResults: { imported: 0, skipped: 0, total: 0, invoices: [] }
         };
+    }
+    
+    const state = window.__gmailScanState;
+    let url = `/api/ap-automation/gmail/import/stream?days=${days}`;
+    if (resumeScanId) {
+        url += `&resume_scan_id=${resumeScanId}`;
+        addTerminalLine(`🔄 Resuming scan ${resumeScanId}...`, 'warning');
+    }
+    
+    const eventSource = new EventSource(url);
+    let connectionHealthy = true;
+    
+    // Keepalive monitor - detect stale connections (no activity for 45 seconds)
+    const keepaliveMonitor = setInterval(() => {
+        const timeSinceLastActivity = Date.now() - state.lastKeepalive;
+        if (timeSinceLastActivity > 45000) { // 45 seconds without activity
+            console.warn('SSE connection appears stale, no activity for', timeSinceLastActivity, 'ms');
+            connectionHealthy = false;
+            updateSSEStatus('stale');
+        }
+    }, 10000);
+    
+    function updateSSEStatus(status) {
+        const statusEl = document.getElementById('sseStatus');
+        if (statusEl) {
+            const colors = { connected: '#4caf50', reconnecting: '#ff9800', stale: '#f44336', error: '#f44336' };
+            statusEl.style.color = colors[status] || '#666';
+            statusEl.textContent = `(${status})`;
+        }
+    }
+    
+    function cleanup() {
+        clearInterval(keepaliveMonitor);
+        eventSource.close();
+    }
+    
+    function handleReconnect() {
+        cleanup();
+        state.retryCount++;
         
-        // Listen for 'progress' events
-        eventSource.addEventListener('progress', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                addTerminalLine(data.message, 'info');
-            } catch (e) {
-                console.error('Error parsing progress event:', e);
+        if (state.retryCount > state.maxRetries) {
+            addTerminalLine(`❌ Max retries (${state.maxRetries}) exceeded. Please try again manually.`, 'error');
+            showError('Connection Failed', 'Could not maintain connection after multiple attempts. Your progress has been saved - click "Start Smart Scan" to resume.');
+            gmailImportBtn.disabled = false;
+            gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            return;
+        }
+        
+        // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+        const delay = Math.min(2000 * Math.pow(2, state.retryCount - 1), 32000);
+        addTerminalLine(`🔄 Reconnecting in ${delay/1000}s (attempt ${state.retryCount}/${state.maxRetries})...`, 'warning');
+        updateSSEStatus('reconnecting');
+        
+        setTimeout(() => {
+            if (state.scanId) {
+                startGmailScan(days, state.scanId);
+            } else {
+                // No scan ID yet, restart fresh
+                startGmailScan(days);
             }
-        });
-        
-        // Listen for 'complete' events
-        eventSource.addEventListener('complete', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                importResults = {
-                    imported: data.imported,
-                    skipped: data.skipped,
-                    total: data.total,
-                    invoices: data.invoices || []
-                };
-                eventSource.close();
-                
-                addTerminalLine('\n' + '─'.repeat(60), 'info');
-                addTerminalLine('✅ Import session completed successfully!', 'success');
-                
-                gmailImportBtn.disabled = false;
-                gmailImportBtn.textContent = '🔍 Start Smart Scan';
-                
-                // Show summary and invoice details
-                displayImportSummary(importResults);
-                displayInvoiceData(importResults.invoices);
-            } catch (e) {
-                console.error('Error parsing complete event:', e);
+        }, delay);
+    }
+    
+    // Listen for scan_started to capture scan_id for resume
+    eventSource.addEventListener('scan_started', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            state.scanId = data.scan_id;
+            state.lastKeepalive = Date.now();
+            addTerminalLine(`📍 Scan ID: ${data.scan_id} (auto-resume enabled)`, 'info');
+        } catch (e) {
+            console.error('Error parsing scan_started:', e);
+        }
+    });
+    
+    // Listen for keepalive events
+    eventSource.addEventListener('keepalive', (event) => {
+        state.lastKeepalive = Date.now();
+        connectionHealthy = true;
+        updateSSEStatus('connected');
+        console.log('SSE keepalive received');
+    });
+    
+    // Listen for 'progress' events
+    eventSource.addEventListener('progress', (event) => {
+        try {
+            state.lastKeepalive = Date.now();
+            connectionHealthy = true;
+            updateSSEStatus('connected');
+            state.retryCount = 0; // Reset retry count on successful message
+            const data = JSON.parse(event.data);
+            addTerminalLine(data.message, 'info');
+        } catch (e) {
+            console.error('Error parsing progress event:', e);
+        }
+    });
+    
+    // Listen for 'invoice' events (individual invoice extraction results)
+    eventSource.addEventListener('invoice', (event) => {
+        try {
+            state.lastKeepalive = Date.now();
+            const data = JSON.parse(event.data);
+            // Add to running results
+            if (data.invoice) {
+                state.importResults.invoices.push(data.invoice);
+                state.importResults.imported++;
             }
-        });
-        
-        // Listen for 'error' events (SSE event type, not connection error)
-        eventSource.addEventListener('error', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const errorMessage = data.error || data.message || 'An error occurred during Gmail scan';
-                addTerminalLine(`❌ Error: ${errorMessage}`, 'error');
-                showError('Gmail Scan Error', errorMessage);
-                eventSource.close();
-                gmailImportBtn.disabled = false;
-                gmailImportBtn.textContent = '🔍 Start Smart Scan';
-            } catch (e) {
-                console.error('Error parsing error event:', e);
-            }
-        });
-        
-        // Listen for 'funnel_stats' events
-        eventSource.addEventListener('funnel_stats', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                // Display filtering funnel statistics
-                const funnelHTML = generateGmailFunnelHTML(data);
-                const funnelDiv = document.createElement('div');
-                funnelDiv.innerHTML = funnelHTML;
-                terminalOutput.appendChild(funnelDiv);
-                terminalOutput.scrollTop = terminalOutput.scrollHeight;
-            } catch (e) {
-                console.error('Error parsing funnel_stats event:', e);
-            }
-        });
-        
-        // Handle connection errors
-        eventSource.onerror = (error) => {
-            console.error('Gmail SSE connection error:', error);
+        } catch (e) {
+            console.error('Error parsing invoice event:', e);
+        }
+    });
+    
+    // Listen for 'complete' events
+    eventSource.addEventListener('complete', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            state.importResults = {
+                imported: data.imported || state.importResults.imported,
+                skipped: data.skipped || state.importResults.skipped,
+                total: data.total || state.importResults.total,
+                invoices: data.invoices || state.importResults.invoices
+            };
+            cleanup();
             
-            if (eventSource.readyState === EventSource.CLOSED) {
-                addTerminalLine('❌ Connection closed by server', 'error');
-                showError('Connection Error', 'Lost connection to server. Please try again.');
-                eventSource.close();
+            addTerminalLine('\n' + '─'.repeat(60), 'info');
+            addTerminalLine('✅ Import session completed successfully!', 'success');
+            
+            gmailImportBtn.disabled = false;
+            gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            
+            // Show summary and invoice details
+            displayImportSummary(state.importResults);
+            displayInvoiceData(state.importResults.invoices);
+        } catch (e) {
+            console.error('Error parsing complete event:', e);
+        }
+    });
+    
+    // Listen for 'error' events (SSE event type, not connection error)
+    eventSource.addEventListener('error', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            const errorMessage = data.error || data.message || 'An error occurred during Gmail scan';
+            
+            // Check if this is a resumable error
+            if (data.can_resume && data.scan_id) {
+                state.scanId = data.scan_id;
+                addTerminalLine(`⚠️ Error: ${errorMessage}`, 'warning');
+                addTerminalLine('💾 Progress saved. Auto-resuming...', 'info');
+                cleanup();
+                handleReconnect();
+            } else if (errorMessage.includes('Gmail not connected') || errorMessage.includes('session expired')) {
+                // Auth error - can't retry
+                cleanup();
+                addTerminalLine(`❌ ${errorMessage}`, 'error');
+                showError('Gmail Authentication Required', 'Please connect your Gmail account first.');
                 gmailImportBtn.disabled = false;
                 gmailImportBtn.textContent = '🔍 Start Smart Scan';
             } else {
-                addTerminalLine('⚠️ Connection interrupted, attempting to reconnect...', 'warning');
+                addTerminalLine(`❌ Error: ${errorMessage}`, 'error');
+                showError('Gmail Scan Error', errorMessage);
+                cleanup();
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
             }
-        };
+        } catch (e) {
+            // Not a JSON error event, might be a connection error
+            console.error('Error parsing error event:', e);
+        }
+    });
+    
+    // Listen for 'funnel_stats' events
+    eventSource.addEventListener('funnel_stats', (event) => {
+        try {
+            state.lastKeepalive = Date.now();
+            const data = JSON.parse(event.data);
+            // Display filtering funnel statistics
+            const funnelHTML = generateGmailFunnelHTML(data);
+            const funnelDiv = document.createElement('div');
+            funnelDiv.innerHTML = funnelHTML;
+            terminalOutput.appendChild(funnelDiv);
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        } catch (e) {
+            console.error('Error parsing funnel_stats event:', e);
+        }
+    });
+    
+    // Handle connection errors (browser EventSource onerror)
+    eventSource.onerror = (error) => {
+        console.error('Gmail SSE connection error:', error, 'readyState:', eventSource.readyState);
         
-    } catch (error) {
-        addTerminalLine(`❌ Error: ${error.message}`, 'error');
-        gmailImportBtn.disabled = false;
-        gmailImportBtn.textContent = '🔍 Start Smart Scan';
-    }
-});
+        if (eventSource.readyState === EventSource.CLOSED) {
+            // Connection was closed, try to reconnect if we have a scan ID
+            addTerminalLine('⚠️ Connection closed unexpectedly', 'warning');
+            cleanup();
+            handleReconnect();
+        } else if (eventSource.readyState === EventSource.CONNECTING) {
+            // Browser is auto-reconnecting
+            updateSSEStatus('reconnecting');
+            addTerminalLine('🔄 Connection interrupted, browser reconnecting...', 'warning');
+        }
+    };
+    
+    // Handle page unload - save state
+    window.addEventListener('beforeunload', () => {
+        cleanup();
+    });
+}
 
 // Global storage for Gmail extracted invoices - used for Create Bill
 window.__gmailExtractedInvoices = window.__gmailExtractedInvoices || [];
