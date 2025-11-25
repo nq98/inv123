@@ -493,103 +493,60 @@ class GmailService:
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
         Convert HTML email content to a PDF using Playwright
-        Uses multiprocessing for reliable timeout in gevent environment
+        Uses subprocess for reliable timeout in gevent environment
         
         Returns: (filename, pdf_data) or None if failed
         """
-        import multiprocessing
+        import subprocess
         import time
+        import json
+        import base64
         
         timestamp = int(time.time())
         safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
         filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
         
-        chromium_path = self._find_chromium_executable()
-        print(f"📄 Starting PDF generation with multiprocessing timeout...")
-        
-        def generate_pdf_worker(html_content, chromium_path, result_queue):
-            """Worker function that runs in a separate process"""
-            try:
-                from playwright.sync_api import sync_playwright
-                import time as worker_time
-                
-                with sync_playwright() as p:
-                    launch_options = {
-                        'headless': True,
-                        'timeout': 15000,
-                        'args': [
-                            '--no-sandbox',
-                            '--disable-setuid-sandbox',
-                            '--disable-dev-shm-usage',
-                            '--disable-gpu',
-                            '--single-process',
-                            '--disable-web-security',
-                            '--disable-features=IsolateOrigins,site-per-process'
-                        ]
-                    }
-                    
-                    if chromium_path:
-                        launch_options['executable_path'] = chromium_path
-                    
-                    browser = p.chromium.launch(**launch_options)
-                    context = browser.new_context(
-                        viewport={'width': 800, 'height': 1200},
-                        bypass_csp=True,
-                        java_script_enabled=False
-                    )
-                    page = context.new_page()
-                    
-                    page.set_content(html_content, wait_until='commit', timeout=10000)
-                    
-                    worker_time.sleep(0.3)
-                    
-                    pdf_data = page.pdf(
-                        format='A4',
-                        print_background=True,
-                        margin={'top': '20px', 'right': '20px', 'bottom': '20px', 'left': '20px'}
-                    )
-                    
-                    context.close()
-                    browser.close()
-                    
-                result_queue.put({'success': True, 'data': pdf_data})
-                    
-            except Exception as e:
-                result_queue.put({'success': False, 'error': str(e)})
+        print(f"📄 Starting PDF generation via subprocess...")
         
         try:
-            result_queue = multiprocessing.Queue()
+            script_path = os.path.join(os.path.dirname(__file__), 'html_to_pdf_subprocess.py')
             
-            process = multiprocessing.Process(
-                target=generate_pdf_worker,
-                args=(html_content, chromium_path, result_queue)
+            process = subprocess.Popen(
+                ['python3', script_path],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
-            process.start()
-            process.join(timeout=25)
             
-            if process.is_alive():
+            try:
+                stdout, stderr = process.communicate(input=html_content, timeout=25)
+            except subprocess.TimeoutExpired:
                 print(f"⚠️ PDF generation timed out after 25 seconds - terminating process")
-                process.terminate()
-                process.join(timeout=5)
-                if process.is_alive():
-                    process.kill()
+                process.kill()
+                process.wait()
                 return None
             
-            if not result_queue.empty():
-                result = result_queue.get_nowait()
-                if result.get('success') and result.get('data'):
-                    pdf_data = result['data']
-                    print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
-                    return (filename, pdf_data)
-                elif result.get('error'):
-                    print(f"⚠️ PDF generation error: {result['error']}")
-                    return None
+            if process.returncode != 0:
+                print(f"⚠️ PDF generation subprocess failed: {stderr}")
+                return None
             
-            print(f"⚠️ PDF generation returned no data")
-            return None
+            try:
+                result = json.loads(stdout)
+            except json.JSONDecodeError as e:
+                print(f"⚠️ PDF generation returned invalid JSON: {e}")
+                return None
+            
+            if not result.get('success'):
+                print(f"⚠️ PDF generation error: {result.get('error', 'Unknown error')}")
+                return None
+            
+            pdf_data = base64.b64decode(result['pdf_data'])
+            print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
+            return (filename, pdf_data)
             
         except Exception as e:
-            print(f"⚠️ PDF generation process error: {e}")
+            print(f"⚠️ PDF generation subprocess error: {e}")
             return None
     
     def html_to_image(self, html_content, subject='email_receipt'):
