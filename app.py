@@ -2429,8 +2429,13 @@ def gmail_import_stream():
                         if html_body:
                             print(f"[DEBUG Stage 3] html_body found, length={len(html_body)}, calling html_to_pdf")
                             yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
-                            pdf_result = gmail_service.html_to_pdf(html_body, subject)
-                            print(f"[DEBUG Stage 3] html_to_pdf result: {'SUCCESS' if pdf_result else 'FAILED'}")
+                            try:
+                                pdf_result = gmail_service.html_to_pdf(html_body, subject)
+                                print(f"[DEBUG Stage 3] html_to_pdf result: {'SUCCESS - got filename=' + pdf_result[0] if pdf_result else 'FAILED (returned None)'}")
+                            except Exception as pdf_gen_err:
+                                print(f"[DEBUG Stage 3] html_to_pdf EXCEPTION: {type(pdf_gen_err).__name__}: {str(pdf_gen_err)}")
+                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF generation error: {str(pdf_gen_err)[:80]}'})
+                                pdf_result = None
                             if not pdf_result:
                                 yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF rendering failed (Playwright error)'})
                                 extraction_failures.append(subject)
