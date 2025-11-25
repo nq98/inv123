@@ -147,7 +147,7 @@ class NetSuiteService:
             }
             
             self.bigquery.ensure_netsuite_events_table()
-            table_id = f"{self.bigquery.project_id}.vendors_ai.netsuite_events"
+            table_id = f"invoicereader-477008.vendors_ai.netsuite_events"
             self.bigquery.client.insert_rows_json(table_id, [event])
             
             logger.info(f"✓ Tracked event: {event_category} {action} for {entity_id}")

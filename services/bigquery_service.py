@@ -534,6 +534,44 @@ class BigQueryService:
                 print(f"❌ Error checking/creating sync log table: {e}")
                 return False
     
+    def ensure_netsuite_events_table(self):
+        """Create NetSuite events table if it doesn't exist (for comprehensive event tracking)"""
+        events_table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.netsuite_events"
+        
+        schema = [
+            bigquery.SchemaField("event_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("direction", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("event_category", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("entity_type", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("entity_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("netsuite_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("action", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("request_data", "JSON", mode="NULLABLE"),
+            bigquery.SchemaField("response_data", "JSON", mode="NULLABLE"),
+            bigquery.SchemaField("error_message", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("duration_ms", "INT64", mode="NULLABLE"),
+            bigquery.SchemaField("user", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
+        ]
+        
+        try:
+            table = self.client.get_table(events_table_id)
+            print(f"✓ NetSuite events table {events_table_id} already exists")
+            return True
+        except Exception as e:
+            if "Not found" in str(e):
+                print(f"⚠️ NetSuite events table not found. Creating...")
+                table = bigquery.Table(events_table_id, schema=schema)
+                table = self.client.create_table(table)
+                print(f"✓ Created NetSuite events table {events_table_id}")
+                return True
+            else:
+                print(f"❌ Error checking/creating events table: {e}")
+                return False
+    
     def log_netsuite_sync(self, sync_data):
         """
         Log NetSuite API call to sync log table
