@@ -1195,25 +1195,30 @@ function displayInvoiceData(invoices) {
                 ` : ''}
                 
                 <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <strong style="color: #495057;">📋 NetSuite Actions</strong>
-                            <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
-                                ${invoice.vendor_match?.database_vendor?.netsuite_id ? 
-                                    `Vendor synced to NetSuite (ID: ${invoice.vendor_match.database_vendor.netsuite_id})` : 
-                                    'Vendor not yet synced to NetSuite'}
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong style="color: #495057;">📋 NetSuite Actions</strong>
+                                <div style="font-size: 12px; color: #6c757d; margin-top: 4px;" id="vendorNetSuiteStatus${idx}">
+                                    ${(invoice.vendor_match?.database_vendor?.netsuite_id || 
+                                       invoice.vendor_match?.database_vendor?.netsuite_internal_id) ? 
+                                        `<span style="color: #198754;">✅ Vendor synced to NetSuite (ID: ${invoice.vendor_match.database_vendor.netsuite_id || invoice.vendor_match.database_vendor.netsuite_internal_id})</span>` : 
+                                        `<span style="color: #f57c00;">⚠️ Vendor not yet synced to NetSuite</span>`}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px;" id="billActionsContainer${idx}">
+                                <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                        style="padding: 8px 16px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                                    <span>📝</span> Create Bill
+                                </button>
+                                <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                        style="padding: 8px 16px; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                                    <span>🔄</span> Update Bill
+                                </button>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 8px;" id="billActionsContainer${idx}">
-                            <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
-                                    style="padding: 8px 16px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-                                <span>📝</span> Create Bill
-                            </button>
-                            <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
-                                    style="padding: 8px 16px; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-                                <span>🔄</span> Update Bill
-                            </button>
-                        </div>
+                        <!-- Status Container for error/success messages (keeps buttons visible on error) -->
+                        <div id="billStatusContainer${idx}" style="display: none;"></div>
                     </div>
                 </div>
                 
@@ -1283,8 +1288,13 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
     console.log('📝 Creating bill for invoice:', invoiceId);
     
     const container = document.getElementById(`billActionsContainer${idx}`);
-    if (container) {
-        container.innerHTML = '<span style="color: #0d6efd;">Creating bill...</span>';
+    const statusContainer = document.getElementById(`billStatusContainer${idx}`);
+    const originalContent = container ? container.innerHTML : '';
+    
+    // Show loading status
+    if (statusContainer) {
+        statusContainer.innerHTML = '<span style="color: #0d6efd; display: flex; align-items: center; gap: 5px;"><span class="spinner-border spinner-border-sm"></span> Creating bill...</span>';
+        statusContainer.style.display = 'block';
     }
     
     try {
@@ -1296,18 +1306,33 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
         const result = await response.json();
         
         if (result.success) {
+            // Success - replace buttons with success message
             if (container) {
-                container.innerHTML = `<span style="color: #198754;">✅ Bill created: ${result.netsuite_bill_id || 'Success'}</span>`;
+                container.innerHTML = `<span style="color: #198754; font-weight: 500;">✅ Bill created: ${result.netsuite_bill_id || 'Success'}</span>`;
+            }
+            if (statusContainer) {
+                statusContainer.style.display = 'none';
             }
         } else {
-            if (container) {
-                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || result.message || 'Failed'}</span>`;
+            // Error - show error but KEEP buttons for retry
+            if (statusContainer) {
+                statusContainer.innerHTML = `
+                    <div style="color: #dc3545; padding: 8px 12px; background: #fff5f5; border-radius: 4px; margin-bottom: 8px;">
+                        ❌ ${result.error || result.message || 'Failed to create bill'}
+                        ${result.needs_sync ? '<br><small style="color: #666;">Please sync the vendor to NetSuite first.</small>' : ''}
+                    </div>`;
+                statusContainer.style.display = 'block';
             }
         }
     } catch (error) {
         console.error('Error creating bill:', error);
-        if (container) {
-            container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
+        // Error - show error but KEEP buttons for retry
+        if (statusContainer) {
+            statusContainer.innerHTML = `
+                <div style="color: #dc3545; padding: 8px 12px; background: #fff5f5; border-radius: 4px; margin-bottom: 8px;">
+                    ❌ Error: ${error.message}
+                </div>`;
+            statusContainer.style.display = 'block';
         }
     }
 };
@@ -1317,8 +1342,12 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
     console.log('🔄 Updating bill for invoice:', invoiceId);
     
     const container = document.getElementById(`billActionsContainer${idx}`);
-    if (container) {
-        container.innerHTML = '<span style="color: #198754;">Updating bill...</span>';
+    const statusContainer = document.getElementById(`billStatusContainer${idx}`);
+    
+    // Show loading status
+    if (statusContainer) {
+        statusContainer.innerHTML = '<span style="color: #198754; display: flex; align-items: center; gap: 5px;"><span class="spinner-border spinner-border-sm"></span> Updating bill...</span>';
+        statusContainer.style.display = 'block';
     }
     
     try {
@@ -1330,18 +1359,32 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
         const result = await response.json();
         
         if (result.success) {
+            // Success - replace buttons with success message
             if (container) {
-                container.innerHTML = `<span style="color: #198754;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'}</span>`;
+                container.innerHTML = `<span style="color: #198754; font-weight: 500;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'}</span>`;
+            }
+            if (statusContainer) {
+                statusContainer.style.display = 'none';
             }
         } else {
-            if (container) {
-                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || result.message || 'Failed'}</span>`;
+            // Error - show error but KEEP buttons for retry
+            if (statusContainer) {
+                statusContainer.innerHTML = `
+                    <div style="color: #dc3545; padding: 8px 12px; background: #fff5f5; border-radius: 4px; margin-bottom: 8px;">
+                        ❌ ${result.error || result.message || 'Failed to update bill'}
+                    </div>`;
+                statusContainer.style.display = 'block';
             }
         }
     } catch (error) {
         console.error('Error updating bill:', error);
-        if (container) {
-            container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
+        // Error - show error but KEEP buttons for retry
+        if (statusContainer) {
+            statusContainer.innerHTML = `
+                <div style="color: #dc3545; padding: 8px 12px; background: #fff5f5; border-radius: 4px; margin-bottom: 8px;">
+                    ❌ Error: ${error.message}
+                </div>`;
+            statusContainer.style.display = 'block';
         }
     }
 };

@@ -1261,31 +1261,67 @@ def get_invoice_details(invoice_id):
 @app.route('/api/netsuite/invoice/<invoice_id>/create', methods=['POST'])
 def create_invoice_in_netsuite(invoice_id):
     """Create invoice/bill in NetSuite"""
+    import json
+    
     try:
-        # Get invoice details from BigQuery
+        # Get invoice details from BigQuery - try by ID first, then by invoice_number
         bigquery_service = BigQueryService()
         invoice = bigquery_service.get_invoice_details(invoice_id)
         
         if not invoice:
-            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+            # Try lookup by invoice_number (Gmail imports often use this)
+            invoice = bigquery_service.get_invoice_by_number(invoice_id)
         
-        # Check if vendor has NetSuite ID
+        if not invoice:
+            return jsonify({
+                'success': False, 
+                'error': f'Invoice not found: {invoice_id}',
+                'retry': True
+            }), 404
+        
+        # Get vendor - try vendor_id first, then lookup by vendor_name with exact matching
         vendor_id = invoice.get('vendor_id')
-        if not vendor_id:
-            return jsonify({'success': False, 'error': 'Invoice has no vendor matched'}), 400
+        vendor = None
         
-        # Get vendor details
-        vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        if vendor_id:
+            vendor = bigquery_service.get_vendor_by_id(vendor_id)
+        
+        # If no vendor found by ID, search by vendor_name (for Gmail imports)
+        # IMPORTANT: Only use exact or near-exact matches to avoid binding to wrong vendor
+        if not vendor and invoice.get('vendor_name'):
+            vendor_name = invoice.get('vendor_name').strip()
+            print(f"📋 Looking up vendor by name: {vendor_name}")
+            
+            # Search vendors by name - get top match only
+            vendors = bigquery_service.search_vendor_by_name(vendor_name, limit=3)
+            if vendors and len(vendors) > 0:
+                # Only accept if vendor name is an exact or very close match
+                best_match = vendors[0]
+                match_name = (best_match.get('name') or best_match.get('vendor_name', '')).strip().lower()
+                query_name = vendor_name.lower()
+                
+                # Accept if exact match or one contains the other (handle "Replit" matching "Replit, Inc.")
+                if match_name == query_name or match_name.startswith(query_name) or query_name.startswith(match_name):
+                    vendor = best_match
+                    vendor_id = vendor.get('vendor_id')
+                    print(f"✓ Found vendor by name (exact match): {vendor_id} - {match_name}")
+                else:
+                    print(f"⚠️ Vendor name mismatch - query: '{query_name}', found: '{match_name}' - skipping")
+        
         if not vendor:
-            return jsonify({'success': False, 'error': 'Vendor not found'}), 400
+            return jsonify({
+                'success': False, 
+                'error': f'Vendor not found. Please match the vendor first.',
+                'retry': True
+            }), 400
         
-        # CRITICAL FIX: Extract NetSuite ID from custom_attributes JSON
-        import json
+        # CRITICAL FIX: Extract NetSuite ID from multiple possible locations
+        netsuite_internal_id = None
         
-        # First check if vendor has netsuite_internal_id as a direct field (new schema)
+        # 1. Check netsuite_internal_id as direct field (new schema)
         netsuite_internal_id = vendor.get('netsuite_internal_id')
         
-        # If not found, check in custom_attributes JSON (legacy location)
+        # 2. Check custom_attributes JSON (legacy location)
         if not netsuite_internal_id:
             custom_attrs = vendor.get('custom_attributes', {})
             if isinstance(custom_attrs, str):
@@ -1298,11 +1334,23 @@ def create_invoice_in_netsuite(invoice_id):
             
             netsuite_internal_id = custom_attrs.get('netsuite_internal_id')
         
-        print(f"🔍 DEBUG: Vendor {vendor_id} has NetSuite ID: {netsuite_internal_id}")
+        # 3. Check for netsuite_id field (alternative name)
+        if not netsuite_internal_id:
+            netsuite_internal_id = vendor.get('netsuite_id')
+        
+        print(f"🔍 DEBUG: Vendor {vendor_id} ({vendor.get('name', 'Unknown')}) has NetSuite ID: {netsuite_internal_id}")
         print(f"🔍 DEBUG: Vendor data keys: {vendor.keys() if vendor else 'None'}")
         
         if not netsuite_internal_id:
-            return jsonify({'success': False, 'error': 'Vendor not synced to NetSuite'}), 400
+            vendor_name = vendor.get('name') or vendor.get('vendor_name', 'Unknown')
+            return jsonify({
+                'success': False, 
+                'error': f'Vendor "{vendor_name}" not synced to NetSuite. Please sync the vendor first from the Vendors tab.',
+                'vendor_id': vendor_id,
+                'vendor_name': vendor_name,
+                'needs_sync': True,
+                'retry': True
+            }), 400
         
         # Create bill in NetSuite
         netsuite = NetSuiteService()
