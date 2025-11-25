@@ -884,11 +884,26 @@ For each email, follow these steps:
 - VENDOR: The company whose product/service was purchased
 
 **Step 2: Data Extraction**
-- Invoice/Receipt number
-- Date (YYYY-MM-DD format)
+- Invoice/Receipt number (from subject OR body)
+- Date (YYYY-MM-DD format)  
 - Vendor name (the actual seller, NOT the payment processor)
 - Currency and amounts (subtotal, tax, total)
-- Line items if present
+- **LINE ITEMS (CRITICAL)**: Extract FULL details for each item:
+  - description: Full description including any reference numbers
+  - quantity: Number of units (default 1 if not specified)
+  - unitPrice: Price per unit (same as lineSubtotal for single items)
+  - lineSubtotal: Total for this line item
+  - category: Type of product/service (e.g., "Software Subscription", "API Credits")
+  
+  **Where to find line items**:
+  - "Summary" sections: "Payment for invoice XXX - Service Name : $XX.XX"
+  - Itemized lists with prices
+  - Service descriptions followed by amounts
+  - **UNIVERSAL FALLBACK**: If only total is visible, create ONE line item with:
+    * description: "Service/Product" or extracted service name
+    * quantity: 1
+    * unitPrice: total amount
+    * lineSubtotal: total amount
 
 **Step 3: Mathematical Verification**
 - Tax = Total - Subtotal (verify this matches)
@@ -910,20 +925,40 @@ Return a JSON object where keys are the exact email IDs provided:
         "invoiceDate": "2025-11-25",
         "currency": "USD",
         "totals": {{
-            "subtotal": 25.00,
+            "subtotal": 50.06,
             "tax": 0.00,
-            "total": 25.00
+            "total": 50.06
         }},
         "lineItems": [
-            {{"description": "Replit subscription", "amount": 25.00}}
+            {{
+                "description": "Replit Core Usage - Payment for invoice BWFLLB-00039",
+                "quantity": 1,
+                "unitPrice": 50.06,
+                "lineSubtotal": 50.06,
+                "category": "Software Subscription"
+            }}
         ],
-        "reasoning": "Replit receipt - extracted invoice number from subject, amount from email"
+        "reasoning": "Replit receipt - extracted from body: Amount paid $50.06, Payment for invoice BWFLLB-00039"
     }},
     "text_email_2": {{
         "success": false,
         "reasoning": "Not a receipt/invoice - just a notification"
     }}
 }}
+
+### LINE ITEM EXTRACTION RULES:
+1. **ALWAYS include quantity** - Default to 1 if not specified
+2. **ALWAYS include unitPrice** - Same as lineSubtotal if single item  
+3. **ALWAYS include lineSubtotal** - The actual amount for this line item
+4. **Look for line item details in**:
+   - "Summary" section: "Payment for invoice XXX - Service Name : $XX.XX"
+   - Individual line items with prices
+   - Subscription descriptions with amounts
+5. **If no itemized breakdown**, create ONE line item with:
+   - description: General description from context (e.g., "Service subscription")
+   - quantity: 1
+   - unitPrice: same as total
+   - lineSubtotal: same as total
 
 ### CRITICAL SUCCESS RULES:
 1. **success: true** if you can identify ANY of these:
@@ -1201,9 +1236,9 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
   "lineItems": [
     {{
       "description": "Semantically cleaned description",
-      "quantity": float,
-      "unitPrice": float,
-      "lineTotal": float
+      "quantity": float (default 1 if not specified),
+      "unitPrice": float (same as lineSubtotal for single items),
+      "lineSubtotal": float (REQUIRED - the line item total)
     }}
   ],
   "extractionConfidence": 0.0-1.0 (calibrated to actual quality),
