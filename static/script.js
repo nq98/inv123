@@ -1207,11 +1207,11 @@ function displayInvoiceData(invoices) {
                                 </div>
                             </div>
                             <div style="display: flex; gap: 8px;" id="billActionsContainer${idx}">
-                                <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                <button onclick="createBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx}, '${encodeURIComponent(fullData.vendor?.name || invoice.vendor_name || '')}', ${fullData.totalAmount || invoice.amount || 0})" 
                                         style="padding: 8px 16px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
                                     <span>📝</span> Create Bill
                                 </button>
-                                <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" 
+                                <button onclick="updateBillFromGmail('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx}, '${encodeURIComponent(fullData.vendor?.name || invoice.vendor_name || '')}', ${fullData.totalAmount || invoice.amount || 0})" 
                                         style="padding: 8px 16px; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;">
                                     <span>🔄</span> Update Bill
                                 </button>
@@ -1283,9 +1283,10 @@ window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
     }
 };
 
-window.createBillFromGmail = async function(encodedInvoiceId, idx) {
+window.createBillFromGmail = async function(encodedInvoiceId, idx, encodedVendorName, amount) {
     const invoiceId = decodeURIComponent(encodedInvoiceId);
-    console.log('📝 Creating bill for invoice:', invoiceId);
+    const vendorName = encodedVendorName ? decodeURIComponent(encodedVendorName) : null;
+    console.log('📝 Creating bill for invoice:', invoiceId, 'vendor:', vendorName, 'amount:', amount);
     
     const container = document.getElementById(`billActionsContainer${idx}`);
     const statusContainer = document.getElementById(`billStatusContainer${idx}`);
@@ -1299,9 +1300,14 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
     
     try {
         // Use existing invoice create endpoint with proper dedup and audit logging
+        // Pass vendor_name and amount for fallback lookup if invoice not found by ID
         const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/create`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vendor_name: vendorName,
+                amount: amount
+            })
         });
         const result = await response.json();
         
@@ -1337,9 +1343,10 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
     }
 };
 
-window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
+window.updateBillFromGmail = async function(encodedInvoiceId, idx, encodedVendorName, amount) {
     const invoiceId = decodeURIComponent(encodedInvoiceId);
-    console.log('🔄 Updating bill for invoice:', invoiceId);
+    const vendorName = encodedVendorName ? decodeURIComponent(encodedVendorName) : null;
+    console.log('🔄 Updating bill for invoice:', invoiceId, 'vendor:', vendorName, 'amount:', amount);
     
     const container = document.getElementById(`billActionsContainer${idx}`);
     const statusContainer = document.getElementById(`billStatusContainer${idx}`);
@@ -1352,9 +1359,14 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
     
     try {
         // Use existing invoice update endpoint with proper dedup and audit logging
+        // Pass vendor_name and amount for fallback lookup if invoice not found by ID
         const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/update`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vendor_name: vendorName,
+                amount: amount
+            })
         });
         const result = await response.json();
         

@@ -1264,6 +1264,11 @@ def create_invoice_in_netsuite(invoice_id):
     import json
     
     try:
+        # Get optional vendor_name and amount from request body (for fallback lookup)
+        request_data = request.get_json(silent=True) or {}
+        fallback_vendor_name = request_data.get('vendor_name')
+        fallback_amount = request_data.get('amount')
+        
         # Get invoice details from BigQuery - try by ID first, then by invoice_number
         bigquery_service = BigQueryService()
         invoice = bigquery_service.get_invoice_details(invoice_id)
@@ -1272,11 +1277,17 @@ def create_invoice_in_netsuite(invoice_id):
             # Try lookup by invoice_number (Gmail imports often use this)
             invoice = bigquery_service.get_invoice_by_number(invoice_id)
         
+        # Fallback: Try lookup by vendor name + amount (for Gmail streaming results)
+        if not invoice and fallback_vendor_name and fallback_amount:
+            print(f"📋 Invoice not found by ID, trying vendor+amount lookup: {fallback_vendor_name} | ${fallback_amount}")
+            invoice = bigquery_service.get_invoice_by_vendor_and_amount(fallback_vendor_name, float(fallback_amount))
+        
         if not invoice:
             return jsonify({
                 'success': False, 
-                'error': f'Invoice not found: {invoice_id}',
-                'retry': True
+                'error': f'Invoice not found: {invoice_id}. This invoice may not have been saved to the database. Try approving it first or re-scanning from Gmail.',
+                'retry': True,
+                'help': 'Click Approve to save this invoice, then try Create Bill again.'
             }), 404
         
         # Get vendor - try vendor_id first, then lookup by vendor_name with exact matching

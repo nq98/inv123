@@ -1504,6 +1504,112 @@ class BigQueryService:
             print(f"❌ Error getting invoice by number: {e}")
             return None
     
+    def get_invoice_by_vendor_and_amount(self, vendor_name: str, amount: float) -> Optional[dict]:
+        """
+        Get invoice by vendor name and amount (fallback lookup when invoice_id doesn't match).
+        This handles cases where Gmail streaming extracts invoices but stores them with different IDs.
+        
+        Args:
+            vendor_name: The vendor name (will do a fuzzy match)
+            amount: The invoice amount (must match exactly within 0.01)
+            
+        Returns:
+            dict with invoice data or None if not found
+        """
+        # Normalize vendor name - extract first word for matching
+        vendor_key = vendor_name.split()[0].lower() if vendor_name else ""
+        
+        query = f"""
+        SELECT 
+            invoice_id,
+            invoice_id as invoice_number,
+            vendor_name,
+            vendor_id,
+            invoice_date,
+            invoice_date as due_date,
+            currency as currency,
+            amount as total_amount,
+            amount as subtotal,
+            0 as tax_amount,
+            metadata as line_items,
+            metadata as extracted_data,
+            gcs_uri,
+            file_type,
+            file_size,
+            IFNULL(netsuite_bill_id, '') as netsuite_bill_id,
+            IFNULL(netsuite_sync_status, 'pending') as sync_status,
+            created_at,
+            created_at as updated_at
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
+        WHERE LOWER(SPLIT(vendor_name, ' ')[SAFE_OFFSET(0)]) = @vendor_key
+          AND ABS(amount - @amount) < 0.01
+        ORDER BY 
+            CASE WHEN vendor_id IS NOT NULL THEN 0 ELSE 1 END,
+            created_at DESC
+        LIMIT 1
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("vendor_key", "STRING", vendor_key),
+                bigquery.ScalarQueryParameter("amount", "FLOAT64", float(amount))
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            for row in results:
+                invoice_dict = {
+                    "invoice_id": row.invoice_id,
+                    "invoice_number": row.invoice_number,
+                    "vendor_name": row.vendor_name,
+                    "vendor_id": row.vendor_id,
+                    "invoice_date": row.invoice_date.isoformat() if row.invoice_date else None,
+                    "due_date": row.due_date.isoformat() if row.due_date else None,
+                    "currency": row.currency,
+                    "total_amount": float(row.total_amount) if row.total_amount else 0,
+                    "subtotal": float(row.subtotal) if row.subtotal else 0,
+                    "tax_amount": float(row.tax_amount) if row.tax_amount else 0,
+                    "amount": float(row.total_amount) if row.total_amount else 0,
+                    "netsuite_bill_id": row.netsuite_bill_id,
+                    "sync_status": row.sync_status,
+                    "gcs_uri": row.gcs_uri if hasattr(row, 'gcs_uri') else None,
+                    "file_type": row.file_type if hasattr(row, 'file_type') else None,
+                    "file_size": row.file_size if hasattr(row, 'file_size') else 0,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None
+                }
+                
+                if hasattr(row, 'line_items') and row.line_items:
+                    try:
+                        if isinstance(row.line_items, str):
+                            invoice_dict["line_items"] = json.loads(row.line_items)
+                        else:
+                            invoice_dict["line_items"] = row.line_items
+                    except:
+                        invoice_dict["line_items"] = []
+                else:
+                    invoice_dict["line_items"] = []
+                
+                if hasattr(row, 'extracted_data') and row.extracted_data:
+                    try:
+                        if isinstance(row.extracted_data, str):
+                            invoice_dict["extracted_data"] = json.loads(row.extracted_data)
+                        else:
+                            invoice_dict["extracted_data"] = row.extracted_data
+                    except:
+                        invoice_dict["extracted_data"] = {}
+                else:
+                    invoice_dict["extracted_data"] = {}
+                
+                print(f"✓ Found invoice by vendor+amount: {vendor_name} | ${amount}")
+                return invoice_dict
+            
+            return None
+        except Exception as e:
+            print(f"❌ Error getting invoice by vendor+amount: {e}")
+            return None
+    
     def update_invoice_netsuite_id(self, invoice_id: str, netsuite_bill_id: str) -> bool:
         """
         Alias for update_invoice_netsuite_sync for compatibility
