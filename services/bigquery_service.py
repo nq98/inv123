@@ -784,7 +784,7 @@ class BigQueryService:
                 metadata
             FROM `{events_table_id}`
             WHERE entity_id = @invoice_id
-              AND entity_type = 'invoice'
+              AND entity_type IN ('invoice', 'bill')
             ORDER BY timestamp ASC
             """
             
@@ -825,7 +825,7 @@ class BigQueryService:
                     response_data
                 FROM `{sync_log_table_id}`
                 WHERE entity_id = @invoice_id
-                  AND entity_type = 'invoice'
+                  AND entity_type IN ('invoice', 'bill')
                 ORDER BY timestamp ASC
                 """
                 
