@@ -1290,35 +1290,43 @@ def create_invoice_in_netsuite(invoice_id):
             full_data = request_data.get('full_data', {})
             vendor_match = request_data.get('vendor_match', {})
             
-            # Build invoice record for BigQuery
+            # Build invoice record for BigQuery (using insert_invoice format)
             invoice_record = {
                 'invoice_id': invoice_id,
-                'invoice_number': request_data.get('invoice_number', invoice_id),
                 'vendor_name': fallback_vendor_name or full_data.get('vendor', {}).get('name', 'Unknown'),
                 'vendor_id': vendor_match.get('database_vendor', {}).get('vendor_id') if vendor_match else None,
-                'total_amount': float(fallback_amount or 0),
+                'client_id': full_data.get('buyer', {}).get('name', 'Unknown'),
+                'amount': float(fallback_amount or 0),
                 'currency': request_data.get('currency', 'USD'),
-                'issue_date': request_data.get('issue_date'),
-                'due_date': request_data.get('due_date'),
-                'status': 'pending',
+                'invoice_date': request_data.get('issue_date') or full_data.get('documentDate'),
+                'status': 'matched' if vendor_match and vendor_match.get('database_vendor', {}).get('vendor_id') else 'unmatched',
                 'gcs_uri': request_data.get('gcs_uri'),
-                'extraction_confidence': full_data.get('extractionConfidence', 0.85),
-                'raw_extraction': json.dumps(full_data) if full_data else None,
-                'source': 'gmail_create_bill_autosave'
+                'file_type': 'html',
+                'file_size': 0,
+                'metadata': json.dumps({
+                    'source': 'gmail_create_bill_autosave',
+                    'full_data': full_data,
+                    'vendor_match': vendor_match,
+                    'email_subject': request_data.get('email_subject', ''),
+                    'email_sender': request_data.get('email_sender', '')
+                })
             }
             
-            # Save to BigQuery
+            # Save to BigQuery using insert_invoice (correct method name)
             try:
-                saved_id = bigquery_service.save_invoice(invoice_record)
-                print(f"✓ Auto-saved invoice to BigQuery: {saved_id}")
-                
-                # Re-fetch the saved invoice
-                invoice = bigquery_service.get_invoice_details(saved_id)
-                if not invoice:
-                    invoice = bigquery_service.get_invoice_by_number(invoice_id)
+                result = bigquery_service.insert_invoice(invoice_record)
+                if result == True or result == 'duplicate':
+                    print(f"✓ Auto-saved invoice to BigQuery: {invoice_id}")
+                    # Re-fetch the saved invoice
+                    invoice = bigquery_service.get_invoice_details(invoice_id)
+                    if not invoice:
+                        invoice = bigquery_service.get_invoice_by_number(invoice_id)
+                else:
+                    print(f"⚠️ Auto-save returned: {result}")
             except Exception as save_error:
                 print(f"⚠️ Auto-save failed: {save_error}")
-                # Continue anyway - might find by vendor lookup
+                import traceback
+                traceback.print_exc()
         
         if not invoice:
             return jsonify({
