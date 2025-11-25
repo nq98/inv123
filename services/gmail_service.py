@@ -525,10 +525,13 @@ class GmailService:
                 browser = p.chromium.launch(**launch_options)
                 page = browser.new_page(viewport={'width': 800, 'height': 1200})
                 
-                page.set_content(html_content)
-                page.wait_for_load_state('networkidle', timeout=15000)
+                page.set_content(html_content, timeout=30000)
+                try:
+                    page.wait_for_load_state('networkidle', timeout=8000)
+                except Exception as load_err:
+                    print(f"⚠️ Network idle timeout (expected for emails with external resources) - continuing anyway")
                 
-                time.sleep(0.3)
+                time.sleep(0.5)
                 
                 pdf_data = page.pdf(
                     format='A4',
