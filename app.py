@@ -2699,28 +2699,39 @@ def gmail_import_stream():
                     return None
                 return str(inv_num).strip().upper().replace('-', '').replace('_', '').replace(' ', '')
             
-            def is_duplicate_invoice(invoice_num, vendor_name, total_amount, email_subject=""):
+            def is_duplicate_invoice(invoice_num, vendor_name, total_amount, email_subject="", invoice_date=""):
                 """Check if invoice is duplicate based on invoice_number + vendor + total (thread-safe)
                 
-                When vendor is "Unknown", uses email subject hash to differentiate between
-                invoices from different emails (prevents false deduplication across emails).
-                """
-                normalized = normalize_invoice_number(invoice_num)
-                if not normalized:
-                    return False
+                Handles two deduplication strategies:
+                1. With invoice number: invoice_num + vendor + total
+                2. Without invoice number (N/A): vendor + total + date + subject_hash
                 
-                # Create composite key: invoice_number + vendor_first_word + rounded_total
-                # When vendor is Unknown, add email subject hash to differentiate between different emails
+                When vendor is "Unknown", uses email subject hash to differentiate.
+                """
+                import hashlib
+                
+                normalized = normalize_invoice_number(invoice_num)
+                total_key = round(float(total_amount), 2) if total_amount else 0
+                
+                # Build vendor key
                 if vendor_name and vendor_name != 'Unknown':
                     vendor_key = vendor_name.split()[0].upper()
                 else:
                     # Use first 8 chars of email subject hash to differentiate unknown vendors
-                    import hashlib
                     subject_hash = hashlib.md5(email_subject.encode()).hexdigest()[:8] if email_subject else 'NONE'
                     vendor_key = f"UNK_{subject_hash}"
                 
-                total_key = round(float(total_amount), 2) if total_amount else 0
-                composite_key = f"{normalized}|{vendor_key}|{total_key}"
+                # Create composite key based on whether we have a real invoice number
+                if normalized:
+                    # Strategy 1: Use invoice number (most reliable)
+                    composite_key = f"INV|{normalized}|{vendor_key}|{total_key}"
+                else:
+                    # Strategy 2: No invoice number - use vendor + total + date + subject hash
+                    # This catches duplicates like "Adrian Kovac USD 2103.65" appearing twice
+                    date_key = str(invoice_date)[:10] if invoice_date else 'NODATE'
+                    subject_hash = hashlib.md5(email_subject.encode()).hexdigest()[:8] if email_subject else 'NONE'
+                    composite_key = f"NOINV|{vendor_key}|{total_key}|{date_key}|{subject_hash}"
+                
                 with dedup_lock:
                     if composite_key in extracted_invoice_numbers:
                         return True
@@ -2775,7 +2786,8 @@ def gmail_import_stream():
                                 currency = text_result.get('currency', 'USD')
                                 invoice_num = text_result.get('invoiceNumber', 'N/A')
                                 
-                                if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                invoice_date = text_result.get('invoiceDate') or text_result.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else ''
+                                if is_duplicate_invoice(invoice_num, vendor, total, subject, invoice_date):
                                     dup_count += 1
                                     progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num} already imported'})
                                     print(f"[DEDUP] Skipping duplicate invoice: {invoice_num} | {vendor} | {total}")
@@ -2827,8 +2839,9 @@ def gmail_import_stream():
                                     invoice_num = validated.get('invoiceNumber', 'N/A')
                                     
                                     source_label = 'PLAIN TEXT EMAIL' if plain_text_body else 'HTML EMAIL BODY'
+                                    invoice_date = validated.get('invoiceDate') or validated.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else ''
                                     if vendor and vendor != 'Unknown' and total and total > 0:
-                                        if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                        if is_duplicate_invoice(invoice_num, vendor, total, subject, invoice_date):
                                             dup_count += 1
                                             progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                         else:
@@ -2878,8 +2891,9 @@ def gmail_import_stream():
                             currency = validated.get('currency', 'USD')
                             invoice_num = validated.get('invoiceNumber', 'N/A')
                             
+                            invoice_date = validated.get('invoiceDate') or validated.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else ''
                             if vendor and vendor != 'Unknown' and total and total > 0:
-                                if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                if is_duplicate_invoice(invoice_num, vendor, total, subject, invoice_date):
                                     dup_count += 1
                                     progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                 else:
@@ -2936,8 +2950,9 @@ def gmail_import_stream():
                                     currency = validated.get('currency', 'USD')
                                     invoice_num = validated.get('invoiceNumber', 'N/A')
                                     
+                                    invoice_date = validated.get('invoiceDate') or validated.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else ''
                                     if vendor and vendor != 'Unknown' and total and total > 0:
-                                        if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                        if is_duplicate_invoice(invoice_num, vendor, total, subject, invoice_date):
                                             dup_count += 1
                                             progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                         else:
@@ -2978,7 +2993,8 @@ def gmail_import_stream():
                                 invoice_num = text_result.get('invoiceNumber', 'N/A')
                                 
                                 if vendor and vendor != 'Unknown' and total and total > 0:
-                                    if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                    invoice_date_for_dedup = text_result.get('invoiceDate') or text_result.get('documentDate') or metadata.get('date', '')[:10] if metadata.get('date') else ''
+                                    if is_duplicate_invoice(invoice_num, vendor, total, subject, invoice_date_for_dedup):
                                         dup_count += 1
                                         progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
                                     else:

@@ -950,8 +950,23 @@ Return a JSON object where keys are the exact email IDs provided:
     }}
 }}
 
+### 🚫 ANTI-HALLUCINATION RULES (CRITICAL):
+1. **NEVER GENERATE FAKE INVOICE NUMBERS**:
+   - Invoice numbers MUST be VERBATIM from the email text (subject or body)
+   - If no invoice number is visible, set invoiceNumber to "N/A"
+   - NEVER generate UUIDs, random numbers, or made-up strings
+   - Examples of REAL invoice numbers: "INV-2025-001", "1600-0026", "BWFLLB-00039"
+   - WRONG: "8523144a-7d7e-44bd-bbf8-d36109e40a5d" (this is a UUID - NEVER DO THIS)
+
+2. **NON-INVOICE DETECTION** - Set success=false for:
+   - Deployment notifications ("Successfully deployed to...")
+   - System alerts and status updates
+   - Marketing emails without financial transactions
+   - Password resets, welcome emails, newsletters
+   - Shipping notifications without prices
+
 ### CONFIDENCE SCORING (CRITICAL):
-- **High**: Vendor name, total amount, AND invoice number all clearly extracted
+- **High**: Vendor name, total amount, AND invoice number all clearly extracted FROM THE EMAIL
 - **Medium**: 2 out of 3 fields extracted, some inference required
 - **Low**: Major fields missing, ambiguous data, or confusing format
 - **missingCriticalData**: true if vendor OR total is missing/zero
