@@ -807,7 +807,7 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
             clean_text = re.sub(r'\s+', ' ', clean_text).strip()
             clean_text = clean_text[:8000]
             
-            prompt = f"""You are a **Semantic Financial AI** that THINKS before extracting. This is NOT regex extraction.
+            prompt = f"""You are a **Semantic Financial AI** with deep reasoning capabilities. THINK before extracting.
 
 ### EMAIL CONTEXT
 - **Subject:** {email_subject}
@@ -817,73 +817,65 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
 {clean_text}
 
 ---
-## CHAIN OF THOUGHT EXTRACTION (You MUST complete ALL steps)
+## SEMANTIC REASONING EXTRACTION
 
-### STEP 1: ENTITY CLASSIFICATION (Critical!)
-Identify and classify every entity in this document:
+You must use your intelligence to understand this document semantically. Do NOT use pattern matching or regex logic.
 
-**PROCESSOR vs VENDOR distinction:**
-- PROCESSOR: Company that SENDS the email/handles the payment (PBA Transactions, Stripe, PayPal, Payoneer)
-- VENDOR: Company/person who PROVIDED the goods/services and RECEIVES the money
+### STEP 1: ENTITY UNDERSTANDING
+Use semantic reasoning to understand the roles of each entity:
 
-**Think:** 
-- Who is the email sender? → Usually the PROCESSOR
-- Who is listed as "beneficiary" or "payee"? → This is the VENDOR
-- Look for company names in the body that are NOT the sender domain
-- "accountName", "beneficiary.name", "payee" fields → These contain the VENDOR
+**Key Question:** Who is the INTERMEDIARY vs who is the SERVICE PROVIDER?
+- The company sending the email is often an intermediary (payment platform, notification service)
+- The entity receiving money for goods/services is the actual vendor
+- Look at the business context: Who provided value? Who is being paid FOR something?
+- Parse any JSON/structured data in the email body to find beneficiary/payee information
 
-**BUYER identification:**
-- Look for greetings: "Hello [COMPANY]", "Dear [NAME]", "Hi [BUYER]"
-- Look for "payer", "customer", "client" fields
-- The BUYER is the entity making the payment
+**Buyer Understanding:**
+- Who is the payer? Look for contextual clues in greetings, salutations, "to:" fields
+- Use semantic understanding of the document flow
 
-### STEP 2: FIX OCR/TEXT ERRORS (Semantic Cleanup)
-Read every text field and fix obvious errors:
-- "ofAugustActivity" → "of August Activity" (missing spaces)
-- "lnvoice" → "Invoice" (OCR l/I confusion)  
-- "Amoun t" → "Amount" (broken words)
-- "INTER MEDIA DIGITAL MARKETING LLC" → Keep as-is (valid company name)
+### STEP 2: TEXT INTELLIGENCE
+Apply your language understanding to clean the text:
+- Identify and correct obvious OCR/concatenation errors using linguistic knowledge
+- Recognize when words are incorrectly joined or split
+- Fix spacing issues based on what makes grammatical sense
+- Preserve intentional formatting (company names, abbreviations)
 
-Report what you fixed in reasoning.
+Report what you intelligently corrected.
 
-### STEP 3: MATHEMATICAL VERIFICATION (Do the Math!)
-Calculate and verify all amounts:
-- If subtotal = 20000 and total = 20020, then fees/tax = 20
-- If you see "feeAmount": 20, use it
-- If tax is visible anywhere, extract it
-- NEVER output "tax": 0 if you see fee amounts
+### STEP 3: MATHEMATICAL REASONING
+Apply arithmetic logic to verify/calculate amounts:
+- If you have any two of (subtotal, tax, fees, total), calculate the missing values
+- Look for fee fields and incorporate them into your calculations
+- Verify that the numbers make mathematical sense
+- Use the formula: Total = Subtotal + Tax + Fees (solve for any missing variable)
 
-**Formula:** Total = Subtotal + Tax + Fees
-If you only have Total and see a fee, calculate: Subtotal = Total - Fee
+### STEP 4: CONFIDENCE CALIBRATION
+Honestly assess your extraction quality:
+- High confidence: All data clearly visible and verified
+- Medium confidence: Some inference required but reasonable
+- Low confidence: Significant ambiguity or missing data
+- Your confidence should reflect ACTUAL data quality, not a default value
 
-### STEP 4: CONFIDENCE SCORING (Honest Assessment)
-Real confidence based on data quality:
-- 0.95+: All fields clear, no OCR errors, math verified
-- 0.85-0.94: Most fields clear, minor ambiguity
-- 0.70-0.84: Some fields missing or unclear
-- <0.70: Major data quality issues
-
-NEVER give 0.85 if there are uncorrected OCR errors!
-
-### STEP 5: GENERATE OUTPUT
+### OUTPUT
 
 Return ONLY valid JSON (NO markdown, NO code blocks):
 {{
   "chainOfThought": {{
-    "processorIdentified": "Company that sent email (e.g., PBA Transactions)",
-    "vendorIdentified": "Company that receives payment (e.g., Flexera Software)",
-    "buyerIdentified": "Company/person paying (from greeting or payer field)",
-    "ocrFixesApplied": ["List of text corrections made"],
-    "mathVerification": "Subtotal X + Tax Y + Fee Z = Total W (verified/calculated)"
+    "processorIdentified": "The intermediary/platform sending this notification",
+    "vendorIdentified": "The entity receiving payment for goods/services",
+    "buyerIdentified": "The entity making the payment",
+    "ocrFixesApplied": ["List each text correction you made and why"],
+    "mathVerification": "Show your arithmetic: how you calculated/verified the amounts"
   }},
   "vendor": {{
-    "name": "VENDOR name (NOT the processor/sender)",
+    "name": "The actual service provider (NOT the notification sender)",
     "email": "vendor email or null",
     "address": "Full address with city, country",
     "taxId": "VAT/Tax ID or null"
   }},
   "buyer": {{
-    "name": "Buyer/payer company name",
+    "name": "The payer entity",
     "address": "Buyer address if available"
   }},
   "invoiceNumber": "Invoice/receipt number",
@@ -891,33 +883,26 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
   "documentDate": "YYYY-MM-DD",
   "dueDate": "YYYY-MM-DD or null",
   "paymentDate": "YYYY-MM-DD or null",
-  "currency": "USD|EUR|ILS|GBP (ISO 4217)",
+  "currency": "ISO 4217 currency code",
   "totals": {{
-    "subtotal": float (calculated if needed),
-    "tax": float (0 if no tax, calculated from difference if visible),
-    "fees": float (platform fees, wire fees, etc),
+    "subtotal": float (derive mathematically if not explicit),
+    "tax": float (calculate if possible),
+    "fees": float (platform fees, wire fees, service charges),
     "taxPercent": float or null,
     "total": float (REQUIRED)
   }},
   "lineItems": [
     {{
-      "description": "Clean description (OCR errors fixed)",
+      "description": "Semantically cleaned description",
       "quantity": float,
       "unitPrice": float,
       "lineTotal": float
     }}
   ],
-  "extractionConfidence": 0.0-1.0 (HONEST score),
-  "reasoning": "Step-by-step explanation of how you identified vendor vs processor, fixes applied, math done",
-  "warnings": ["List any remaining ambiguities"]
+  "extractionConfidence": 0.0-1.0 (calibrated to actual quality),
+  "reasoning": "Your semantic reasoning process",
+  "warnings": ["Any remaining uncertainties"]
 }}
-
-### CRITICAL RULES:
-1. The SENDER EMAIL is usually NOT the vendor (it's the processor)
-2. Look for "beneficiary", "payee", "accountName" → These are the VENDOR
-3. If you see JSON data in the email, parse it for structured fields
-4. Calculate tax/fees - NEVER say N/A if math is possible
-5. Fix ALL obvious OCR errors before outputting
 
 IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extraction_incomplete": true, "reason": "Missing vendor/total"}}
 """
