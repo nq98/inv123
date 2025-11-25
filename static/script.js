@@ -253,7 +253,7 @@ async function loadAllSystemEvents() {
         let html = '<div style="font-family: monospace; font-size: 12px;">';
         
         data.events.forEach(event => {
-            const direction = event.direction === 'inbound' ? '← NetSuite → System' : '→ System → NetSuite';
+            const direction = (event.direction || '').toLowerCase() === 'inbound' ? '← NetSuite → System' : '→ System → NetSuite';
             const status = event.status === 'SUCCESS' ? '✅' : '❌';
             
             // Extract NetSuite details for easy access
