@@ -493,24 +493,25 @@ class GmailService:
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
         Convert HTML email content to a PDF using Playwright
+        Uses multiprocessing for reliable timeout in gevent environment
         
         Returns: (filename, pdf_data) or None if failed
         """
-        import threading
+        import multiprocessing
         import time
         
         timestamp = int(time.time())
         safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
         filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
         
-        result = {'pdf_data': None, 'error': None}
+        chromium_path = self._find_chromium_executable()
+        print(f"📄 Starting PDF generation with multiprocessing timeout...")
         
-        def generate_pdf():
+        def generate_pdf_worker(html_content, chromium_path, result_queue):
+            """Worker function that runs in a separate process"""
             try:
                 from playwright.sync_api import sync_playwright
-                
-                chromium_path = self._find_chromium_executable()
-                print(f"📄 Starting PDF generation with Chromium...")
+                import time as worker_time
                 
                 with sync_playwright() as p:
                     launch_options = {
@@ -529,7 +530,6 @@ class GmailService:
                     
                     if chromium_path:
                         launch_options['executable_path'] = chromium_path
-                        print(f"📄 Using Chromium at: {chromium_path}")
                     
                     browser = p.chromium.launch(**launch_options)
                     context = browser.new_context(
@@ -541,9 +541,9 @@ class GmailService:
                     
                     page.set_content(html_content, wait_until='commit', timeout=10000)
                     
-                    time.sleep(0.3)
+                    worker_time.sleep(0.3)
                     
-                    result['pdf_data'] = page.pdf(
+                    pdf_data = page.pdf(
                         format='A4',
                         print_background=True,
                         margin={'top': '20px', 'right': '20px', 'bottom': '20px', 'left': '20px'}
@@ -552,28 +552,44 @@ class GmailService:
                     context.close()
                     browser.close()
                     
-                print(f"📄 PDF generated successfully: {len(result['pdf_data'])} bytes")
+                result_queue.put({'success': True, 'data': pdf_data})
                     
             except Exception as e:
-                result['error'] = str(e)
-                print(f"⚠️ PDF generation error: {e}")
+                result_queue.put({'success': False, 'error': str(e)})
         
-        thread = threading.Thread(target=generate_pdf, daemon=True)
-        thread.start()
-        thread.join(timeout=25)
-        
-        if thread.is_alive():
-            print(f"⚠️ PDF generation timed out after 25 seconds - skipping")
-            return None
-        
-        if result['pdf_data']:
-            print(f"📄 HTML email converted to PDF: {filename} ({len(result['pdf_data'])} bytes)")
-            return (filename, result['pdf_data'])
-        elif result['error']:
-            print(f"Error converting HTML to PDF: {result['error']}")
-            return None
-        else:
+        try:
+            result_queue = multiprocessing.Queue()
+            
+            process = multiprocessing.Process(
+                target=generate_pdf_worker,
+                args=(html_content, chromium_path, result_queue)
+            )
+            process.start()
+            process.join(timeout=25)
+            
+            if process.is_alive():
+                print(f"⚠️ PDF generation timed out after 25 seconds - terminating process")
+                process.terminate()
+                process.join(timeout=5)
+                if process.is_alive():
+                    process.kill()
+                return None
+            
+            if not result_queue.empty():
+                result = result_queue.get_nowait()
+                if result.get('success') and result.get('data'):
+                    pdf_data = result['data']
+                    print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
+                    return (filename, pdf_data)
+                elif result.get('error'):
+                    print(f"⚠️ PDF generation error: {result['error']}")
+                    return None
+            
             print(f"⚠️ PDF generation returned no data")
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ PDF generation process error: {e}")
             return None
     
     def html_to_image(self, html_content, subject='email_receipt'):
