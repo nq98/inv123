@@ -1378,6 +1378,25 @@ function displayInvoiceData(invoices) {
                     </div>
                 </div>
                 
+                <!-- Invoice Timeline Section -->
+                <div style="margin-top: 15px; padding: 15px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">📊</span>
+                            <strong style="color: #495057;">Invoice Timeline</strong>
+                        </div>
+                        <button onclick="loadInvoiceTimeline('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${globalIdx})" 
+                                style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                    <div id="invoiceTimeline${globalIdx}" style="min-height: 40px;">
+                        <div style="color: #6c757d; font-size: 13px; text-align: center; padding: 15px;">
+                            <span style="opacity: 0.7;">Loading timeline...</span>
+                        </div>
+                    </div>
+                </div>
+                
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
                     <div style="display: flex; gap: 10px; flex: 1;">
                         ${invoice.gcs_uri ? `
@@ -1409,6 +1428,18 @@ function displayInvoiceData(invoices) {
     html += '</div>';
     
     gmailImportResults.innerHTML += html;
+    
+    // Auto-load timelines for all rendered invoices
+    setTimeout(() => {
+        invoices.forEach((invoice, idx) => {
+            const globalIdx = window.__gmailGlobalIdx + idx;
+            const fullData = invoice.full_data || {};
+            const invoiceId = fullData.invoiceNumber || invoice.invoice_number || 'unknown';
+            if (invoiceId !== 'unknown') {
+                loadInvoiceTimeline(encodeURIComponent(invoiceId), globalIdx);
+            }
+        });
+    }, 100);
 }
 
 window.toggleFullData = function(idx) {
@@ -1418,6 +1449,130 @@ window.toggleFullData = function(idx) {
     } else {
         element.style.display = 'none';
     }
+};
+
+// Load and display invoice timeline
+window.loadInvoiceTimeline = async function(encodedInvoiceId, globalIdx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    const container = document.getElementById(`invoiceTimeline${globalIdx}`);
+    
+    if (!container) return;
+    
+    // Show loading state
+    container.innerHTML = `
+        <div style="color: #6c757d; font-size: 13px; text-align: center; padding: 15px;">
+            <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Loading timeline...
+        </div>
+    `;
+    
+    try {
+        const response = await fetch(`/api/invoice/${encodeURIComponent(invoiceId)}/timeline`);
+        const data = await response.json();
+        
+        if (data.success && data.timeline && data.timeline.length > 0) {
+            // Render beautiful timeline
+            container.innerHTML = renderInvoiceTimeline(data.timeline);
+        } else if (data.success && (!data.timeline || data.timeline.length === 0)) {
+            // No events yet
+            container.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px; padding: 15px; background: white; border-radius: 8px; border: 1px dashed #dee2e6;">
+                    <span style="font-size: 24px; opacity: 0.5;">📋</span>
+                    <div>
+                        <div style="color: #495057; font-weight: 500;">No events yet</div>
+                        <div style="color: #6c757d; font-size: 12px;">Create a bill in NetSuite to start tracking</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div style="color: #dc3545; font-size: 13px; text-align: center; padding: 15px;">
+                    Failed to load timeline
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading timeline:', error);
+        container.innerHTML = `
+            <div style="color: #dc3545; font-size: 13px; text-align: center; padding: 15px;">
+                Error: ${error.message}
+            </div>
+        `;
+    }
+};
+
+// Render the timeline HTML
+function renderInvoiceTimeline(events) {
+    if (!events || events.length === 0) {
+        return '<div style="color: #6c757d; text-align: center; padding: 15px;">No events</div>';
+    }
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 0;">';
+    
+    events.forEach((event, index) => {
+        const isLast = index === events.length - 1;
+        const isSuccess = event.status === 'success';
+        const statusColor = isSuccess ? '#198754' : '#dc3545';
+        const bgColor = isSuccess ? 'rgba(25, 135, 84, 0.1)' : 'rgba(220, 53, 69, 0.1)';
+        
+        // Format timestamp
+        let timeStr = '';
+        if (event.timestamp) {
+            try {
+                const date = new Date(event.timestamp);
+                timeStr = date.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                });
+            } catch (e) {
+                timeStr = event.timestamp;
+            }
+        }
+        
+        html += `
+            <div style="display: flex; gap: 12px; position: relative;">
+                <!-- Timeline line -->
+                <div style="display: flex; flex-direction: column; align-items: center; width: 40px;">
+                    <div style="width: 32px; height: 32px; background: ${bgColor}; border: 2px solid ${statusColor}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; z-index: 1;">
+                        ${event.icon || '📋'}
+                    </div>
+                    ${!isLast ? `<div style="width: 2px; flex: 1; background: linear-gradient(to bottom, ${statusColor}, #dee2e6); min-height: 20px;"></div>` : ''}
+                </div>
+                
+                <!-- Event content -->
+                <div style="flex: 1; padding-bottom: ${isLast ? '0' : '15px'};">
+                    <div style="background: white; padding: 10px 14px; border-radius: 8px; border: 1px solid #dee2e6; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                            <div>
+                                <div style="font-weight: 600; color: #212529; font-size: 13px;">${event.title || 'Event'}</div>
+                                <div style="color: #6c757d; font-size: 12px; margin-top: 2px;">${event.description || ''}</div>
+                            </div>
+                            <div style="font-size: 11px; color: #adb5bd; white-space: nowrap;">${timeStr}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    return html;
+}
+
+// Auto-load timeline when Gmail invoices are rendered
+window.autoLoadInvoiceTimelines = function() {
+    // Find all timeline containers and load them
+    const containers = document.querySelectorAll('[id^="invoiceTimeline"]');
+    containers.forEach(container => {
+        const idx = container.id.replace('invoiceTimeline', '');
+        const storedInvoice = window.__gmailExtractedInvoices?.[idx];
+        if (storedInvoice) {
+            const invoiceId = storedInvoice.full_data?.invoiceNumber || storedInvoice.invoice_number || 'unknown';
+            loadInvoiceTimeline(encodeURIComponent(invoiceId), idx);
+        }
+    });
 };
 
 window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
@@ -1502,6 +1657,8 @@ window.createBillFromGmail = async function(globalIdx) {
             if (statusContainer) {
                 statusContainer.style.display = 'none';
             }
+            // Refresh timeline to show new event
+            setTimeout(() => loadInvoiceTimeline(encodeURIComponent(invoiceId), globalIdx), 500);
         } else {
             // Error - show error but KEEP buttons for retry
             if (statusContainer) {
@@ -1582,11 +1739,13 @@ window.updateBillFromGmail = async function(globalIdx) {
         if (result.success) {
             // Success - replace buttons with success message
             if (container) {
-                container.innerHTML = `<span style="color: #198754; font-weight: 500;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'}</span>`;
+                container.innerHTML = `<span style="color: #198754; font-weight: 500;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'} - $${result.amount || amount}</span>`;
             }
             if (statusContainer) {
                 statusContainer.style.display = 'none';
             }
+            // Refresh timeline to show new event
+            setTimeout(() => loadInvoiceTimeline(encodeURIComponent(invoiceId), globalIdx), 500);
         } else {
             // Error - show error but KEEP buttons for retry
             if (statusContainer) {
