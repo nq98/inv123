@@ -2139,10 +2139,14 @@ def gmail_import_stream():
             imported_invoices = []
             extraction_failures = []
             
+            print(f"[DEBUG Stage 3] Starting extraction loop. classified_invoices count: {len(classified_invoices)}")
+            
             for idx, (message, metadata, confidence) in enumerate(classified_invoices, 1):
                 try:
                     subject = metadata.get('subject', 'No subject')
                     sender = metadata.get('from', 'Unknown')
+                    
+                    print(f"[DEBUG Stage 3] Processing email {idx}/{invoice_count}: {subject[:50]}")
                     
                     processing_msg = f'\n[{idx}/{invoice_count}] Processing: "{subject[:50]}..."'
                     yield send_event('progress', {'type': 'analyzing', 'message': processing_msg})
@@ -2153,6 +2157,8 @@ def gmail_import_stream():
                     
                     # Extract links
                     links = gmail_service.extract_links_from_body(message)
+                    
+                    print(f"[DEBUG Stage 3] attachments count: {len(attachments) if attachments else 0}, links count: {len(links) if links else 0}")
                     
                     if not attachments and not links:
                         yield send_event('progress', {'type': 'info', 'message': f'  📧 No attachments/links found, trying email body extraction...'})
@@ -2405,7 +2411,9 @@ def gmail_import_stream():
                                     all_links_auth_failed = False
                     
                     # If we had links but all failed due to authentication, try HTML body extraction
+                    print(f"[DEBUG Stage 3] FALLBACK CHECK: links={len(links) if links else 0}, link_success={link_success}, attachments={len(attachments) if attachments else 0}, all_links_auth_failed={all_links_auth_failed}")
                     if links and not link_success and not attachments and all_links_auth_failed:
+                        print(f"[DEBUG Stage 3] FALLBACK TRIGGERED - attempting email body extraction")
                         yield send_event('progress', {'type': 'info', 'message': f'  📧 Links require auth, trying email body extraction...'})
                         
                         html_body = gmail_service.extract_html_body(message)
@@ -2419,8 +2427,10 @@ def gmail_import_stream():
                                 yield send_event('progress', {'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
                         
                         if html_body:
+                            print(f"[DEBUG Stage 3] html_body found, length={len(html_body)}, calling html_to_pdf")
                             yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
                             pdf_result = gmail_service.html_to_pdf(html_body, subject)
+                            print(f"[DEBUG Stage 3] html_to_pdf result: {'SUCCESS' if pdf_result else 'FAILED'}")
                             if not pdf_result:
                                 yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF rendering failed (Playwright error)'})
                                 extraction_failures.append(subject)
