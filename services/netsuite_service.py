@@ -1312,7 +1312,7 @@ class NetSuiteService:
             response = self._make_request(
                 method='PATCH',
                 endpoint=endpoint, 
-                json_data=update_payload
+                data=update_payload
             )
             
             if response:
