@@ -3608,36 +3608,84 @@ def approve_invoice(invoice_id):
     """
     Approve an invoice for processing.
     Approved invoices can be synced to NetSuite.
+    Also stores the approved invoice in Vertex AI Search for RAG learning.
     """
     try:
         bigquery_service = get_bigquery_service()
         
-        # Get invoice details for feedback storage
+        # Get invoice details - try by invoice_id first, then by invoice_number
         invoice = bigquery_service.get_invoice_details(invoice_id)
         if not invoice:
+            # Try lookup by invoice_number field
+            invoice = bigquery_service.get_invoice_by_number(invoice_id)
+        
+        if not invoice:
+            print(f"⚠️ Invoice not found for approval: {invoice_id}")
             return jsonify({'error': 'Invoice not found'}), 404
+        
+        # Get the actual invoice_id from the found record
+        actual_invoice_id = invoice.get('invoice_id') or invoice_id
         
         # Update approval status
         success = bigquery_service.update_invoice_approval_status(
-            invoice_id=invoice_id,
+            invoice_id=actual_invoice_id,
             approval_status='approved',
             reviewed_by='user'
         )
         
         if success:
-            # Store positive feedback for AI learning
+            # Store positive feedback for AI learning (BigQuery)
             bigquery_service.store_ai_feedback(
-                invoice_id=invoice_id,
+                invoice_id=actual_invoice_id,
                 feedback_type='approved',
                 original_extraction=invoice.get('extracted_data', {}),
                 created_by='user'
             )
             
+            # ========== VERTEX AI SEARCH LEARNING ==========
+            # Store approved invoice in Vertex AI Search for RAG learning
+            try:
+                vertex_service = get_vertex_search_service()
+                
+                # Get raw document text if available
+                extracted_data = invoice.get('extracted_data', {})
+                if isinstance(extracted_data, str):
+                    try:
+                        import json
+                        extracted_data = json.loads(extracted_data)
+                    except:
+                        extracted_data = {}
+                
+                # Build text content from invoice data
+                vendor_name = invoice.get('vendor_name', 'Unknown')
+                document_text = f"""
+                Approved Invoice - Vendor: {vendor_name}
+                Invoice Number: {invoice_id}
+                Amount: {invoice.get('currency', 'USD')} {invoice.get('total_amount', 0)}
+                Date: {invoice.get('invoice_date', 'Unknown')}
+                """
+                
+                # Store in Vertex AI Search
+                stored = vertex_service.store_invoice_extraction(
+                    document_text=document_text,
+                    vendor_name=vendor_name,
+                    extracted_data=extracted_data,
+                    success=True
+                )
+                
+                if stored:
+                    print(f"✓ Approved invoice stored in Vertex AI Search for learning: {invoice_id}")
+                
+            except Exception as vertex_err:
+                print(f"⚠️ Could not store approved invoice in Vertex AI Search: {vertex_err}")
+                # Don't fail the approval if Vertex storage fails
+            
             return jsonify({
                 'success': True,
                 'message': 'Invoice approved successfully',
-                'invoice_id': invoice_id,
-                'status': 'approved'
+                'invoice_id': actual_invoice_id,
+                'status': 'approved',
+                'vertex_ai_stored': True
             })
         else:
             return jsonify({'error': 'Failed to approve invoice'}), 500
