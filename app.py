@@ -2214,11 +2214,111 @@ def gmail_import_stream():
             yield send_event('progress', {'type': 'status', 'message': f'  • After Stage 2 AI filter: {invoice_count} ({after_ai_filter_percent}% of {total_found})'})
             yield send_event('progress', {'type': 'status', 'message': f'  • Rejected: {non_invoice_count} emails'})
             
-            # Stage 3: Extract invoice data through 3-layer AI
-            stage3_msg = f'\n🤖 STAGE 3: Deep AI Extraction ({invoice_count} invoices)'
+            # Stage 3: HYBRID Deep AI Extraction (Sort & Batch)
+            stage3_msg = f'\n🤖 STAGE 3: HYBRID Deep AI Extraction ({invoice_count} invoices)'
             yield send_event('progress', {'type': 'status', 'message': stage3_msg})
-            yield send_event('progress', {'type': 'info', 'message': '3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic'})
-            yield send_event('progress', {'type': 'info', 'message': '⚡ OPTIMIZATIONS: Text-First, Auth-Wall, Deduplication, Parallel Processing (5 workers)'})
+            yield send_event('progress', {'type': 'info', 'message': '🚀 NEW: Sort → Batch Text Lane (instant) + PDF Lane (Document AI)'})
+            yield send_event('progress', {'type': 'info', 'message': 'PDFs: Full 3-Layer Pipeline (Document AI OCR → Vertex Search RAG → Gemini)'})
+            
+            # ========== STEP 3.1: SORT EMAILS INTO LANES ==========
+            yield send_event('progress', {'type': 'status', 'message': '\n📊 SORTING emails into processing lanes...'})
+            
+            pdf_lane = []  # Emails with PDF attachments → Document AI
+            text_lane = []  # Emails without PDFs → Batch text extraction
+            
+            for message, metadata, confidence in classified_invoices:
+                attachments = gmail_service.extract_attachments(service, message)
+                has_pdf = bool(attachments and any(
+                    fname.lower().endswith('.pdf') for fname, _ in attachments
+                ))
+                
+                if has_pdf:
+                    pdf_lane.append((message, metadata, confidence, attachments))
+                else:
+                    text_lane.append((message, metadata, confidence))
+            
+            yield send_event('progress', {'type': 'status', 'message': f'  📎 PDF Lane: {len(pdf_lane)} emails (Document AI + Vertex + Gemini)'})
+            yield send_event('progress', {'type': 'status', 'message': f'  📧 Text Lane: {len(text_lane)} emails (Batch extraction - INSTANT!)'})
+            
+            # ========== STEP 3.2: FAST LANE - Batch Text Extraction ==========
+            batch_extracted = []
+            
+            if text_lane:
+                yield send_event('progress', {'type': 'status', 'message': f'\n🚀 FAST LANE: Batch extracting {len(text_lane)} text-based emails...'})
+                
+                # Prepare batch data
+                emails_for_batch = []
+                email_lookup = {}  # email_id -> (message, metadata, confidence)
+                
+                for idx, (message, metadata, confidence) in enumerate(text_lane, 1):
+                    email_id = f"text_email_{idx}"
+                    
+                    # Get email body content
+                    html_body = gmail_service.extract_html_body(message)
+                    plain_body = gmail_service.extract_plain_text_body(message)
+                    body_content = html_body or plain_body or metadata.get('snippet', '')
+                    
+                    emails_for_batch.append({
+                        'email_id': email_id,
+                        'subject': metadata.get('subject', '(no subject)'),
+                        'sender': metadata.get('from', 'unknown'),
+                        'date': metadata.get('date', 'unknown'),
+                        'body': body_content[:2500]  # Truncate for context window
+                    })
+                    email_lookup[email_id] = (message, metadata, confidence)
+                
+                # Process in batches of 10
+                BATCH_SIZE = 10
+                num_batches = (len(emails_for_batch) + BATCH_SIZE - 1) // BATCH_SIZE
+                
+                for batch_num in range(num_batches):
+                    start_idx = batch_num * BATCH_SIZE
+                    end_idx = min(start_idx + BATCH_SIZE, len(emails_for_batch))
+                    batch = emails_for_batch[start_idx:end_idx]
+                    
+                    yield send_event('progress', {'type': 'status', 'message': f'  ⚡ Batch {batch_num + 1}/{num_batches}: Extracting {len(batch)} emails in ONE API call...'})
+                    
+                    # Call batch text extraction
+                    batch_results = gemini_service.batch_text_extraction(batch)
+                    
+                    # Process results
+                    success_count = 0
+                    for email_data in batch:
+                        email_id = email_data['email_id']
+                        result = batch_results.get(email_id, {})
+                        message, metadata, confidence = email_lookup[email_id]
+                        subject = metadata.get('subject', 'No subject')
+                        sender = metadata.get('from', 'Unknown')
+                        
+                        if result.get('success', False):
+                            vendor = result.get('vendor', {}).get('name', 'Unknown')
+                            total = result.get('totals', {}).get('total', 0)
+                            currency = result.get('currency', 'USD')
+                            invoice_num = result.get('invoiceNumber', 'N/A')
+                            
+                            batch_extracted.append({
+                                'subject': subject,
+                                'sender': sender,
+                                'date': metadata.get('date'),
+                                'vendor': vendor,
+                                'invoice_number': invoice_num,
+                                'total': total,
+                                'currency': currency,
+                                'line_items': result.get('lineItems', []),
+                                'full_data': result,
+                                'source_type': 'batch_text_extraction'
+                            })
+                            success_count += 1
+                            yield send_event('progress', {'type': 'success', 'message': f'    ✅ {vendor} | #{invoice_num} | {currency} {total}'})
+                        else:
+                            reasoning = result.get('reasoning', 'Extraction failed')[:60]
+                            yield send_event('progress', {'type': 'warning', 'message': f'    ⚠️ {subject[:40]}... - {reasoning}'})
+                    
+                    yield send_event('progress', {'type': 'status', 'message': f'  📊 Batch {batch_num + 1} complete: {success_count}/{len(batch)} extracted'})
+                
+                yield send_event('progress', {'type': 'status', 'message': f'✅ FAST LANE complete: {len(batch_extracted)} invoices extracted instantly!'})
+            
+            # ========== STEP 3.3: HEAVY LANE - PDF Processing (Full AI Pipeline) ==========
             
             imported_invoices = []
             extraction_failures = []
@@ -2538,15 +2638,19 @@ def gmail_import_stream():
                 
                 return {'progress': progress_msgs, 'extracted': extracted, 'failures': failures, 'duplicates': dup_count}
             
-            print(f"[DEBUG Stage 3] Starting PARALLEL extraction. classified_invoices count: {len(classified_invoices)}")
+            # ========== HEAVY LANE: Only process PDFs with full Document AI pipeline ==========
+            if pdf_lane:
+                yield send_event('progress', {'type': 'status', 'message': f'\n📎 HEAVY LANE: Processing {len(pdf_lane)} PDF emails with Document AI...'})
             
-            # OPTIMIZATION 4: Use ThreadPoolExecutor for parallel processing
-            max_workers = min(5, len(classified_invoices)) if classified_invoices else 1
+            print(f"[DEBUG Stage 3] HYBRID extraction. PDF lane: {len(pdf_lane)}, Text lane results: {len(batch_extracted)}")
+            
+            # Only process PDF emails through Document AI (text emails already batch-extracted)
+            max_workers = min(5, len(pdf_lane)) if pdf_lane else 1
             
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all emails for parallel processing
+                # Submit only PDF emails for Document AI processing
                 future_to_idx = {}
-                for idx, (message, metadata, confidence) in enumerate(classified_invoices, 1):
+                for idx, (message, metadata, confidence, attachments) in enumerate(pdf_lane, 1):
                     future = executor.submit(
                         process_single_email,
                         idx, message, metadata, confidence,
@@ -2574,10 +2678,17 @@ def gmail_import_stream():
                         print(f"[PARALLEL] Worker {idx} generated an exception: {exc}")
                         yield send_event('progress', {'type': 'error', 'message': f'  ❌ Worker error: {str(exc)[:80]}'})
             
-            # Parallel processing completed above
+            # Parallel processing completed above - combine with batch extracted results
+            imported_invoices.extend(batch_extracted)
             
             imported_count = len(imported_invoices)
             failed_extraction = len(extraction_failures)
+            
+            # Log hybrid processing stats
+            pdf_extracted = imported_count - len(batch_extracted)
+            yield send_event('progress', {'type': 'status', 'message': f'\n📊 HYBRID EXTRACTION SUMMARY:'})
+            yield send_event('progress', {'type': 'status', 'message': f'  ⚡ Text Lane (batch): {len(batch_extracted)} invoices extracted instantly'})
+            yield send_event('progress', {'type': 'status', 'message': f'  📎 PDF Lane (Document AI): {pdf_extracted} invoices extracted'})
             
             complete_msg = '\n✅ Import Complete!'
             yield send_event('progress', {'type': 'success', 'message': complete_msg})

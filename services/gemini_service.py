@@ -837,6 +837,157 @@ IMPORTANT: Use the EXACT email IDs provided above (e.g., "email_1", "email_2", e
                 }
             return fallback_results
     
+    def batch_text_extraction(self, emails_batch):
+        """
+        🚀 BATCH TEXT EXTRACTION: Process 10+ text-based emails in ONE API call
+        
+        This is for emails WITHOUT PDF attachments (like Replit, Stripe receipts in body).
+        PDFs still go through Document AI + Vertex Search + Gemini full pipeline.
+        
+        Args:
+            emails_batch: List of dicts, each with:
+                - email_id: Unique identifier
+                - subject: Email subject
+                - sender: Sender email
+                - body: Email body HTML/text (truncated to 2000 chars)
+                - date: Email date
+        
+        Returns:
+            dict: {email_id: {extracted_data or None if not a receipt}}
+        """
+        if not emails_batch:
+            return {}
+        
+        batch_size = len(emails_batch)
+        print(f"🚀 BATCH TEXT EXTRACTION: Processing {batch_size} text-based emails in ONE API call...")
+        
+        emails_list_text = ""
+        for i, email in enumerate(emails_batch, 1):
+            body_preview = email.get('body', '')[:2000]
+            emails_list_text += f"""
+--- EMAIL_ID: {email.get('email_id', f'email_{i}')} ---
+Subject: {email.get('subject', '(no subject)')}
+Sender: {email.get('sender', 'unknown')}
+Date: {email.get('date', 'unknown')}
+Body:
+{body_preview}
+"""
+        
+        prompt = f"""You are an expert financial data extractor processing {batch_size} emails.
+
+### 🧠 CHAIN OF THOUGHT EXTRACTION PROCESS (Apply to EACH email)
+
+For each email, follow these steps:
+
+**Step 1: Entity Classification**
+- PROCESSOR: Payment platforms (Stripe, PayPal, Replit) - they process payments but aren't the vendor
+- VENDOR: The company whose product/service was purchased
+
+**Step 2: Data Extraction**
+- Invoice/Receipt number
+- Date (YYYY-MM-DD format)
+- Vendor name (the actual seller, NOT the payment processor)
+- Currency and amounts (subtotal, tax, total)
+- Line items if present
+
+**Step 3: Mathematical Verification**
+- Tax = Total - Subtotal (verify this matches)
+- If amounts seem wrong, recalculate
+
+### EMAIL BATCH TO PROCESS
+{emails_list_text}
+
+### OUTPUT FORMAT (Strict JSON object)
+Return a JSON object where keys are the exact email IDs provided:
+{{
+    "email_1": {{
+        "success": true,
+        "vendor": {{
+            "name": "Company Name",
+            "email": "billing@company.com"
+        }},
+        "invoiceNumber": "INV-001",
+        "invoiceDate": "2025-01-15",
+        "currency": "USD",
+        "totals": {{
+            "subtotal": 10.00,
+            "tax": 0.00,
+            "total": 10.00
+        }},
+        "lineItems": [
+            {{"description": "Service", "amount": 10.00}}
+        ],
+        "reasoning": "Extracted from Replit receipt email"
+    }},
+    "email_2": {{
+        "success": false,
+        "reasoning": "Not a receipt/invoice - just a notification"
+    }}
+}}
+
+IMPORTANT: 
+- Use EXACT email IDs from the emails above
+- Return success: false if email is not a receipt/invoice
+- Vendor should be the actual seller, NOT payment processor (Stripe, PayPal, etc.)
+"""
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            response = self._generate_content_with_fallback(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type='application/json'
+                ),
+                use_openrouter_first=True
+            )
+            
+            elapsed = time.time() - start_time
+            print(f"⚡ Batch text extraction completed in {elapsed:.2f}s ({batch_size} emails, {elapsed/batch_size:.3f}s avg)")
+            
+            response_text = response.text or "{}"
+            results = json.loads(response_text)
+            
+            processed_results = {}
+            success_count = 0
+            
+            for i, email in enumerate(emails_batch, 1):
+                email_id = email.get('email_id', f'email_{i}')
+                
+                email_key = None
+                for key in [email_id, f'email_{i}', str(i)]:
+                    if key in results:
+                        email_key = key
+                        break
+                
+                if email_key and email_key in results:
+                    result = results[email_key]
+                    processed_results[email_id] = result
+                    if result.get('success', False):
+                        success_count += 1
+                else:
+                    processed_results[email_id] = {
+                        "success": False,
+                        "reasoning": "Missing from batch response"
+                    }
+            
+            print(f"📊 Batch extraction results: {success_count}/{batch_size} successful")
+            return processed_results
+            
+        except Exception as e:
+            print(f"❌ Batch text extraction error: {e}")
+            fallback_results = {}
+            for i, email in enumerate(emails_batch, 1):
+                email_id = email.get('email_id', f'email_{i}')
+                fallback_results[email_id] = {
+                    "success": False,
+                    "reasoning": f"Batch error: {str(e)}"
+                }
+            return fallback_results
+    
     def generate_text(self, prompt, temperature=0.1, response_mime_type='application/json', use_gemini3=False):
         """
         Generate text using Gemini with automatic fallback
