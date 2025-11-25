@@ -3677,6 +3677,57 @@ def gmail_import_stream():
             # Parallel processing completed above - combine with batch extracted results
             imported_invoices.extend(batch_extracted)
             
+            # ========== SAVE ALL INVOICES TO BIGQUERY ==========
+            # This is critical - invoices MUST be in BigQuery for Create Bill to work
+            saved_count = 0
+            save_errors = 0
+            if bigquery_svc and imported_invoices:
+                yield send_event('progress', {'type': 'status', 'message': f'\n💾 Saving {len(imported_invoices)} invoices to database...'})
+                
+                for inv in imported_invoices:
+                    try:
+                        # Build invoice data for BigQuery insert
+                        full_data = inv.get('full_data', {})
+                        vendor_match = inv.get('vendor_match', {})
+                        
+                        invoice_data = {
+                            'invoice_id': inv.get('invoice_number', 'N/A'),
+                            'vendor_id': vendor_match.get('vendor_id') if vendor_match else None,
+                            'vendor_name': inv.get('vendor', 'Unknown'),
+                            'client_id': full_data.get('buyer', {}).get('name', 'Unknown'),
+                            'amount': float(inv.get('total', 0)) if inv.get('total') else 0,
+                            'currency': inv.get('currency', 'USD'),
+                            'invoice_date': full_data.get('documentDate') or inv.get('date', '')[:10] if inv.get('date') else None,
+                            'status': 'matched' if vendor_match and vendor_match.get('vendor_id') else 'unmatched',
+                            'gcs_uri': inv.get('gcs_uri'),
+                            'file_type': inv.get('file_type', 'html'),
+                            'file_size': inv.get('file_size', 0),
+                            'metadata': json.dumps({
+                                'source': 'gmail_import',
+                                'email_subject': inv.get('subject', ''),
+                                'email_sender': inv.get('sender', ''),
+                                'extraction_type': inv.get('source_type', 'unknown'),
+                                'confidence_score': inv.get('confidence_score', 'Medium'),
+                                'full_data': full_data,
+                                'vendor_match': vendor_match
+                            })
+                        }
+                        
+                        result = bigquery_svc.insert_invoice(invoice_data)
+                        if result == True:
+                            saved_count += 1
+                        elif result == 'duplicate':
+                            # Already exists, that's fine
+                            saved_count += 1
+                        else:
+                            save_errors += 1
+                            print(f"⚠️ Failed to save invoice {inv.get('invoice_number')}: {result}")
+                    except Exception as save_err:
+                        save_errors += 1
+                        print(f"⚠️ Error saving invoice: {save_err}")
+                
+                yield send_event('progress', {'type': 'success', 'message': f'  💾 Saved {saved_count} invoices to database ({save_errors} errors)'})
+            
             imported_count = len(imported_invoices)
             failed_extraction = len(extraction_failures)
             
