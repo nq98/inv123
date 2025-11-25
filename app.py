@@ -2330,11 +2330,19 @@ def gmail_disconnect():
 @app.route('/api/ap-automation/gmail/import/stream', methods=['GET'])
 def gmail_import_stream():
     """
-    Stream real-time progress of Gmail invoice import using Server-Sent Events
+    Stream real-time progress of Gmail invoice import using Server-Sent Events.
+    
+    Query params:
+    - days: Number of days to scan (default: 7)
+    - resume_scan_id: Optional scan ID to resume from a previous checkpoint
     """
     def generate():
         def send_event(event_type, data_dict):
             return f"event: {event_type}\ndata: {json.dumps(data_dict)}\n\n"
+        
+        scan_id = None
+        bigquery_svc = None
+        checkpoint_interval = 5  # Update checkpoint every N emails
         
         try:
             session_token = session.get('gmail_session_token')
@@ -2351,8 +2359,29 @@ def gmail_import_stream():
                 return
             
             days = request.args.get('days', 7, type=int)
+            resume_scan_id = request.args.get('resume_scan_id', None)
             
             time_label = f'{days} days' if days < 9999 else 'all time'
+            client_email = credentials.get('email', 'unknown')
+            
+            # Initialize BigQuery service for checkpoints
+            try:
+                bigquery_svc = get_bigquery_service()
+            except Exception as bq_err:
+                print(f"⚠️ BigQuery unavailable for checkpoints: {bq_err}")
+            
+            # Check if resuming from previous scan
+            processed_message_ids = set()
+            resume_stats = None
+            
+            if resume_scan_id and bigquery_svc:
+                yield send_event('progress', {'type': 'status', 'message': f'🔄 Resuming scan from checkpoint: {resume_scan_id}'})
+                scan_id = resume_scan_id
+                processed_message_ids = bigquery_svc.get_processed_message_ids(resume_scan_id)
+                yield send_event('progress', {'type': 'status', 'message': f'  ↳ Found {len(processed_message_ids)} already processed emails'})
+                
+                # Update scan status to running
+                bigquery_svc.update_scan_checkpoint(scan_id, status='running')
             
             yield send_event('progress', {'type': 'status', 'message': '🚀 Gmail Invoice Scanner Initialized'})
             yield send_event('progress', {'type': 'status', 'message': f'⏰ Time range: Last {time_label}'})
@@ -2402,6 +2431,20 @@ def gmail_import_stream():
                 yield send_event('progress', {'type': 'status', 'message': f'⚠️ Could not count emails: {str(e)}'})
             
             yield send_event('progress', {'type': 'status', 'message': f'📬 Total emails in selected time range ({time_label}): {total_inbox_count:,} emails'})
+            
+            # Create checkpoint for new scans (if not resuming)
+            if not scan_id and bigquery_svc:
+                try:
+                    scan_id = bigquery_svc.create_scan_checkpoint(
+                        client_email=client_email,
+                        days_range=days,
+                        total_emails=total_inbox_count
+                    )
+                    if scan_id:
+                        yield send_event('progress', {'type': 'checkpoint', 'message': f'💾 Checkpoint created: {scan_id}'})
+                        yield send_event('scan_id', {'scan_id': scan_id})
+                except Exception as ckpt_err:
+                    print(f"⚠️ Could not create checkpoint: {ckpt_err}")
             
             # Stage 1: Broad Net Gmail Query
             stage1_msg = '\n🔍 STAGE 1: Broad Net Gmail Query (Multi-Language)'
@@ -3178,10 +3221,36 @@ def gmail_import_stream():
             if duplicates_skipped > 0:
                 yield send_event('progress', {'type': 'info', 'message': f'  • Duplicates skipped: {duplicates_skipped} 🔄'})
             yield send_event('progress', {'type': 'warning', 'message': f'  • Extraction failed: {failed_extraction}'})
-            yield send_event('complete', {'imported': imported_count, 'skipped': non_invoice_count, 'duplicates_skipped': duplicates_skipped, 'total': total_found, 'invoices': imported_invoices})
+            
+            # Update checkpoint to completed status
+            if scan_id and bigquery_svc:
+                try:
+                    bigquery_svc.update_scan_checkpoint(
+                        scan_id=scan_id,
+                        processed_count=invoice_count,
+                        extracted_count=imported_count,
+                        duplicate_count=duplicates_skipped,
+                        failed_count=failed_extraction,
+                        status='completed'
+                    )
+                    yield send_event('progress', {'type': 'checkpoint', 'message': f'💾 Scan completed and saved: {scan_id}'})
+                except Exception as ckpt_err:
+                    print(f"⚠️ Could not update checkpoint: {ckpt_err}")
+            
+            yield send_event('complete', {'imported': imported_count, 'skipped': non_invoice_count, 'duplicates_skipped': duplicates_skipped, 'total': total_found, 'invoices': imported_invoices, 'scan_id': scan_id})
             
         except Exception as e:
-            yield send_event('error', {'message': f'Import failed: {str(e)}'})
+            # Save checkpoint on error for resume capability
+            if scan_id and bigquery_svc:
+                try:
+                    bigquery_svc.update_scan_checkpoint(
+                        scan_id=scan_id,
+                        status='failed',
+                        error_message=str(e)[:500]
+                    )
+                except:
+                    pass
+            yield send_event('error', {'message': f'Import failed: {str(e)}', 'scan_id': scan_id, 'can_resume': scan_id is not None})
     
     response = Response(stream_with_context(generate()), mimetype='text/event-stream')
     response.headers['Cache-Control'] = 'no-cache'
@@ -3345,6 +3414,242 @@ def gmail_import():
         
     except Exception as e:
         return jsonify({'error': f'Gmail import failed: {str(e)}'}), 500
+
+# ===== GMAIL SCAN CHECKPOINT ENDPOINTS =====
+
+@app.route('/api/ap-automation/gmail/scans/resumable', methods=['GET'])
+def get_resumable_gmail_scans():
+    """
+    Get list of Gmail scans that can be resumed.
+    Returns scans that were interrupted or failed within the last 7 days.
+    """
+    try:
+        session_token = session.get('gmail_session_token')
+        
+        if not session_token:
+            return jsonify({'error': 'Gmail not connected'}), 401
+        
+        token_storage = get_token_storage()
+        credentials = token_storage.get_credentials(session_token)
+        
+        if not credentials:
+            return jsonify({'error': 'Gmail session expired'}), 401
+        
+        client_email = credentials.get('email', 'unknown')
+        
+        bigquery_service = get_bigquery_service()
+        resumable_scans = bigquery_service.get_resumable_scans(client_email)
+        
+        return jsonify({
+            'success': True,
+            'email': client_email,
+            'resumable_scans': resumable_scans,
+            'count': len(resumable_scans)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting resumable scans: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ap-automation/gmail/scans/<scan_id>/pause', methods=['POST'])
+def pause_gmail_scan(scan_id):
+    """Pause a running Gmail scan"""
+    try:
+        bigquery_service = get_bigquery_service()
+        success = bigquery_service.update_scan_checkpoint(
+            scan_id=scan_id,
+            status='paused'
+        )
+        
+        if success:
+            return jsonify({'success': True, 'message': 'Scan paused successfully'})
+        else:
+            return jsonify({'error': 'Failed to pause scan'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== INVOICE FEEDBACK ENDPOINTS =====
+
+@app.route('/api/invoices/review', methods=['GET'])
+def get_invoices_for_review():
+    """
+    Get invoices pending human review.
+    
+    Query params:
+    - status: 'pending', 'approved', 'rejected', or 'all' (default: 'pending')
+    - limit: Max results (default: 50)
+    """
+    try:
+        status_filter = request.args.get('status', 'pending')
+        limit = request.args.get('limit', 50, type=int)
+        
+        bigquery_service = get_bigquery_service()
+        invoices = bigquery_service.get_invoices_for_review(
+            status_filter=status_filter,
+            limit=limit
+        )
+        
+        return jsonify({
+            'success': True,
+            'invoices': invoices,
+            'count': len(invoices),
+            'filter': status_filter
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting invoices for review: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>/approve', methods=['POST'])
+def approve_invoice(invoice_id):
+    """
+    Approve an invoice for processing.
+    Approved invoices can be synced to NetSuite.
+    """
+    try:
+        bigquery_service = get_bigquery_service()
+        
+        # Get invoice details for feedback storage
+        invoice = bigquery_service.get_invoice_details(invoice_id)
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+        
+        # Update approval status
+        success = bigquery_service.update_invoice_approval_status(
+            invoice_id=invoice_id,
+            approval_status='approved',
+            reviewed_by='user'
+        )
+        
+        if success:
+            # Store positive feedback for AI learning
+            bigquery_service.store_ai_feedback(
+                invoice_id=invoice_id,
+                feedback_type='approved',
+                original_extraction=invoice.get('extracted_data', {}),
+                created_by='user'
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': 'Invoice approved successfully',
+                'invoice_id': invoice_id,
+                'status': 'approved'
+            })
+        else:
+            return jsonify({'error': 'Failed to approve invoice'}), 500
+            
+    except Exception as e:
+        print(f"❌ Error approving invoice: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>/reject', methods=['POST'])
+def reject_invoice(invoice_id):
+    """
+    Reject an invoice as junk/incorrect.
+    Stores feedback for AI learning improvement.
+    
+    Request body:
+    {
+        "reason": "Reason for rejection (required)",
+        "corrected_vendor": "Optional corrected vendor name",
+        "corrected_amount": "Optional corrected amount"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        rejection_reason = data.get('reason', 'User rejected without reason')
+        
+        if not rejection_reason or rejection_reason == 'User rejected without reason':
+            return jsonify({'error': 'Please provide a rejection reason'}), 400
+        
+        bigquery_service = get_bigquery_service()
+        
+        # Get invoice details for feedback storage
+        invoice = bigquery_service.get_invoice_details(invoice_id)
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+        
+        # Update approval status
+        success = bigquery_service.update_invoice_approval_status(
+            invoice_id=invoice_id,
+            approval_status='rejected',
+            rejection_reason=rejection_reason,
+            reviewed_by='user'
+        )
+        
+        if success:
+            # Build corrected data if provided
+            corrected_data = None
+            if data.get('corrected_vendor') or data.get('corrected_amount'):
+                corrected_data = {
+                    'vendor_name': data.get('corrected_vendor'),
+                    'amount': data.get('corrected_amount')
+                }
+            
+            # Store negative feedback for AI learning
+            bigquery_service.store_ai_feedback(
+                invoice_id=invoice_id,
+                feedback_type='rejected',
+                original_extraction=invoice.get('extracted_data', {}),
+                corrected_data=corrected_data,
+                rejection_reason=rejection_reason,
+                created_by='user'
+            )
+            
+            # Store in Vertex Search for RAG learning (rejected patterns)
+            try:
+                vertex_service = get_vertex_search_service()
+                if vertex_service:
+                    rejection_doc = {
+                        'type': 'rejection_pattern',
+                        'invoice_id': invoice_id,
+                        'vendor_name': invoice.get('vendor_name', 'Unknown'),
+                        'amount': invoice.get('amount', 0),
+                        'rejection_reason': rejection_reason,
+                        'corrected_data': corrected_data
+                    }
+                    vertex_service.index_document(rejection_doc, doc_type='feedback')
+            except Exception as vertex_err:
+                print(f"⚠️ Could not store rejection in Vertex Search: {vertex_err}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Invoice rejected and feedback stored for AI learning',
+                'invoice_id': invoice_id,
+                'status': 'rejected',
+                'feedback_stored': True
+            })
+        else:
+            return jsonify({'error': 'Failed to reject invoice'}), 500
+            
+    except Exception as e:
+        print(f"❌ Error rejecting invoice: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/feedback/patterns', methods=['GET'])
+def get_ai_rejection_patterns():
+    """
+    Get recent rejection patterns for AI learning analysis.
+    Shows what types of invoices are commonly rejected.
+    """
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        
+        bigquery_service = get_bigquery_service()
+        patterns = bigquery_service.get_rejection_patterns(limit=limit)
+        
+        return jsonify({
+            'success': True,
+            'patterns': patterns,
+            'count': len(patterns),
+            'message': 'These patterns help improve AI extraction accuracy'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting rejection patterns: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ===== VENDOR CSV UPLOAD ENDPOINTS =====
 

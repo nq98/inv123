@@ -1414,3 +1414,443 @@ class BigQueryService:
             bool: True if successful, False otherwise
         """
         return self.update_invoice_netsuite_sync(invoice_id, netsuite_bill_id, "synced")
+    
+    # ==================== GMAIL SCAN CHECKPOINT SYSTEM ====================
+    
+    def create_scan_checkpoint(self, client_email: str, days_range: int, total_emails: int = 0) -> str:
+        """
+        Create a new Gmail scan checkpoint to track progress.
+        
+        Args:
+            client_email: Gmail account being scanned
+            days_range: Number of days being scanned
+            total_emails: Total emails to process
+            
+        Returns:
+            scan_id: Unique identifier for this scan
+        """
+        scan_id = f"scan_{uuid.uuid4().hex[:12]}"
+        
+        query = f"""
+        INSERT INTO `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.gmail_scan_checkpoints`
+        (scan_id, client_email, scan_type, status, days_range, total_emails, 
+         processed_count, extracted_count, duplicate_count, failed_count,
+         started_at, updated_at, processed_message_ids)
+        VALUES
+        (@scan_id, @client_email, @scan_type, 'running', @days_range, @total_emails,
+         0, 0, 0, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), [])
+        """
+        
+        scan_type = f"{days_range}days" if days_range < 9999 else "all_time"
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("scan_id", "STRING", scan_id),
+                bigquery.ScalarQueryParameter("client_email", "STRING", client_email),
+                bigquery.ScalarQueryParameter("scan_type", "STRING", scan_type),
+                bigquery.ScalarQueryParameter("days_range", "INT64", days_range),
+                bigquery.ScalarQueryParameter("total_emails", "INT64", total_emails),
+            ]
+        )
+        
+        try:
+            self.client.query(query, job_config=job_config).result()
+            print(f"✅ Created scan checkpoint: {scan_id}")
+            return scan_id
+        except Exception as e:
+            print(f"❌ Error creating scan checkpoint: {e}")
+            return None
+    
+    def update_scan_checkpoint(self, scan_id: str, processed_count: int = None, 
+                                extracted_count: int = None, duplicate_count: int = None,
+                                failed_count: int = None, last_message_id: str = None,
+                                last_page_token: str = None, status: str = None,
+                                error_message: str = None, processed_message_ids: list = None) -> bool:
+        """
+        Update scan checkpoint with current progress.
+        
+        Args:
+            scan_id: The scan checkpoint ID
+            processed_count: Number of emails processed so far
+            extracted_count: Number of invoices successfully extracted
+            duplicate_count: Number of duplicates skipped
+            failed_count: Number of failed extractions
+            last_message_id: Last processed Gmail message ID (for resume)
+            last_page_token: Gmail pagination token (for resume)
+            status: Scan status ('running', 'paused', 'completed', 'failed')
+            error_message: Error message if failed
+            processed_message_ids: List of already processed message IDs
+            
+        Returns:
+            bool: True if successful
+        """
+        updates = ["updated_at = CURRENT_TIMESTAMP()"]
+        params = [bigquery.ScalarQueryParameter("scan_id", "STRING", scan_id)]
+        
+        if processed_count is not None:
+            updates.append("processed_count = @processed_count")
+            params.append(bigquery.ScalarQueryParameter("processed_count", "INT64", processed_count))
+        
+        if extracted_count is not None:
+            updates.append("extracted_count = @extracted_count")
+            params.append(bigquery.ScalarQueryParameter("extracted_count", "INT64", extracted_count))
+        
+        if duplicate_count is not None:
+            updates.append("duplicate_count = @duplicate_count")
+            params.append(bigquery.ScalarQueryParameter("duplicate_count", "INT64", duplicate_count))
+        
+        if failed_count is not None:
+            updates.append("failed_count = @failed_count")
+            params.append(bigquery.ScalarQueryParameter("failed_count", "INT64", failed_count))
+        
+        if last_message_id is not None:
+            updates.append("last_message_id = @last_message_id")
+            params.append(bigquery.ScalarQueryParameter("last_message_id", "STRING", last_message_id))
+        
+        if last_page_token is not None:
+            updates.append("last_page_token = @last_page_token")
+            params.append(bigquery.ScalarQueryParameter("last_page_token", "STRING", last_page_token))
+        
+        if status is not None:
+            updates.append("status = @status")
+            params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+            if status == 'completed':
+                updates.append("completed_at = CURRENT_TIMESTAMP()")
+        
+        if error_message is not None:
+            updates.append("error_message = @error_message")
+            params.append(bigquery.ScalarQueryParameter("error_message", "STRING", error_message))
+        
+        query = f"""
+        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.gmail_scan_checkpoints`
+        SET {', '.join(updates)}
+        WHERE scan_id = @scan_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        
+        try:
+            self.client.query(query, job_config=job_config).result()
+            return True
+        except Exception as e:
+            print(f"❌ Error updating scan checkpoint: {e}")
+            return False
+    
+    def get_resumable_scans(self, client_email: str) -> list:
+        """
+        Get list of scans that can be resumed for a client.
+        
+        Args:
+            client_email: Gmail account
+            
+        Returns:
+            List of resumable scan checkpoints
+        """
+        query = f"""
+        SELECT 
+            scan_id, client_email, scan_type, status, days_range,
+            total_emails, processed_count, extracted_count, duplicate_count, failed_count,
+            last_message_id, last_page_token,
+            started_at, updated_at, error_message
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.gmail_scan_checkpoints`
+        WHERE client_email = @client_email
+        AND status IN ('running', 'paused', 'failed')
+        AND started_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+        ORDER BY updated_at DESC
+        LIMIT 10
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("client_email", "STRING", client_email)
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            scans = []
+            for row in results:
+                scans.append({
+                    'scan_id': row.scan_id,
+                    'client_email': row.client_email,
+                    'scan_type': row.scan_type,
+                    'status': row.status,
+                    'days_range': row.days_range,
+                    'total_emails': row.total_emails,
+                    'processed_count': row.processed_count,
+                    'extracted_count': row.extracted_count,
+                    'duplicate_count': row.duplicate_count,
+                    'failed_count': row.failed_count,
+                    'last_message_id': row.last_message_id,
+                    'last_page_token': row.last_page_token,
+                    'started_at': row.started_at.isoformat() if row.started_at else None,
+                    'updated_at': row.updated_at.isoformat() if row.updated_at else None,
+                    'error_message': row.error_message,
+                    'progress_pct': round((row.processed_count / row.total_emails * 100) if row.total_emails > 0 else 0, 1)
+                })
+            return scans
+        except Exception as e:
+            print(f"❌ Error getting resumable scans: {e}")
+            return []
+    
+    def get_processed_message_ids(self, scan_id: str) -> set:
+        """
+        Get set of already processed message IDs for a scan.
+        
+        Args:
+            scan_id: The scan checkpoint ID
+            
+        Returns:
+            Set of processed message IDs
+        """
+        # For efficiency, we query invoices created during this scan
+        query = f"""
+        SELECT DISTINCT 
+            JSON_VALUE(metadata, '$.gmail_message_id') as message_id
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
+        WHERE JSON_VALUE(metadata, '$.scan_id') = @scan_id
+        AND JSON_VALUE(metadata, '$.gmail_message_id') IS NOT NULL
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("scan_id", "STRING", scan_id)
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            return {row.message_id for row in results if row.message_id}
+        except Exception as e:
+            print(f"⚠️ Error getting processed message IDs: {e}")
+            return set()
+    
+    # ==================== INVOICE FEEDBACK SYSTEM ====================
+    
+    def update_invoice_approval_status(self, invoice_id: str, approval_status: str, 
+                                        rejection_reason: str = None, reviewed_by: str = None) -> bool:
+        """
+        Update invoice approval status (approve/reject).
+        
+        Args:
+            invoice_id: The invoice ID
+            approval_status: 'approved', 'rejected', or 'pending'
+            rejection_reason: Reason for rejection (if rejected)
+            reviewed_by: Who reviewed the invoice
+            
+        Returns:
+            bool: True if successful
+        """
+        query = f"""
+        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
+        SET 
+            approval_status = @approval_status,
+            rejection_reason = @rejection_reason,
+            reviewed_at = CURRENT_TIMESTAMP(),
+            reviewed_by = @reviewed_by
+        WHERE invoice_id = @invoice_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                bigquery.ScalarQueryParameter("approval_status", "STRING", approval_status),
+                bigquery.ScalarQueryParameter("rejection_reason", "STRING", rejection_reason),
+                bigquery.ScalarQueryParameter("reviewed_by", "STRING", reviewed_by or "user"),
+            ]
+        )
+        
+        try:
+            self.client.query(query, job_config=job_config).result()
+            print(f"✅ Updated invoice {invoice_id} approval status to: {approval_status}")
+            return True
+        except Exception as e:
+            print(f"❌ Error updating invoice approval status: {e}")
+            return False
+    
+    def store_ai_feedback(self, invoice_id: str, feedback_type: str, 
+                          original_extraction: dict = None, corrected_data: dict = None,
+                          rejection_reason: str = None, created_by: str = None) -> str:
+        """
+        Store AI feedback for learning improvement.
+        
+        Args:
+            invoice_id: The invoice ID
+            feedback_type: 'approved', 'rejected', 'corrected'
+            original_extraction: Original AI extraction data
+            corrected_data: User-corrected data (if any)
+            rejection_reason: Reason for rejection
+            created_by: Who provided feedback
+            
+        Returns:
+            feedback_id: The feedback record ID
+        """
+        feedback_id = f"fb_{uuid.uuid4().hex[:12]}"
+        
+        # Extract vendor names and amounts for quick querying
+        vendor_original = None
+        vendor_corrected = None
+        amount_original = None
+        amount_corrected = None
+        
+        if original_extraction:
+            vendor_original = original_extraction.get('vendor', {}).get('name') if isinstance(original_extraction.get('vendor'), dict) else original_extraction.get('vendor_name')
+            amount_original = original_extraction.get('totals', {}).get('total') if isinstance(original_extraction.get('totals'), dict) else original_extraction.get('amount')
+        
+        if corrected_data:
+            vendor_corrected = corrected_data.get('vendor', {}).get('name') if isinstance(corrected_data.get('vendor'), dict) else corrected_data.get('vendor_name')
+            amount_corrected = corrected_data.get('totals', {}).get('total') if isinstance(corrected_data.get('totals'), dict) else corrected_data.get('amount')
+        
+        query = f"""
+        INSERT INTO `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.ai_feedback_log`
+        (feedback_id, invoice_id, feedback_type, original_extraction, corrected_data,
+         rejection_reason, vendor_name_original, vendor_name_corrected,
+         amount_original, amount_corrected, created_at, created_by, applied_to_learning)
+        VALUES
+        (@feedback_id, @invoice_id, @feedback_type, @original_extraction, @corrected_data,
+         @rejection_reason, @vendor_original, @vendor_corrected,
+         @amount_original, @amount_corrected, CURRENT_TIMESTAMP(), @created_by, false)
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("feedback_id", "STRING", feedback_id),
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                bigquery.ScalarQueryParameter("feedback_type", "STRING", feedback_type),
+                bigquery.ScalarQueryParameter("original_extraction", "JSON", json.dumps(original_extraction) if original_extraction else None),
+                bigquery.ScalarQueryParameter("corrected_data", "JSON", json.dumps(corrected_data) if corrected_data else None),
+                bigquery.ScalarQueryParameter("rejection_reason", "STRING", rejection_reason),
+                bigquery.ScalarQueryParameter("vendor_original", "STRING", vendor_original),
+                bigquery.ScalarQueryParameter("vendor_corrected", "STRING", vendor_corrected),
+                bigquery.ScalarQueryParameter("amount_original", "NUMERIC", amount_original),
+                bigquery.ScalarQueryParameter("amount_corrected", "NUMERIC", amount_corrected),
+                bigquery.ScalarQueryParameter("created_by", "STRING", created_by or "user"),
+            ]
+        )
+        
+        try:
+            self.client.query(query, job_config=job_config).result()
+            print(f"✅ Stored AI feedback: {feedback_id}")
+            return feedback_id
+        except Exception as e:
+            print(f"❌ Error storing AI feedback: {e}")
+            return None
+    
+    def get_rejection_patterns(self, limit: int = 100) -> list:
+        """
+        Get recent rejection patterns for AI learning.
+        
+        Returns:
+            List of rejection patterns with vendor names and reasons
+        """
+        query = f"""
+        SELECT 
+            vendor_name_original,
+            rejection_reason,
+            COUNT(*) as rejection_count,
+            ARRAY_AGG(DISTINCT invoice_id LIMIT 5) as sample_invoice_ids
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.ai_feedback_log`
+        WHERE feedback_type = 'rejected'
+        AND created_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        GROUP BY vendor_name_original, rejection_reason
+        ORDER BY rejection_count DESC
+        LIMIT @limit
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("limit", "INT64", limit)
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            patterns = []
+            for row in results:
+                patterns.append({
+                    'vendor_name': row.vendor_name_original,
+                    'rejection_reason': row.rejection_reason,
+                    'count': row.rejection_count,
+                    'sample_ids': list(row.sample_invoice_ids) if row.sample_invoice_ids else []
+                })
+            return patterns
+        except Exception as e:
+            print(f"❌ Error getting rejection patterns: {e}")
+            return []
+    
+    def get_invoices_for_review(self, client_id: str = None, status_filter: str = 'pending', 
+                                 limit: int = 50) -> list:
+        """
+        Get invoices pending human review.
+        
+        Args:
+            client_id: Optional client filter
+            status_filter: 'pending', 'approved', 'rejected', or 'all'
+            limit: Max results
+            
+        Returns:
+            List of invoices for review
+        """
+        where_clauses = ["1=1"]
+        params = [bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+        
+        if client_id:
+            where_clauses.append("client_id = @client_id")
+            params.append(bigquery.ScalarQueryParameter("client_id", "STRING", client_id))
+        
+        if status_filter != 'all':
+            if status_filter == 'pending':
+                where_clauses.append("(approval_status IS NULL OR approval_status = 'pending')")
+            else:
+                where_clauses.append("approval_status = @status_filter")
+                params.append(bigquery.ScalarQueryParameter("status_filter", "STRING", status_filter))
+        
+        query = f"""
+        SELECT 
+            invoice_id, vendor_id, vendor_name, client_id, amount, currency,
+            invoice_date, status, gcs_uri, file_type, file_size,
+            approval_status, rejection_reason, reviewed_at, reviewed_by,
+            created_at, metadata
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.invoices`
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY created_at DESC
+        LIMIT @limit
+        """
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            invoices = []
+            for row in results:
+                inv = {
+                    'invoice_id': row.invoice_id,
+                    'vendor_id': row.vendor_id,
+                    'vendor_name': row.vendor_name,
+                    'client_id': row.client_id,
+                    'amount': float(row.amount) if row.amount else 0,
+                    'currency': row.currency,
+                    'invoice_date': row.invoice_date.isoformat() if row.invoice_date else None,
+                    'status': row.status,
+                    'gcs_uri': row.gcs_uri,
+                    'file_type': row.file_type,
+                    'file_size': row.file_size,
+                    'approval_status': row.approval_status or 'pending',
+                    'rejection_reason': row.rejection_reason,
+                    'reviewed_at': row.reviewed_at.isoformat() if row.reviewed_at else None,
+                    'reviewed_by': row.reviewed_by,
+                    'created_at': row.created_at.isoformat() if row.created_at else None
+                }
+                # Parse metadata
+                if row.metadata:
+                    try:
+                        inv['metadata'] = row.metadata if isinstance(row.metadata, dict) else json.loads(row.metadata)
+                    except:
+                        inv['metadata'] = {}
+                else:
+                    inv['metadata'] = {}
+                invoices.append(inv)
+            return invoices
+        except Exception as e:
+            print(f"❌ Error getting invoices for review: {e}")
+            return []

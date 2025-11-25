@@ -110,6 +110,63 @@ def create_agent_tables():
             ADD COLUMN IF NOT EXISTS file_type STRING,
             ADD COLUMN IF NOT EXISTS file_size INT64
             """
+        },
+        {
+            'name': 'invoices_add_feedback_columns',
+            'sql': """
+            ALTER TABLE vendors_ai.invoices
+            ADD COLUMN IF NOT EXISTS approval_status STRING,
+            ADD COLUMN IF NOT EXISTS rejection_reason STRING,
+            ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS reviewed_by STRING
+            """
+        },
+        {
+            'name': 'gmail_scan_checkpoints',
+            'sql': """
+            CREATE TABLE IF NOT EXISTS vendors_ai.gmail_scan_checkpoints (
+              scan_id STRING NOT NULL,
+              client_email STRING NOT NULL,
+              scan_type STRING NOT NULL,
+              status STRING NOT NULL,
+              days_range INT64,
+              total_emails INT64,
+              processed_count INT64,
+              extracted_count INT64,
+              duplicate_count INT64,
+              failed_count INT64,
+              last_message_id STRING,
+              last_page_token STRING,
+              processed_message_ids ARRAY<STRING>,
+              started_at TIMESTAMP,
+              updated_at TIMESTAMP,
+              completed_at TIMESTAMP,
+              error_message STRING,
+              metadata JSON
+            )
+            PARTITION BY DATE(started_at)
+            """
+        },
+        {
+            'name': 'ai_feedback_log',
+            'sql': """
+            CREATE TABLE IF NOT EXISTS vendors_ai.ai_feedback_log (
+              feedback_id STRING NOT NULL,
+              invoice_id STRING NOT NULL,
+              feedback_type STRING NOT NULL,
+              original_extraction JSON,
+              corrected_data JSON,
+              rejection_reason STRING,
+              vendor_name_original STRING,
+              vendor_name_corrected STRING,
+              amount_original NUMERIC,
+              amount_corrected NUMERIC,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
+              created_by STRING,
+              applied_to_learning BOOLEAN DEFAULT false
+            )
+            PARTITION BY DATE(created_at)
+            """
         }
     ]
     
