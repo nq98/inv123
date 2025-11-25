@@ -2421,6 +2421,9 @@ def gmail_import_stream():
                                 # Safely get link_type even if link_classification is a string
                                 if isinstance(link_classification, dict):
                                     classified_as = link_classification.get('link_type', 'unknown')
+                                elif isinstance(link_classification, str):
+                                    # link_classification might be the link_type string directly
+                                    classified_as = link_classification
                                 else:
                                     classified_as = 'unknown'
                                 
