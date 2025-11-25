@@ -581,66 +581,136 @@ p {{ margin: 4px 0; }}
     
     def html_to_pdf(self, html_content, subject='email_receipt'):
         """
-        Convert HTML email content to a PDF using Playwright
-        Uses subprocess for reliable timeout in gevent environment
+        Convert HTML email content to a PDF using ReportLab (fast, no browser needed)
         
         Returns: (filename, pdf_data) or None if failed
         """
-        import subprocess
         import time
-        import json
-        import base64
+        import io
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.units import inch
         
         timestamp = int(time.time())
         safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
         filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
         
-        print(f"📄 Starting PDF generation via subprocess...")
-        
-        # Simplify HTML to speed up PDF generation
-        simplified_html = self._simplify_html_for_pdf(html_content)
-        print(f"   HTML simplified: {len(html_content)} -> {len(simplified_html)} bytes")
+        print(f"📄 Generating PDF with ReportLab (fast mode)...")
         
         try:
-            script_path = os.path.join(os.path.dirname(__file__), 'html_to_pdf_subprocess.py')
+            # Extract text content from HTML
+            text_content = self._extract_text_from_html(html_content)
+            print(f"   Extracted {len(text_content)} chars of text")
             
-            process = subprocess.Popen(
-                ['python3', script_path],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+            # Create PDF in memory
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                rightMargin=0.5*inch,
+                leftMargin=0.5*inch,
+                topMargin=0.5*inch,
+                bottomMargin=0.5*inch
             )
             
-            try:
-                stdout, stderr = process.communicate(input=simplified_html, timeout=45)
-            except subprocess.TimeoutExpired:
-                print(f"⚠️ PDF generation timed out after 45 seconds - terminating process")
-                process.kill()
-                process.wait()
-                return None
+            # Set up styles
+            styles = getSampleStyleSheet()
+            normal_style = ParagraphStyle(
+                'CustomNormal',
+                parent=styles['Normal'],
+                fontSize=10,
+                leading=14,
+                spaceAfter=6
+            )
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=14,
+                leading=18,
+                spaceAfter=12
+            )
             
-            if process.returncode != 0:
-                print(f"⚠️ PDF generation subprocess failed: {stderr}")
-                return None
+            # Build PDF content
+            story = []
             
-            try:
-                result = json.loads(stdout)
-            except json.JSONDecodeError as e:
-                print(f"⚠️ PDF generation returned invalid JSON: {e}")
-                return None
+            # Add title
+            story.append(Paragraph(f"Email Receipt: {subject}", title_style))
+            story.append(Spacer(1, 0.2*inch))
             
-            if not result.get('success'):
-                print(f"⚠️ PDF generation error: {result.get('error', 'Unknown error')}")
-                return None
+            # Add text content as paragraphs
+            lines = text_content.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line:
+                    # Escape special characters for ReportLab
+                    safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    try:
+                        story.append(Paragraph(safe_line, normal_style))
+                    except:
+                        # If paragraph fails, add as plain text
+                        story.append(Paragraph(safe_line[:500], normal_style))
             
-            pdf_data = base64.b64decode(result['pdf_data'])
-            print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
+            # Build PDF
+            doc.build(story)
+            
+            pdf_data = buffer.getvalue()
+            buffer.close()
+            
+            print(f"📄 PDF generated successfully: {filename} ({len(pdf_data)} bytes)")
             return (filename, pdf_data)
             
         except Exception as e:
-            print(f"⚠️ PDF generation subprocess error: {e}")
+            print(f"⚠️ ReportLab PDF generation failed: {e}")
             return None
+    
+    def _extract_text_from_html(self, html_content):
+        """Extract clean text from HTML for PDF generation"""
+        from html.parser import HTMLParser
+        
+        class TextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.text_parts = []
+                self.in_style = False
+                self.in_script = False
+                
+            def handle_starttag(self, tag, attrs):
+                if tag == 'style':
+                    self.in_style = True
+                elif tag == 'script':
+                    self.in_script = True
+                elif tag in ('br', 'p', 'div', 'tr', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+                    self.text_parts.append('\n')
+                elif tag == 'td' or tag == 'th':
+                    self.text_parts.append(' | ')
+                    
+            def handle_endtag(self, tag):
+                if tag == 'style':
+                    self.in_style = False
+                elif tag == 'script':
+                    self.in_script = False
+                elif tag in ('p', 'div', 'table', 'tr'):
+                    self.text_parts.append('\n')
+                    
+            def handle_data(self, data):
+                if not self.in_style and not self.in_script:
+                    text = data.strip()
+                    if text:
+                        self.text_parts.append(text + ' ')
+            
+            def get_text(self):
+                return ''.join(self.text_parts)
+        
+        try:
+            parser = TextExtractor()
+            parser.feed(html_content)
+            return parser.get_text()
+        except:
+            # Fallback: simple regex strip
+            import re
+            text = re.sub(r'<[^>]+>', ' ', html_content)
+            return re.sub(r'\s+', ' ', text).strip()
     
     def html_to_image(self, html_content, subject='email_receipt'):
         """
