@@ -688,6 +688,7 @@ _agent_search_service = None
 _issue_detector = None
 _action_manager = None
 _sync_manager = None
+_gemini_service = None
 
 def get_processor():
     """Lazy initialization of InvoiceProcessor to avoid blocking app startup"""
@@ -730,6 +731,13 @@ def get_vertex_search_service():
     if _vertex_search_service is None:
         _vertex_search_service = VertexSearchService()
     return _vertex_search_service
+
+def get_gemini_service():
+    """Lazy initialization of GeminiService"""
+    global _gemini_service
+    if _gemini_service is None:
+        _gemini_service = GeminiService()
+    return _gemini_service
 
 def get_sync_manager():
     """Lazy initialization of SyncManager"""
@@ -991,6 +999,238 @@ def add_vendor():
         
     except Exception as e:
         print(f"Error adding vendor: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/vendors/search-similar', methods=['POST'])
+def search_similar_vendors():
+    """
+    Search for similar vendors using Vertex AI semantic search.
+    Used when creating a new vendor to check for potential duplicates.
+    """
+    try:
+        data = request.get_json()
+        vendor_name = data.get('vendor_name', '')
+        
+        if not vendor_name.strip():
+            return jsonify({'success': False, 'error': 'Vendor name is required'}), 400
+        
+        print(f"🔍 Searching for similar vendors: {vendor_name}")
+        
+        # Use Vertex AI Search for semantic similarity
+        vertex_service = get_vertex_search_service()
+        bigquery_service = get_bigquery_service()
+        
+        similar_vendors = []
+        
+        # Try Vertex AI Search first
+        try:
+            search_results = vertex_service.search_vendor(vendor_name)
+            if search_results:
+                for result in search_results[:5]:
+                    similar_vendors.append({
+                        'vendor_id': result.get('vendor_id'),
+                        'global_name': result.get('global_name') or result.get('name'),
+                        'name': result.get('global_name') or result.get('name'),
+                        'netsuite_internal_id': result.get('netsuite_internal_id'),
+                        'tax_id': result.get('tax_id'),
+                        'similarity_score': result.get('score', 0.5)
+                    })
+        except Exception as vertex_err:
+            print(f"⚠️ Vertex Search failed, using BigQuery fallback: {vertex_err}")
+        
+        # Fallback to BigQuery LIKE search if Vertex returns nothing
+        if not similar_vendors:
+            bq_results = bigquery_service.search_vendor_by_name(vendor_name)
+            for vendor in (bq_results or [])[:5]:
+                similar_vendors.append({
+                    'vendor_id': vendor.get('vendor_id'),
+                    'global_name': vendor.get('global_name'),
+                    'name': vendor.get('global_name'),
+                    'netsuite_internal_id': vendor.get('netsuite_internal_id'),
+                    'tax_id': vendor.get('tax_id'),
+                    'similarity_score': 0.6
+                })
+        
+        return jsonify({
+            'success': True,
+            'similar_vendors': similar_vendors,
+            'count': len(similar_vendors)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error searching similar vendors: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/vendors/create-from-invoice', methods=['POST'])
+def create_vendor_from_invoice():
+    """
+    Create a new vendor from invoice-extracted data with AI semantic validation.
+    This is the AI-first workflow for creating vendors from Gmail imports.
+    """
+    try:
+        data = request.get_json()
+        
+        vendor_name = data.get('global_name', '').strip()
+        if not vendor_name:
+            return jsonify({'success': False, 'error': 'Vendor name is required'}), 400
+        
+        print(f"🏢 Creating vendor from invoice: {vendor_name}")
+        
+        # Generate unique vendor ID
+        import uuid
+        vendor_id = f"VENDOR_{str(uuid.uuid4())[:8].upper()}"
+        
+        # AI Semantic Validation: Check if this is a valid vendor (not bank, payment processor, etc.)
+        gemini_service = get_gemini_service()
+        
+        validation_prompt = f"""Analyze this entity and determine if it's a valid business vendor:
+
+Entity Name: {vendor_name}
+Email: {data.get('emails', [])}
+Address: {data.get('address', '')}
+Tax ID: {data.get('tax_id', '')}
+
+Valid vendors provide goods/services in exchange for payment.
+NOT valid vendors: Banks, payment processors (Stripe, PayPal), government entities, internal transfers.
+
+Return JSON:
+{{
+    "is_valid_vendor": true/false,
+    "entity_type": "VENDOR|BANK|PAYMENT_PROCESSOR|GOVERNMENT|OTHER",
+    "confidence": 0.0-1.0,
+    "reasoning": "Brief explanation"
+}}"""
+        
+        try:
+            from google import genai
+            from google.genai import types
+            
+            validation_response = gemini_service._generate_content_with_fallback(
+                model='gemini-2.0-flash-exp',
+                contents=validation_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type='application/json'
+                )
+            )
+            
+            validation_result = json.loads(validation_response.text or '{}')
+            
+            if not validation_result.get('is_valid_vendor', True):
+                entity_type = validation_result.get('entity_type', 'UNKNOWN')
+                reasoning = validation_result.get('reasoning', 'Entity validation failed')
+                print(f"⚠️ Vendor rejected by AI: {entity_type} - {reasoning}")
+                return jsonify({
+                    'success': False,
+                    'error': f'This entity appears to be a {entity_type}, not a vendor: {reasoning}'
+                }), 400
+                
+            print(f"✅ AI validated vendor: {validation_result.get('entity_type', 'VENDOR')}")
+            
+        except Exception as ai_err:
+            print(f"⚠️ AI validation skipped (proceeding with creation): {ai_err}")
+        
+        # Prepare vendor data
+        bigquery_service = get_bigquery_service()
+        
+        vendor_data = {
+            'vendor_id': vendor_id,
+            'global_name': vendor_name,
+            'emails': data.get('emails', []) if isinstance(data.get('emails'), list) else [data.get('emails')] if data.get('emails') else [],
+            'phone_numbers': data.get('phone_numbers', []) if isinstance(data.get('phone_numbers'), list) else [data.get('phone_numbers')] if data.get('phone_numbers') else [],
+            'tax_id': data.get('tax_id', ''),
+            'address': data.get('address', ''),
+            'vendor_type': 'Company',
+            'source': 'invoice_extraction',
+            'source_invoice_id': data.get('source_invoice_id', ''),
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        
+        # Insert vendor into BigQuery
+        from google.cloud import bigquery
+        client = bigquery_service.client
+        table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors"
+        table = client.get_table(table_id)
+        
+        rows_to_insert = [vendor_data]
+        errors = client.insert_rows_json(table, rows_to_insert)
+        
+        if errors:
+            print(f"❌ BigQuery insert errors: {errors}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to insert vendor: {errors}'
+            }), 500
+        
+        print(f"✅ Vendor created successfully: {vendor_id} - {vendor_name}")
+        
+        return jsonify({
+            'success': True,
+            'vendor_id': vendor_id,
+            'vendor_name': vendor_name,
+            'message': 'Vendor created successfully from invoice data'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error creating vendor from invoice: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/invoices/<invoice_id>/link-vendor', methods=['POST'])
+def link_invoice_to_vendor(invoice_id):
+    """
+    Link an invoice to a vendor by updating the vendor_id field.
+    Used when a new vendor is created from invoice data.
+    """
+    try:
+        data = request.get_json()
+        vendor_id = data.get('vendor_id')
+        
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'Vendor ID is required'}), 400
+        
+        print(f"🔗 Linking invoice {invoice_id} to vendor {vendor_id}")
+        
+        bigquery_service = get_bigquery_service()
+        
+        # Update invoice with vendor_id
+        update_query = f"""
+        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+        SET vendor_id = @vendor_id,
+            updated_at = CURRENT_TIMESTAMP()
+        WHERE invoice_id = @invoice_id
+           OR invoice_id LIKE CONCAT('%', @invoice_id, '%')
+        """
+        
+        from google.cloud import bigquery
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("vendor_id", "STRING", vendor_id),
+                bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id)
+            ]
+        )
+        
+        bigquery_service.client.query(update_query, job_config=job_config).result()
+        
+        print(f"✅ Invoice linked to vendor successfully")
+        
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_id,
+            'vendor_id': vendor_id,
+            'message': 'Invoice linked to vendor successfully'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error linking invoice to vendor: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

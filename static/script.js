@@ -1092,9 +1092,16 @@ function displayInvoiceData(invoices) {
                     <div style="margin-top: 20px; border: 2px solid ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'}; border-radius: 8px; padding: 15px; background: linear-gradient(to right, ${invoice.vendor_match.verdict === 'MATCH' ? '#e8f5e9' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#e3f2fd' : '#fff3e0'}, #ffffff);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h4 style="margin: 0; color: ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'};">⚖️ Vendor Matching</h4>
-                            <span style="padding: 6px 12px; background: ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'}; color: white; border-radius: 15px; font-weight: bold; font-size: 12px;">
-                                ${invoice.vendor_match.verdict === 'MATCH' ? '✅ Matched' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '🆕 New Vendor' : '⚠️ Ambiguous'}
-                            </span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span style="padding: 6px 12px; background: ${invoice.vendor_match.verdict === 'MATCH' ? '#2e7d32' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '#1565c0' : '#f57c00'}; color: white; border-radius: 15px; font-weight: bold; font-size: 12px;">
+                                    ${invoice.vendor_match.verdict === 'MATCH' ? '✅ Matched' : invoice.vendor_match.verdict === 'NEW_VENDOR' ? '🆕 New Vendor' : '⚠️ Ambiguous'}
+                                </span>
+                                ${invoice.vendor_match.verdict !== 'MATCH' ? `
+                                    <button onclick="showVendorCreationPanel(${idx})" style="padding: 6px 14px; background: #1565c0; color: white; border: none; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: 600;">
+                                        ➕ New Vendor
+                                    </button>
+                                ` : ''}
+                            </div>
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                             <div style="background: white; padding: 10px; border-radius: 6px;">
@@ -1119,6 +1126,70 @@ function displayInvoiceData(invoices) {
                         <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px;">
                             <div style="font-size: 11px; color: #888; margin-bottom: 4px;">⚖️ AI Reasoning:</div>
                             <div style="font-size: 12px; color: #555;">${invoice.vendor_match.reasoning || 'No reasoning provided'}</div>
+                        </div>
+                        
+                        <!-- VENDOR CREATION PANEL (Hidden by default, shown when vendor not matched) -->
+                        <div id="vendorCreationPanel${idx}" style="display: none; margin-top: 15px; padding: 20px; background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%); border: 2px solid #1565c0; border-radius: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: #1565c0; display: flex; align-items: center; gap: 8px;">
+                                    <span>🏢</span> Create Vendor from Invoice Data
+                                </h4>
+                                <button onclick="hideVendorCreationPanel(${idx})" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">×</button>
+                            </div>
+                            
+                            <!-- Extracted Vendor Data (Pre-filled from AI) -->
+                            <div style="background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e0e0e0;">
+                                <div style="font-size: 12px; color: #666; margin-bottom: 10px; font-weight: 600;">📋 DATA EXTRACTED FROM INVOICE (AI Semantic)</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div>
+                                        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 4px;">Vendor Name *</label>
+                                        <input type="text" id="vendorName${idx}" value="${(fullData.vendor?.name || invoice.vendor_name || '').replace(/"/g, '&quot;')}" 
+                                               style="width: 100%; padding: 10px; border: 2px solid #1565c0; border-radius: 6px; font-size: 14px; font-weight: 600; box-sizing: border-box;" />
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 4px;">Email</label>
+                                        <input type="email" id="vendorEmail${idx}" value="${(fullData.vendor?.email || '').replace(/"/g, '&quot;')}" 
+                                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;" />
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 4px;">Tax ID / VAT</label>
+                                        <input type="text" id="vendorTaxId${idx}" value="${(fullData.vendor?.taxId || '').replace(/"/g, '&quot;')}" 
+                                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;" />
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 4px;">Phone</label>
+                                        <input type="text" id="vendorPhone${idx}" value="${(fullData.vendor?.phone || '').replace(/"/g, '&quot;')}" 
+                                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;" />
+                                    </div>
+                                    <div style="grid-column: 1 / -1;">
+                                        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 4px;">Address</label>
+                                        <input type="text" id="vendorAddress${idx}" value="${(fullData.vendor?.address || '').replace(/"/g, '&quot;')}" 
+                                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Similar Vendors Search -->
+                            <div style="background: #fff3e0; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #f57c00;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="font-size: 12px; color: #e65100;">
+                                        <strong>🔍 Check for similar vendors first?</strong>
+                                        <div style="font-size: 11px; color: #888; margin-top: 2px;">AI will search for potential matches before creating new</div>
+                                    </div>
+                                    <button onclick="searchSimilarVendorsFromInvoice(${idx})" style="padding: 8px 16px; background: #f57c00; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">
+                                        🔍 Search Similar
+                                    </button>
+                                </div>
+                                <div id="similarVendorsResult${idx}" style="margin-top: 10px; display: none;"></div>
+                            </div>
+                            
+                            <!-- Action Buttons -->
+                            <div style="display: flex; gap: 10px; justify-content: flex-end;" id="vendorCreateActions${idx}">
+                                <button onclick="createVendorFromInvoice(${idx}, '${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}')" 
+                                        style="padding: 12px 24px; background: linear-gradient(135deg, #1565c0, #0d47a1); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(21,101,192,0.3);">
+                                    <span>✨</span> Create Vendor & Link to Invoice
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ` : ''}
@@ -1272,6 +1343,257 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
         if (container) {
             container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
         }
+    }
+};
+
+// ========== VENDOR CREATION FROM INVOICE FUNCTIONS ==========
+
+window.showVendorCreationPanel = function(idx) {
+    const panel = document.getElementById(`vendorCreationPanel${idx}`);
+    if (panel) {
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+};
+
+window.hideVendorCreationPanel = function(idx) {
+    const panel = document.getElementById(`vendorCreationPanel${idx}`);
+    if (panel) {
+        panel.style.display = 'none';
+    }
+};
+
+window.searchSimilarVendorsFromInvoice = async function(idx) {
+    const vendorName = document.getElementById(`vendorName${idx}`)?.value || '';
+    const resultDiv = document.getElementById(`similarVendorsResult${idx}`);
+    
+    if (!vendorName.trim()) {
+        alert('Please enter a vendor name first');
+        return;
+    }
+    
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="color: #666; padding: 10px;">🔍 Searching for similar vendors...</div>';
+    
+    try {
+        const response = await fetch('/api/vendors/search-similar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor_name: vendorName })
+        });
+        const data = await response.json();
+        
+        if (data.success && data.similar_vendors && data.similar_vendors.length > 0) {
+            let html = '<div style="font-size: 12px; color: #2e7d32; margin-bottom: 8px;"><strong>✅ Found similar vendors:</strong></div>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+            
+            data.similar_vendors.forEach(v => {
+                html += `
+                    <button onclick="selectExistingVendor(${idx}, '${v.vendor_id}', '${(v.global_name || v.name || '').replace(/'/g, "\\'")}')" 
+                            style="padding: 8px 12px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                        <strong>${v.global_name || v.name}</strong>
+                        <span style="color: #666; font-size: 10px;">${v.netsuite_internal_id ? '📋 NS:' + v.netsuite_internal_id : ''}</span>
+                    </button>
+                `;
+            });
+            
+            html += '</div>';
+            html += '<div style="margin-top: 8px; font-size: 11px; color: #888;">Click a vendor to link this invoice to them instead of creating new</div>';
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = '<div style="color: #1565c0; padding: 10px; font-size: 12px;">✨ No similar vendors found. You can safely create a new vendor.</div>';
+        }
+    } catch (error) {
+        console.error('Error searching similar vendors:', error);
+        resultDiv.innerHTML = `<div style="color: #d32f2f; padding: 10px;">❌ Search failed: ${error.message}</div>`;
+    }
+};
+
+window.selectExistingVendor = async function(idx, vendorId, vendorName) {
+    if (confirm(`Link this invoice to existing vendor "${vendorName}"?`)) {
+        const actionsDiv = document.getElementById(`vendorCreateActions${idx}`);
+        actionsDiv.innerHTML = `
+            <div style="padding: 12px 24px; background: #e8f5e9; border-radius: 8px; color: #2e7d32; font-weight: 600;">
+                ✅ Linked to: ${vendorName} (${vendorId})
+            </div>
+        `;
+        
+        // Hide the creation panel after a short delay
+        setTimeout(() => {
+            hideVendorCreationPanel(idx);
+        }, 1500);
+    }
+};
+
+window.createVendorFromInvoice = async function(idx, encodedInvoiceId) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    
+    // Get all form values
+    const vendorData = {
+        global_name: document.getElementById(`vendorName${idx}`)?.value || '',
+        emails: document.getElementById(`vendorEmail${idx}`)?.value ? [document.getElementById(`vendorEmail${idx}`).value] : [],
+        tax_id: document.getElementById(`vendorTaxId${idx}`)?.value || '',
+        phone_numbers: document.getElementById(`vendorPhone${idx}`)?.value ? [document.getElementById(`vendorPhone${idx}`).value] : [],
+        address: document.getElementById(`vendorAddress${idx}`)?.value || '',
+        source_invoice_id: invoiceId
+    };
+    
+    if (!vendorData.global_name.trim()) {
+        alert('Vendor name is required');
+        return;
+    }
+    
+    const actionsDiv = document.getElementById(`vendorCreateActions${idx}`);
+    actionsDiv.innerHTML = `
+        <div style="padding: 12px 24px; background: #e3f2fd; border-radius: 8px; color: #1565c0; font-weight: 600; display: flex; align-items: center; gap: 10px;">
+            <span class="spinner" style="border: 2px solid #f3f3f3; border-top: 2px solid #1565c0; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite;"></span>
+            Creating vendor with AI semantic validation...
+        </div>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    `;
+    
+    try {
+        // Step 1: Create vendor in database
+        const createResponse = await fetch('/api/vendors/create-from-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(vendorData)
+        });
+        const createResult = await createResponse.json();
+        
+        if (!createResult.success) {
+            throw new Error(createResult.error || 'Failed to create vendor');
+        }
+        
+        const newVendorId = createResult.vendor_id;
+        const newVendorName = createResult.vendor_name;
+        
+        // Step 2: Show success and offer NetSuite push
+        actionsDiv.innerHTML = `
+            <div style="padding: 15px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid #4caf50;">
+                <div style="color: #2e7d32; font-weight: 600; margin-bottom: 10px;">
+                    ✅ Vendor Created Successfully!
+                </div>
+                <div style="font-size: 13px; color: #333; margin-bottom: 12px;">
+                    <strong>${newVendorName}</strong><br>
+                    <code style="font-size: 11px; background: #fff; padding: 2px 6px; border-radius: 3px;">${newVendorId}</code>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="pushVendorToNetSuiteAndCreateBill(${idx}, '${newVendorId}', '${invoiceId}')" 
+                            style="padding: 10px 20px; background: linear-gradient(135deg, #0d6efd, #0a58ca); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                        📋 Push to NetSuite & Create Bill
+                    </button>
+                    <button onclick="hideVendorCreationPanel(${idx})" 
+                            style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Update invoice vendor_id in background
+        await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/link-vendor`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor_id: newVendorId })
+        });
+        
+    } catch (error) {
+        console.error('Error creating vendor:', error);
+        actionsDiv.innerHTML = `
+            <div style="padding: 12px 24px; background: #ffebee; border-radius: 8px; color: #d32f2f; font-weight: 600;">
+                ❌ Failed: ${error.message}
+            </div>
+            <button onclick="createVendorFromInvoice(${idx}, '${encodeURIComponent(invoiceId)}')" 
+                    style="margin-top: 10px; padding: 10px 20px; background: #1565c0; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                Try Again
+            </button>
+        `;
+    }
+};
+
+window.pushVendorToNetSuiteAndCreateBill = async function(idx, vendorId, invoiceId) {
+    const actionsDiv = document.getElementById(`vendorCreateActions${idx}`);
+    
+    actionsDiv.innerHTML = `
+        <div style="padding: 15px; background: #e3f2fd; border-radius: 8px;">
+            <div style="color: #1565c0; font-weight: 600; display: flex; align-items: center; gap: 10px;">
+                <span class="spinner" style="border: 2px solid #f3f3f3; border-top: 2px solid #1565c0; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite;"></span>
+                Step 1/2: Pushing vendor to NetSuite...
+            </div>
+        </div>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    `;
+    
+    try {
+        // Step 1: Push vendor to NetSuite
+        const vendorResponse = await fetch('/api/netsuite/vendor/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor_id: vendorId })
+        });
+        const vendorResult = await vendorResponse.json();
+        
+        if (!vendorResult.success) {
+            throw new Error(vendorResult.error || 'Failed to push vendor to NetSuite');
+        }
+        
+        const netsuiteVendorId = vendorResult.netsuite_id || vendorResult.netsuite_internal_id;
+        
+        actionsDiv.innerHTML = `
+            <div style="padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                <div style="color: #2e7d32; margin-bottom: 8px;">✅ Vendor pushed to NetSuite (ID: ${netsuiteVendorId})</div>
+                <div style="color: #1565c0; font-weight: 600; display: flex; align-items: center; gap: 10px;">
+                    <span class="spinner" style="border: 2px solid #f3f3f3; border-top: 2px solid #1565c0; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite;"></span>
+                    Step 2/2: Creating bill...
+                </div>
+            </div>
+        `;
+        
+        // Step 2: Create bill
+        const billResponse = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const billResult = await billResponse.json();
+        
+        if (billResult.success) {
+            actionsDiv.innerHTML = `
+                <div style="padding: 15px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid #4caf50;">
+                    <div style="color: #2e7d32; font-weight: 600; font-size: 16px; margin-bottom: 10px;">
+                        🎉 Complete Success!
+                    </div>
+                    <div style="font-size: 13px; color: #333;">
+                        <div>✅ Vendor synced to NetSuite: <strong>${netsuiteVendorId}</strong></div>
+                        <div>✅ Bill created: <strong>${billResult.netsuite_bill_id || billResult.bill_id || 'Created'}</strong></div>
+                    </div>
+                    <button onclick="hideVendorCreationPanel(${idx})" 
+                            style="margin-top: 12px; padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                        ✓ Done
+                    </button>
+                </div>
+            `;
+            
+            // Update bill actions container
+            const billContainer = document.getElementById(`billActionsContainer${idx}`);
+            if (billContainer) {
+                billContainer.innerHTML = `<span style="color: #2e7d32; font-weight: 600;">✅ Bill created: ${billResult.netsuite_bill_id || 'Success'}</span>`;
+            }
+        } else {
+            throw new Error(billResult.error || billResult.message || 'Failed to create bill');
+        }
+        
+    } catch (error) {
+        console.error('Error in NetSuite workflow:', error);
+        actionsDiv.innerHTML = `
+            <div style="padding: 15px; background: #ffebee; border-radius: 8px; border-left: 4px solid #d32f2f;">
+                <div style="color: #d32f2f; font-weight: 600;">❌ Error: ${error.message}</div>
+                <button onclick="pushVendorToNetSuiteAndCreateBill(${idx}, '${vendorId}', '${invoiceId}')" 
+                        style="margin-top: 10px; padding: 10px 20px; background: #1565c0; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    🔄 Retry
+                </button>
+            </div>
+        `;
     }
 };
 
