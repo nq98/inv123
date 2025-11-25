@@ -2083,7 +2083,7 @@ def gmail_import_stream():
             yield send_event('progress', {'type': 'status', 'message': f'📧 Found {total_found} emails matching broad financial patterns ({stage1_percent}% of inbox)'})
             
             # Stage 2: Elite Gatekeeper AI Filter
-            stage2_msg = '\n🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 1.5 Flash)'
+            stage2_msg = '\n🧠 STAGE 2: Elite Gatekeeper AI Filter (Gemini 3 Pro)'
             yield send_event('progress', {'type': 'status', 'message': stage2_msg})
             yield send_event('progress', {'type': 'status', 'message': f'AI analyzing {total_found} emails for semantic context...'})
             yield send_event('progress', {'type': 'status', 'message': 'Filtering: Marketing spam, newsletters, logistics, false positives...'})
