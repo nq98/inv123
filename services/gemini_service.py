@@ -900,34 +900,49 @@ For each email, follow these steps:
 ### OUTPUT FORMAT (Strict JSON object)
 Return a JSON object where keys are the exact email IDs provided:
 {{
-    "email_1": {{
+    "text_email_1": {{
         "success": true,
         "vendor": {{
-            "name": "Company Name",
-            "email": "billing@company.com"
+            "name": "Replit",
+            "email": "support@replit.com"
         }},
-        "invoiceNumber": "INV-001",
-        "invoiceDate": "2025-01-15",
+        "invoiceNumber": "1600-0026",
+        "invoiceDate": "2025-11-25",
         "currency": "USD",
         "totals": {{
-            "subtotal": 10.00,
+            "subtotal": 25.00,
             "tax": 0.00,
-            "total": 10.00
+            "total": 25.00
         }},
         "lineItems": [
-            {{"description": "Service", "amount": 10.00}}
+            {{"description": "Replit subscription", "amount": 25.00}}
         ],
-        "reasoning": "Extracted from Replit receipt email"
+        "reasoning": "Replit receipt - extracted invoice number from subject, amount from email"
     }},
-    "email_2": {{
+    "text_email_2": {{
         "success": false,
         "reasoning": "Not a receipt/invoice - just a notification"
     }}
 }}
 
+### CRITICAL SUCCESS RULES:
+1. **success: true** if you can identify ANY of these:
+   - Invoice/Receipt number (from subject OR body)
+   - Vendor name (from sender email domain or body)
+   - This IS a financial document (receipt, invoice, bill, statement)
+
+2. **success: false** ONLY if:
+   - It's clearly NOT a financial document (shipping notification, password reset, marketing email)
+   
+3. **EXTRACT WHAT YOU CAN**: 
+   - If price is missing, set totals.total to 0 and add a note in reasoning
+   - If date is missing, use "unknown" 
+   - If only invoice number is in subject, that's STILL success!
+
+4. **Replit/Stripe/SaaS receipts**: These are ALWAYS success=true if they mention "receipt" or have invoice numbers in subject
+
 IMPORTANT: 
-- Use EXACT email IDs from the emails above
-- Return success: false if email is not a receipt/invoice
+- Use EXACT email IDs from the emails above (e.g., "text_email_1", "text_email_2")
 - Vendor should be the actual seller, NOT payment processor (Stripe, PayPal, etc.)
 """
         
