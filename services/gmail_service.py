@@ -684,11 +684,11 @@ class GmailService:
         AI-semantic intelligent link processor with fallback chain
         
         Workflow:
-        1. AI classifies link type (direct_pdf | web_receipt | auth_required)
-        2. direct_pdf → Try direct download
-        3. web_receipt → Capture screenshot
-        4. auth_required → Return None with reason
-        5. If no Gemini → Fallback to basic PDF download
+        1. FAST PRE-CHECK: Detect obvious patterns without AI
+        2. AI classifies link type (direct_pdf | web_receipt | auth_required)
+        3. direct_pdf → Try direct download
+        4. web_receipt → Capture screenshot
+        5. auth_required → Return None with reason
         
         Args:
             url: URL to process
@@ -707,6 +707,65 @@ class GmailService:
         """
         
         try:
+            url_lower = url.lower()
+            
+            # FAST PRE-CHECK 1: Skip obvious non-invoice images (no AI needed)
+            if any(x in url_lower for x in ['/icons/', '/images/', '/assets/', '/logos/', '/notifications/icons/']):
+                if any(url_lower.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg']):
+                    return {
+                        'success': False,
+                        'type': 'skipped',
+                        'filename': None,
+                        'data': None,
+                        'link_classification': 'not_invoice',
+                        'reasoning': 'Fast-skip: Decoration image/icon (not invoice)'
+                    }
+            
+            # FAST PRE-CHECK 2: Direct PDF links (no AI needed)
+            if url_lower.endswith('.pdf') or '/pdf?' in url_lower or '/pdf/' in url_lower:
+                print(f"📥 Fast-detect: Direct PDF link, attempting download...")
+                pdf_result = self.download_pdf_from_link(url)
+                if pdf_result:
+                    filename, pdf_data = pdf_result
+                    return {
+                        'success': True,
+                        'type': 'pdf',
+                        'filename': filename,
+                        'data': pdf_data,
+                        'link_classification': 'direct_pdf',
+                        'reasoning': 'Fast-detect: URL ends with .pdf'
+                    }
+            
+            # FAST PRE-CHECK 3: Stripe/payment public receipts with long tokens
+            # These look like dashboard URLs but are PUBLIC because of the token
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            path_parts = parsed.path.split('/')
+            
+            # Check for receipt/payment paths with long tokens
+            has_receipt_path = any(x in url_lower for x in ['/receipts/', '/payment/', '/invoice/'])
+            # Check if path has a long token (40+ chars segment that's alphanumeric)
+            has_long_token = any(len(part) > 40 and part.replace('-', '').replace('_', '').isalnum() 
+                                for part in path_parts)
+            
+            if has_receipt_path and has_long_token:
+                print(f"🎫 Fast-detect: Public receipt URL with token (no auth needed)")
+                # This is a PUBLIC web receipt - try screenshot directly
+                from services.screenshot_service import ScreenshotService
+                screenshot_service = ScreenshotService()
+                screenshot_data = screenshot_service.capture_receipt_screenshot(url)
+                
+                if screenshot_data:
+                    filename = f"receipt_screenshot_{parsed.netloc.replace('.', '_')}.png"
+                    return {
+                        'success': True,
+                        'type': 'screenshot',
+                        'filename': filename,
+                        'data': screenshot_data,
+                        'link_classification': 'web_receipt',
+                        'reasoning': 'Fast-detect: Public receipt URL with auth token'
+                    }
+            
             # DEFENSIVE: If Gemini unavailable, fallback to basic PDF download
             if not gemini_service:
                 print(f"⚠️ Gemini service unavailable, trying basic PDF download...")

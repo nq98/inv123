@@ -751,36 +751,43 @@ URL: {url}
 Email Context: {email_context}
 
 Classify as ONE of:
-1. **direct_pdf**: Direct PDF download link (ends in .pdf, has content-disposition, direct file download)
-2. **web_receipt**: Web-based receipt page that renders in a browser (public receipt view, invoice display page, bill summary)
-3. **auth_required**: Requires login/authentication to access (dashboard, account portal, authenticated session)
-4. **not_invoice**: NOT a receipt/invoice - just an image, icon, logo, tracking pixel, or email decoration
+1. **direct_pdf**: Direct PDF download link (ends in .pdf, has /pdf in path, direct file download)
+2. **web_receipt**: Web-based receipt page that renders in browser (public receipt, pre-authenticated link with token)
+3. **auth_required**: ONLY use if URL truly requires login (no token, short path, generic dashboard)
+4. **not_invoice**: NOT a receipt - just an image, icon, logo, tracking pixel, email decoration
 
-CRITICAL - FILTER OUT NON-INVOICES:
-- URLs pointing to small images/icons (e.g., "/icons/", "/images/", ".png", ".jpg", ".gif" that are clearly decorative)
-- URLs containing "/notifications/icons/", "/email-images/", "/logos/", "/assets/" = NOT receipts
-- S3/CDN hosted email decoration images (stripe-images.s3.amazonaws.com, cloudfront, etc with /icons/ or /assets/)
-- Tracking pixels, 1x1 images, email header/footer graphics
+⚠️ CRITICAL - STRIPE/PAYMENT PROVIDER PUBLIC RECEIPTS:
+Many payment providers send PUBLIC receipt URLs that LOOK like dashboard URLs but are PUBLIC!
 
-Use PURE SEMANTIC INTELLIGENCE:
-- Analyze the URL structure: Does it look like a file download, public view page, or protected dashboard?
-- Path semantics: "/receipt/", "/invoice/", "/view/", "/download/" suggest public access
-- Auth indicators: "/dashboard/", "/account/", "/login/", "/api/" often require authentication
-- Parameters: Tokens like "?token=", "?key=", "?signature=" suggest pre-authenticated public access
-- File extensions: .pdf at the end means direct download
-- Image URLs that are clearly icons/logos = not_invoice (don't waste processing on these!)
+**PUBLIC RECEIPT INDICATORS (classify as web_receipt or direct_pdf):**
+- URLs with LONG TOKENS/HASHES (40+ chars) in the path = PUBLIC ACCESS via token!
+- Example: dashboard.stripe.com/receipts/payment/CAcQARoXChVhY2N... (long token = PUBLIC)
+- Example: pay.stripe.com/invoice/acct_xxx/live_YWNjdF8x... (long token = PUBLIC)
+- URLs from: pay.stripe.com, receipt.*, invoice.*, checkout.*
+- ANY URL with /receipts/ or /payment/ + long alphanumeric path = web_receipt (PUBLIC!)
+- If URL ends with /pdf or has ?format=pdf → direct_pdf
 
-Think step-by-step:
-1. Is this clearly an icon, logo, or email decoration image? → not_invoice
-2. Does the URL end in .pdf or have download parameters? → direct_pdf
-3. Does it have public receipt/invoice view tokens/signatures? → web_receipt  
-4. Does it require dashboard/account login? → auth_required
+**TRULY AUTH_REQUIRED (only these):**
+- Short dashboard URLs with NO long tokens: dashboard.stripe.com/ (just domain)
+- URLs that go to /login, /signin, /account/settings
+- URLs with NO receipt/invoice/payment path AND no long tokens
+
+FILTER OUT (not_invoice):
+- Image URLs: .png, .jpg, .gif, /icons/, /images/, /assets/
+- S3/CDN decoration: stripe-images.s3.amazonaws.com with /icons/
+- Tracking pixels, logos, email graphics
+
+DECISION PRIORITY (check in this order):
+1. Is it an image/icon/decoration? → not_invoice
+2. Does it end in .pdf or have /pdf? → direct_pdf
+3. Does path have /receipts/ or /payment/ or /invoice/ WITH 30+ char token? → web_receipt (PUBLIC!)
+4. Is it a short generic URL with NO token? → auth_required
 
 Return ONLY valid JSON:
 {{
   "linkType": "direct_pdf" | "web_receipt" | "auth_required" | "not_invoice",
   "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation of classification"
+  "reasoning": "Brief explanation - MUST mention if long token detected = public access"
 }}"""
 
         try:
