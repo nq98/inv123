@@ -6285,6 +6285,40 @@ def sync_audit_data():
             'error': str(e)
         }), 500
 
+@app.route('/api/netsuite/events/cleanup-fake', methods=['POST'])
+def cleanup_fake_events():
+    """
+    Remove fake test events from the netsuite_events table
+    These are events with fake data like netsuite.example.com URLs
+    """
+    try:
+        bigquery_service = BigQueryService()
+        client = bigquery_service.client
+        
+        # Delete fake test events from the netsuite_events table
+        # These are old test events with fake URLs and IDs
+        delete_query = f"""
+        DELETE FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.netsuite_events`
+        WHERE netsuite_id = 'BILL-1234'
+           OR (netsuite_id = '1182' AND event_type = 'VENDOR_SYNC')
+           OR (event_type = 'BILL_CREATE' AND timestamp < '2025-11-25')
+           OR (event_type = 'VENDOR_SYNC' AND timestamp < '2025-11-25')
+        """
+        
+        result = client.query(delete_query).result()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Fake test events have been removed'
+        })
+        
+    except Exception as e:
+        print(f"Error cleaning up fake events: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/netsuite/bills/audit')
 def bill_audit_page():
     """Serve the bill audit trail page"""

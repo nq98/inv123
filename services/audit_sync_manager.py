@@ -320,16 +320,21 @@ class AuditSyncManager:
     def _store_audit_record(self, **kwargs) -> bool:
         """Store an audit record in BigQuery"""
         try:
+            # Handle raw_payload - must be serialized to JSON string for BigQuery JSON field
+            raw_payload = kwargs.get('raw_payload')
+            if raw_payload and isinstance(raw_payload, dict):
+                raw_payload = json.dumps(raw_payload)
+            
             record = {
                 'audit_id': str(uuid.uuid4()),
                 'timestamp': datetime.utcnow().isoformat(),
                 'transaction_type': kwargs.get('transaction_type'),
-                'netsuite_id': kwargs.get('netsuite_id'),
+                'netsuite_id': str(kwargs.get('netsuite_id')) if kwargs.get('netsuite_id') else None,
                 'invoice_id': kwargs.get('invoice_id'),
                 'vendor_name': kwargs.get('vendor_name'),
-                'vendor_netsuite_id': kwargs.get('vendor_netsuite_id'),
+                'vendor_netsuite_id': str(kwargs.get('vendor_netsuite_id')) if kwargs.get('vendor_netsuite_id') else None,
                 'approval_status': kwargs.get('approval_status'),
-                'amount': kwargs.get('amount'),
+                'amount': float(kwargs.get('amount')) if kwargs.get('amount') else None,
                 'currency': kwargs.get('currency', 'USD'),
                 'created_date': kwargs.get('created_date'),
                 'modified_date': kwargs.get('modified_date'),
@@ -338,7 +343,7 @@ class AuditSyncManager:
                 'transaction_number': kwargs.get('transaction_number'),
                 'posting_period': kwargs.get('posting_period'),
                 'netsuite_url': kwargs.get('netsuite_url'),
-                'raw_payload': kwargs.get('raw_payload'),
+                'raw_payload': raw_payload,
                 'sync_source': kwargs.get('sync_source', 'MANUAL'),
                 'error_message': kwargs.get('error_message')
             }

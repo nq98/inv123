@@ -2006,9 +2006,9 @@ class NetSuiteService:
             endpoint = f"/record/v1/vendorbill"
             
             # Add query parameters for recent bills
+            # Note: NetSuite REST API only supports q, limit, offset - NOT orderBy
             params = {
-                'limit': limit,
-                'orderBy': 'lastModifiedDate:desc'
+                'limit': limit
             }
             
             # Make request
@@ -2044,9 +2044,9 @@ class NetSuiteService:
             endpoint = f"/record/v1/vendorpayment"
             
             # Add query parameters for recent payments
+            # Note: NetSuite REST API only supports q, limit, offset - NOT orderBy
             params = {
-                'limit': limit,
-                'orderBy': 'lastModifiedDate:desc'
+                'limit': limit
             }
             
             # Make request
