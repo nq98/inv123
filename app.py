@@ -1547,21 +1547,30 @@ def create_invoice_in_netsuite(invoice_id):
             }), 409  # Return 409 Conflict for duplicate resources
         
         if result and result.get('success'):
-            # Update BigQuery with NetSuite bill ID
-            from google.cloud import bigquery
-            client = bigquery_service.client
-            query = f"""
-            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
-            SET netsuite_bill_id = @bill_id
-            WHERE invoice_id = @invoice_id
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
-                    bigquery.ScalarQueryParameter("bill_id", "STRING", str(result.get('bill_id')))
-                ]
-            )
-            client.query(query, job_config=job_config).result()
+            # Try to update BigQuery with NetSuite bill ID
+            # Note: This may fail if invoice was just inserted (streaming buffer)
+            try:
+                from google.cloud import bigquery
+                client = bigquery_service.client
+                query = f"""
+                UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+                SET netsuite_bill_id = @bill_id
+                WHERE invoice_id = @invoice_id
+                """
+                job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("invoice_id", "STRING", invoice_id),
+                        bigquery.ScalarQueryParameter("bill_id", "STRING", str(result.get('bill_id')))
+                    ]
+                )
+                client.query(query, job_config=job_config).result()
+                print(f"✓ Updated invoice {invoice_id} with bill ID {result.get('bill_id')}")
+            except Exception as update_err:
+                # Handle streaming buffer error gracefully - bill was still created!
+                if "streaming buffer" in str(update_err).lower():
+                    print(f"⚠️ Cannot update invoice (streaming buffer) - bill was created: {result.get('bill_id')}")
+                else:
+                    print(f"⚠️ Failed to update invoice with bill ID: {update_err}")
             
             return jsonify({
                 'success': True,
