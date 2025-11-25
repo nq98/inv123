@@ -21,6 +21,10 @@ localPort = 39335
 externalPort = 3002
 
 [[ports]]
+localPort = 39451
+externalPort = 6800
+
+[[ports]]
 localPort = 42643
 externalPort = 6000
 
@@ -66,7 +70,7 @@ waitForPort = 5000
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "chromium", "freetype", "gitFull", "glibcLocales", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "playwright-driver", "rustc", "tcl", "tk", "zlib", "nspr", "nss", "dbus", "at-spi2-atk", "cups", "libxkbcommon", "at-spi2-core", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "mesa", "cairo", "pango", "alsa-lib", "glib"]
+packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "cairo", "cargo", "chromium", "cups", "dbus", "freetype", "gitFull", "glib", "glibcLocales", "lcms2", "libev", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "libxkbcommon", "mesa", "nspr", "nss", "openjpeg", "openssl", "pango", "pkg-config", "playwright-driver", "rustc", "tcl", "tk", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "zlib"]
 
 [deployment]
 deploymentTarget = "autoscale"

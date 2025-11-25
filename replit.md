@@ -3,6 +3,11 @@
 ## Recent Changes
 
 ### November 25, 2025
+- **OpenRouter Gemini 3 Pro Integration**: Added flagship model with 1M context window
+  - Integrated OpenRouter API with `google/gemini-3-pro-preview` model
+  - Uses `OPENROUTERA` secret for API authentication
+  - 3-tier fallback chain: AI Studio → OpenRouter Gemini 3 Pro → Replit AI Integrations
+  - Best-in-class reasoning for complex invoice extraction and vendor matching
 - **Improved Smart Deduplication**: Fixed false negative deduplication issue when vendor is "Unknown"
   - Added email subject hash to deduplication key when vendor cannot be identified
   - Prevents false duplicates across different emails with the same invoice number

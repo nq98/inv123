@@ -2,18 +2,45 @@ import os
 import json
 from google import genai
 from google.genai import types
+from openai import OpenAI
 from config import config
 
+
+class OpenRouterResponse:
+    """Simple response wrapper for OpenRouter API responses"""
+    def __init__(self, text):
+        self.text = text
+
+
 class GeminiService:
-    """Service for semantic validation and reasoning using Gemini 1.5 Pro with automatic fallback"""
+    """Service for semantic validation and reasoning using Gemini 3 Pro (via OpenRouter) with automatic fallback"""
     
     def __init__(self):
-        # Primary client: User's AI Studio API key
+        # Primary client: User's AI Studio API key (gemini-2.0-flash-exp)
         api_key = config.GOOGLE_GEMINI_API_KEY or os.getenv('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY is required")
         
         self.client = genai.Client(api_key=api_key)
+        
+        # OpenRouter client: Gemini 3 Pro (flagship model with 1M context)
+        self.openrouter_client = None
+        self.openrouter_model = "google/gemini-3-pro-preview"
+        openrouter_api_key = os.getenv('OPENROUTERA')
+        
+        if openrouter_api_key:
+            try:
+                self.openrouter_client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=openrouter_api_key,
+                    default_headers={
+                        "HTTP-Referer": "https://replit.com",
+                        "X-Title": "Enterprise Invoice Extraction System"
+                    }
+                )
+                print("✅ OpenRouter client initialized with Gemini 3 Pro")
+            except Exception as e:
+                print(f"⚠️ OpenRouter client initialization failed: {e}")
         
         # Fallback client: Replit AI Integrations (billed to Replit credits)
         self.fallback_client = None
@@ -66,19 +93,75 @@ Return ONLY valid JSON. No markdown. No commentary."""
             or (hasattr(exception, 'status') and exception.status == 429)
         )
     
-    def _generate_content_with_fallback(self, model, contents, config):
+    def _call_openrouter(self, prompt, system_instruction=None, response_format="json"):
         """
-        Generate content with automatic fallback to Replit AI Integrations on rate limit
+        Call OpenRouter API with Gemini 3 Pro
+        
+        Args:
+            prompt: The user prompt
+            system_instruction: System instruction (optional)
+            response_format: Response format - "json" or "text"
+            
+        Returns:
+            Response text from Gemini 3 Pro
+        """
+        if not self.openrouter_client:
+            raise ValueError("OpenRouter client not initialized")
+        
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            kwargs = {
+                "model": self.openrouter_model,
+                "messages": messages,
+                "temperature": 0.1
+            }
+            if response_format == "json":
+                kwargs["response_format"] = {"type": "json_object"}
+            
+            response = self.openrouter_client.chat.completions.create(**kwargs)
+            
+            result_text = response.choices[0].message.content
+            print(f"✅ OpenRouter Gemini 3 Pro response received")
+            return result_text
+            
+        except Exception as e:
+            print(f"❌ OpenRouter API error: {e}")
+            raise e
+    
+    def _generate_content_with_fallback(self, model, contents, config, use_openrouter_first=False):
+        """
+        Generate content with tiered fallback chain:
+        1. OpenRouter Gemini 3 Pro (if use_openrouter_first=True and available)
+        2. AI Studio (primary client)
+        3. Replit AI Integrations (fallback on rate limit)
         
         Args:
             model: Model name (e.g., 'gemini-2.0-flash-exp')
             contents: Prompt contents
             config: GenerateContentConfig
+            use_openrouter_first: Try OpenRouter Gemini 3 Pro first
             
         Returns:
             Response from Gemini (primary or fallback)
         """
-        # Try primary client first
+        # Try OpenRouter Gemini 3 Pro first if requested and available
+        if use_openrouter_first and self.openrouter_client:
+            try:
+                print("🚀 Using OpenRouter Gemini 3 Pro...")
+                response_text = self._call_openrouter(
+                    prompt=contents,
+                    system_instruction=config.system_instruction if hasattr(config, 'system_instruction') else None,
+                    response_format="json" if config.response_mime_type == "application/json" else "text"
+                )
+                return OpenRouterResponse(response_text)
+            except Exception as e:
+                print(f"⚠️ OpenRouter failed: {e}, falling back to AI Studio...")
+        
+        # Try primary client (AI Studio)
         try:
             response = self.client.models.generate_content(
                 model=model,
@@ -91,7 +174,20 @@ Return ONLY valid JSON. No markdown. No commentary."""
             if self._is_rate_limit_error(e):
                 print(f"⚠️ AI Studio rate limit hit: {e}")
                 
-                # Try fallback if available
+                # Try OpenRouter if not already tried
+                if not use_openrouter_first and self.openrouter_client:
+                    print("🔄 Falling back to OpenRouter Gemini 3 Pro...")
+                    try:
+                        response_text = self._call_openrouter(
+                            prompt=contents,
+                            system_instruction=config.system_instruction if hasattr(config, 'system_instruction') else None,
+                            response_format="json" if config.response_mime_type == "application/json" else "text"
+                        )
+                        return OpenRouterResponse(response_text)
+                    except Exception as openrouter_error:
+                        print(f"⚠️ OpenRouter also failed: {openrouter_error}")
+                
+                # Try Replit AI Integrations fallback
                 if self.fallback_client:
                     print("🔄 Falling back to Replit AI Integrations...")
                     try:
@@ -600,7 +696,7 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
                 "reasoning": f"AI filter error: {str(e)} - Defaulting to KEEP for safety"
             }
     
-    def generate_text(self, prompt, temperature=0.1, response_mime_type='application/json'):
+    def generate_text(self, prompt, temperature=0.1, response_mime_type='application/json', use_gemini3=False):
         """
         Generate text using Gemini with automatic fallback
         
@@ -608,6 +704,7 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
             prompt: Text prompt to send to Gemini
             temperature: Sampling temperature (0.0-1.0)
             response_mime_type: MIME type for response (default: application/json)
+            use_gemini3: Use OpenRouter Gemini 3 Pro first (default: False)
             
         Returns:
             String response from Gemini
@@ -618,10 +715,37 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
             config=types.GenerateContentConfig(
                 temperature=temperature,
                 response_mime_type=response_mime_type
-            )
+            ),
+            use_openrouter_first=use_gemini3
         )
         
         return response.text or "{}"
+    
+    def generate_with_gemini3(self, prompt, system_instruction=None, response_format="json"):
+        """
+        Generate text using OpenRouter Gemini 3 Pro directly (1M context, best reasoning)
+        
+        Args:
+            prompt: User prompt
+            system_instruction: System instruction (optional)
+            response_format: "json" or "text"
+            
+        Returns:
+            String response from Gemini 3 Pro
+        """
+        if not self.openrouter_client:
+            print("⚠️ OpenRouter not available, falling back to standard generation")
+            return self.generate_text(prompt, response_mime_type="application/json" if response_format == "json" else "text/plain")
+        
+        try:
+            return self._call_openrouter(
+                prompt=prompt,
+                system_instruction=system_instruction,
+                response_format=response_format
+            )
+        except Exception as e:
+            print(f"⚠️ Gemini 3 Pro failed: {e}, falling back to standard generation")
+            return self.generate_text(prompt, response_mime_type="application/json" if response_format == "json" else "text/plain")
     
     def extract_invoice_from_text(self, email_html_or_text, email_subject="", sender_email=""):
         """
