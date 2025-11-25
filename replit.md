@@ -3,6 +3,14 @@
 ## Recent Changes
 
 ### November 25, 2025
+- **Invoice Timeline Feature**: Visual timeline showing bill lifecycle events for each invoice
+  - New API endpoint `/api/invoices/<invoice_id>/timeline` fetches formatted timeline events
+  - Clean visual component with icons for each event type (created, updated, approved, rejected, paid)
+  - Timeline auto-loads when Gmail invoice cards render
+  - Auto-refreshes after Create Bill and Update Bill actions
+  - Logs all NetSuite approval status changes (approved, rejected, pending, paid)
+  - Collapsible timeline section on each invoice card
+  - BigQuery `netsuite_events` table stores all events with timestamps
 - **Gmail Import Vendor Matching + NetSuite Bill Actions**: Full integration of vendor matching in Gmail import results
   - Vendor matching runs automatically after each invoice extraction (both batch text lane and PDF lane)
   - Uses cached service singletons (`get_bigquery_service()`, `get_vertex_search_service()`) for efficient processing
