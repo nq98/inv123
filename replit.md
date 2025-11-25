@@ -3,6 +3,14 @@
 ## Recent Changes
 
 ### November 25, 2025
+- **Gmail Import Vendor Matching + NetSuite Bill Actions**: Full integration of vendor matching in Gmail import results
+  - Vendor matching runs automatically after each invoice extraction (both batch text lane and PDF lane)
+  - Uses cached service singletons (`get_bigquery_service()`, `get_vertex_search_service()`) for efficient processing
+  - UI displays color-coded vendor matching section with verdict (MATCH=green, NEW_VENDOR=blue, AMBIGUOUS=orange)
+  - Shows matching method (Tax ID Match, AI Semantic, Not in DB) and confidence percentage
+  - Displays database vendor details when matched (vendor ID, name, NetSuite ID)
+  - Shows AI reasoning for match decisions
+  - NetSuite Actions panel with Create Bill and Update Bill buttons using proper `/api/netsuite/invoice/<id>/create` and `/update` endpoints
 - **🚫 ZERO TOLERANCE ANTI-JUNK SYSTEM**: Comprehensive data quality enforcement
   - **Anti-Hallucination Rules**: AI explicitly forbidden from generating fake UUIDs as invoice numbers
   - **Amount Validation**: Zero-amount invoices automatically rejected (amount > 0 required)
