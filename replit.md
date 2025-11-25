@@ -1,5 +1,8 @@
 # Enterprise Invoice Extraction System
 
+## Documentation
+- **[TECHNICAL_IMPLEMENTATION_DOCUMENT.md](./TECHNICAL_IMPLEMENTATION_DOCUMENT.md)** - Complete system documentation with all services, APIs, database schemas, and integrations
+
 ## Recent Changes
 
 ### November 25, 2025
