@@ -638,6 +638,8 @@ async function checkGmailStatus() {
             gmailStatus.innerHTML = '<div style="padding: 10px; background: #e8f5e9; border-radius: 6px; color: #2e7d32;">✅ Gmail Connected</div>';
             gmailConnectSection.classList.add('hidden');
             gmailImportSection.classList.remove('hidden');
+            
+            checkResumableScans();
         } else {
             gmailStatus.innerHTML = '<div style="padding: 10px; background: #fff3e0; border-radius: 6px; color: #e65100;">ℹ️ Connect Gmail to import invoices automatically</div>';
             gmailConnectSection.classList.remove('hidden');
@@ -1086,15 +1088,25 @@ function displayInvoiceData(invoices) {
                     </div>
                 ` : ''}
                 
-                <div style="margin-top: 15px; display: flex; gap: 10px;">
-                    ${invoice.gcs_uri ? `
-                        <button onclick="viewGmailInvoiceDocument('${encodeURIComponent(invoice.gcs_uri)}')" style="padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
-                            📄 View Source Document
+                <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 10px; flex: 1;">
+                        ${invoice.gcs_uri ? `
+                            <button onclick="viewGmailInvoiceDocument('${encodeURIComponent(invoice.gcs_uri)}')" style="padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                                📄 View Source Document
+                            </button>
+                        ` : ''}
+                        <button onclick="toggleFullData(${idx})" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                            📋 View Complete JSON Schema
                         </button>
-                    ` : ''}
-                    <button onclick="toggleFullData(${idx})" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
-                        📋 View Complete JSON Schema
-                    </button>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-left: auto;" id="approvalButtons${idx}">
+                        <button onclick="approveInvoice('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" style="padding: 10px 20px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                            ✅ Approve
+                        </button>
+                        <button onclick="showRejectDialog('${encodeURIComponent(fullData.invoiceNumber || invoice.invoice_number || 'unknown')}', ${idx})" style="padding: 10px 20px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                            ❌ Reject
+                        </button>
+                    </div>
                 </div>
                 
                 <div id="fullData${idx}" style="display: none; margin-top: 15px; background: #1e1e1e; padding: 15px; border-radius: 4px; max-height: 500px; overflow-y: auto;">
@@ -1135,6 +1147,280 @@ window.viewGmailInvoiceDocument = async function(encodedGcsUri) {
         console.error('Error viewing document:', error);
         alert('Failed to view document: ' + error.message);
     }
+};
+
+window.approveInvoice = async function(encodedInvoiceId, idx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    console.log('✅ Approving invoice:', invoiceId);
+    
+    const approvalButtons = document.getElementById(`approvalButtons${idx}`);
+    if (approvalButtons) {
+        approvalButtons.innerHTML = '<span style="color: #888; font-size: 14px;">Processing...</span>';
+    }
+    
+    try {
+        const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            if (approvalButtons) {
+                approvalButtons.innerHTML = `
+                    <span style="padding: 10px 20px; background: #e8f5e9; color: #2e7d32; border-radius: 4px; font-size: 14px; font-weight: 500;">
+                        ✅ Approved
+                    </span>
+                `;
+            }
+        } else {
+            alert('Failed to approve: ' + (data.error || 'Unknown error'));
+            if (approvalButtons) {
+                approvalButtons.innerHTML = `
+                    <span style="color: #d32f2f; font-size: 14px;">❌ Approval failed - try again</span>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error approving invoice:', error);
+        alert('Failed to approve: ' + error.message);
+    }
+};
+
+window.showRejectDialog = function(encodedInvoiceId, idx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    
+    const dialog = document.createElement('div');
+    dialog.id = `rejectDialog${idx}`;
+    dialog.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+    
+    dialog.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%;">
+            <h3 style="margin: 0 0 20px 0; color: #d32f2f;">❌ Reject Invoice</h3>
+            <p style="margin-bottom: 15px; color: #666;">Please provide a reason for rejecting this invoice. This helps improve AI accuracy.</p>
+            
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Rejection Reason *</label>
+            <select id="rejectReason${idx}" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px;">
+                <option value="">Select a reason...</option>
+                <option value="Not an invoice - this is a receipt">Not an invoice (receipt)</option>
+                <option value="Not an invoice - payment confirmation/notification">Not an invoice (payment notification)</option>
+                <option value="Duplicate invoice already imported">Duplicate invoice</option>
+                <option value="Wrong vendor name extracted">Wrong vendor name</option>
+                <option value="Wrong amount extracted">Wrong amount</option>
+                <option value="Spam or irrelevant email">Spam/irrelevant</option>
+                <option value="other">Other (specify below)</option>
+            </select>
+            
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Additional Details (optional)</label>
+            <textarea id="rejectDetails${idx}" placeholder="Provide more details about why this was rejected..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; height: 80px; resize: vertical; margin-bottom: 15px;"></textarea>
+            
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Correct Vendor Name (optional)</label>
+            <input type="text" id="correctVendor${idx}" placeholder="Enter the correct vendor name" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px;">
+            
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="document.getElementById('rejectDialog${idx}').remove()" style="padding: 10px 20px; background: #f5f5f5; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                    Cancel
+                </button>
+                <button onclick="submitRejection('${encodeURIComponent(invoiceId)}', ${idx})" style="padding: 10px 20px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                    Submit Rejection
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(dialog);
+};
+
+window.submitRejection = async function(encodedInvoiceId, idx) {
+    const invoiceId = decodeURIComponent(encodedInvoiceId);
+    const reasonSelect = document.getElementById(`rejectReason${idx}`);
+    const details = document.getElementById(`rejectDetails${idx}`)?.value || '';
+    const correctVendor = document.getElementById(`correctVendor${idx}`)?.value || '';
+    
+    let reason = reasonSelect?.value || '';
+    if (reason === 'other') {
+        reason = details || 'User rejected without specific reason';
+    } else if (details) {
+        reason = `${reason}: ${details}`;
+    }
+    
+    if (!reason) {
+        alert('Please select a rejection reason');
+        return;
+    }
+    
+    const dialog = document.getElementById(`rejectDialog${idx}`);
+    
+    try {
+        const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                reason: reason,
+                corrected_vendor: correctVendor || null
+            })
+        });
+        const data = await response.json();
+        
+        if (dialog) dialog.remove();
+        
+        if (data.success) {
+            const approvalButtons = document.getElementById(`approvalButtons${idx}`);
+            if (approvalButtons) {
+                approvalButtons.innerHTML = `
+                    <span style="padding: 10px 20px; background: #ffebee; color: #c62828; border-radius: 4px; font-size: 14px; font-weight: 500;">
+                        ❌ Rejected
+                    </span>
+                `;
+            }
+        } else {
+            alert('Failed to reject: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error rejecting invoice:', error);
+        alert('Failed to reject: ' + error.message);
+        if (dialog) dialog.remove();
+    }
+};
+
+async function checkResumableScans() {
+    try {
+        const response = await fetch('/api/ap-automation/gmail/scans/resumable');
+        const data = await response.json();
+        
+        if (data.success && data.resumable_scans && data.resumable_scans.length > 0) {
+            showResumableScansBanner(data.resumable_scans);
+        }
+    } catch (error) {
+        console.log('Could not check for resumable scans:', error);
+    }
+}
+
+function showResumableScansBanner(scans) {
+    const banner = document.createElement('div');
+    banner.id = 'resumableScansBanner';
+    banner.style.cssText = 'background: #fff3e0; border: 1px solid #ffb74d; border-radius: 6px; padding: 15px; margin-bottom: 15px;';
+    
+    let html = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <span style="font-size: 20px;">⏸️</span>
+            <strong style="color: #e65100;">Resumable Scans Found</strong>
+        </div>
+        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">
+            You have ${scans.length} scan(s) that can be resumed from where they left off.
+        </p>
+    `;
+    
+    scans.forEach((scan, idx) => {
+        const date = new Date(scan.started_at || scan.created_at).toLocaleDateString();
+        const processed = scan.processed_count || 0;
+        const total = scan.total_emails || 0;
+        
+        html += `
+            <div style="background: white; padding: 10px; border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight: 500;">Scan from ${date}</div>
+                    <div style="font-size: 12px; color: #888;">Progress: ${processed}/${total} emails • Status: ${scan.status}</div>
+                </div>
+                <button onclick="resumeGmailScan('${scan.scan_id}')" style="padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                    ▶️ Resume
+                </button>
+            </div>
+        `;
+    });
+    
+    banner.innerHTML = html;
+    
+    const gmailImportSection = document.getElementById('gmailImportSection');
+    if (gmailImportSection) {
+        const existingBanner = document.getElementById('resumableScansBanner');
+        if (existingBanner) existingBanner.remove();
+        gmailImportSection.insertBefore(banner, gmailImportSection.firstChild);
+    }
+}
+
+window.resumeGmailScan = function(scanId) {
+    const gmailImportBtn = document.getElementById('gmailImportBtn');
+    const gmailProgressTerminal = document.getElementById('gmailProgressTerminal');
+    const gmailTimeRange = document.getElementById('gmailTimeRange');
+    const gmailImportResults = document.getElementById('gmailImportResults');
+    
+    const days = parseInt(gmailTimeRange?.value) || 7;
+    
+    if (gmailImportBtn) {
+        gmailImportBtn.disabled = true;
+        gmailImportBtn.textContent = '⏳ Resuming...';
+    }
+    
+    if (gmailProgressTerminal) {
+        gmailProgressTerminal.classList.remove('hidden');
+        clearTerminal();
+    }
+    
+    if (gmailImportResults) {
+        gmailImportResults.innerHTML = '';
+    }
+    
+    const existingBanner = document.getElementById('resumableScansBanner');
+    if (existingBanner) existingBanner.remove();
+    
+    const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?days=${days}&resume_scan_id=${scanId}`);
+    
+    let importResults = { imported: 0, skipped: 0, total: 0, invoices: [] };
+    
+    eventSource.addEventListener('progress', (event) => {
+        const data = JSON.parse(event.data);
+        addTerminalLine(data.message, data.type || 'info');
+    });
+    
+    eventSource.addEventListener('complete', (event) => {
+        const data = JSON.parse(event.data);
+        importResults = {
+            imported: data.imported || 0,
+            skipped: data.skipped || 0,
+            total: data.total || 0,
+            invoices: data.invoices || []
+        };
+        
+        addTerminalLine('✅ Resume completed successfully!', 'success');
+        eventSource.close();
+        
+        if (gmailImportBtn) {
+            gmailImportBtn.disabled = false;
+            gmailImportBtn.textContent = '🔍 Start Smart Scan';
+        }
+        
+        displayImportSummary(importResults);
+        displayInvoiceData(importResults.invoices);
+    });
+    
+    eventSource.addEventListener('error', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            addTerminalLine(`❌ ${data.message}`, 'error');
+            if (data.can_resume && data.scan_id) {
+                addTerminalLine(`💡 You can resume this scan later from the checkpoint.`, 'info');
+            }
+            eventSource.close();
+            if (gmailImportBtn) {
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            }
+        } catch (e) {
+            console.error('Error parsing error event:', e);
+        }
+    });
+    
+    eventSource.onerror = (error) => {
+        if (eventSource.readyState === EventSource.CLOSED) {
+            addTerminalLine('❌ Connection closed', 'error');
+            eventSource.close();
+            if (gmailImportBtn) {
+                gmailImportBtn.disabled = false;
+                gmailImportBtn.textContent = '🔍 Start Smart Scan';
+            }
+        }
+    };
 };
 
 function displayImportSummary(results) {
