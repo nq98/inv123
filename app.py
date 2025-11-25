@@ -5573,7 +5573,7 @@ def check_bill_approval_status(invoice_id):
         start_time = time.time()
         
         # Initialize services
-        netsuite = get_netsuite_service()
+        netsuite = NetSuiteService()
         tracker = NetSuiteEventTracker()
         
         # Get invoice details from BigQuery first
@@ -5715,7 +5715,7 @@ def sync_all_bill_approvals():
             import time
             
             # Initialize services
-            netsuite = get_netsuite_service()
+            netsuite = NetSuiteService()
             tracker = NetSuiteEventTracker()
             bigquery_service = BigQueryService()
             
@@ -6139,7 +6139,7 @@ def get_invoice_truth(invoice_id):
     """
     try:
         # Initialize NetSuite service
-        netsuite = get_netsuite_service()
+        netsuite = NetSuiteService()
         
         if not netsuite or not netsuite.enabled:
             return jsonify({
@@ -6298,7 +6298,7 @@ def get_netsuite_bill_status(external_id):
     """
     try:
         # Initialize NetSuite service
-        netsuite = get_netsuite_service()
+        netsuite = NetSuiteService()
         
         if not netsuite or not netsuite.enabled:
             return jsonify({

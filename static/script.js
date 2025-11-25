@@ -115,27 +115,77 @@ async function updateBillInNetSuite(invoiceId) {
     }
 }
 
-// Function to check and update all invoice statuses on the page
+// Function to check and update all invoice statuses on the page - CHECKS REAL NETSUITE STATUS
 async function checkAllInvoiceStatuses() {
-    // Find all invoice IDs on the page
-    const invoiceCards = document.querySelectorAll('.invoice-card');
-    const invoiceIds = new Set();
+    // Find all invoice cards using data attribute
+    const invoiceCards = document.querySelectorAll('.invoice-card[data-invoice-id]');
     
-    invoiceCards.forEach(card => {
-        // Extract invoice ID from the card content
-        const idMatch = card.innerHTML.match(/📄\s*(\d+)/);
-        if (idMatch) {
-            invoiceIds.add(idMatch[1]);
-        }
-    });
+    console.log(`🔍 Checking REAL NetSuite status for ${invoiceCards.length} invoices...`);
     
-    console.log(`Checking truth for ${invoiceIds.size} invoices...`);
-    
-    // Check truth for each invoice
-    for (const invoiceId of invoiceIds) {
-        const truth = await getInvoiceTruth(invoiceId);
-        if (truth) {
-            updateInvoiceButtonWithTruth(invoiceId, truth);
+    // Check each invoice card
+    for (const card of invoiceCards) {
+        const invoiceId = card.dataset.invoiceId;
+        if (!invoiceId) continue;
+        
+        try {
+            const truth = await getInvoiceTruth(invoiceId);
+            console.log(`📋 Invoice ${invoiceId} NetSuite status:`, truth);
+            
+            // Find the action button in this card
+            const actionBtn = card.querySelector('.netsuite-action-btn');
+            if (!actionBtn) continue;
+            
+            // Update button based on REAL NetSuite status
+            if (truth && truth.bill_exists) {
+                // Bill exists in NetSuite - check approval status
+                const approvalStatus = truth.approval_status || 'Open';
+                
+                if (approvalStatus === 'Approved' || approvalStatus === 'Paid In Full') {
+                    // Bill is approved - cannot modify
+                    actionBtn.innerHTML = `✅ Bill ${approvalStatus}`;
+                    actionBtn.className = 'netsuite-action-btn btn btn-success btn-sm';
+                    actionBtn.disabled = true;
+                    actionBtn.style.cursor = 'not-allowed';
+                    actionBtn.title = 'Bill is approved in NetSuite and cannot be modified';
+                    actionBtn.onclick = null;
+                } else {
+                    // Bill is open - can update
+                    actionBtn.innerHTML = '🔄 Update Bill';
+                    actionBtn.className = 'netsuite-action-btn btn btn-warning btn-sm';
+                    actionBtn.disabled = false;
+                    actionBtn.style.cursor = 'pointer';
+                    actionBtn.title = `Bill is ${approvalStatus} - click to update`;
+                    actionBtn.onclick = () => updateBillInNetSuite(invoiceId);
+                }
+                
+                // Update sync badge
+                const syncBadge = card.querySelector('.sync-badge');
+                if (syncBadge) {
+                    syncBadge.innerHTML = '<span class="badge badge-success">✅ In NetSuite</span>';
+                }
+            } else {
+                // No bill exists - show create button
+                actionBtn.innerHTML = '📋 Create Bill';
+                actionBtn.className = 'netsuite-action-btn btn btn-primary btn-sm';
+                actionBtn.disabled = false;
+                actionBtn.style.cursor = 'pointer';
+                actionBtn.title = 'Create bill in NetSuite';
+                actionBtn.onclick = () => createBillInNetSuite(invoiceId);
+            }
+            
+            // Remove loading state
+            actionBtn.removeAttribute('data-loading');
+            
+        } catch (error) {
+            console.error(`❌ Error checking status for ${invoiceId}:`, error);
+            // Show error state
+            const actionBtn = card.querySelector('.netsuite-action-btn');
+            if (actionBtn) {
+                actionBtn.innerHTML = '⚠️ Check Failed';
+                actionBtn.className = 'netsuite-action-btn btn btn-secondary btn-sm';
+                actionBtn.disabled = false;
+                actionBtn.onclick = () => checkAllInvoiceStatuses();
+            }
         }
     }
 }
@@ -3003,7 +3053,10 @@ function renderInvoiceListView(invoices) {
         const currency = invoice.currency || 'USD';
         
         html += `
-            <div class="invoice-card" style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; transition: all 0.3s; cursor: pointer;" 
+            <div class="invoice-card" 
+                 data-invoice-id="${invoice.invoice_id}"
+                 data-netsuite-bill-id="${invoice.netsuite_bill_id || ''}"
+                 style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; transition: all 0.3s; cursor: pointer;" 
                  onmouseover="this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'" 
                  onmouseout="this.style.boxShadow='none'">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
@@ -3011,9 +3064,9 @@ function renderInvoiceListView(invoices) {
                         <h3 style="margin: 0 0 5px 0; font-size: 18px; color: #111827;">
                             📄 ${invoice.invoice_id || 'Unknown ID'}
                         </h3>
-                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <div class="invoice-badges" style="display: flex; gap: 8px; margin-top: 8px;">
                             ${statusBadge}
-                            ${syncBadge}
+                            <span class="sync-badge">${syncBadge}</span>
                             ${paymentBadge}
                         </div>
                     </div>
@@ -3040,7 +3093,7 @@ function renderInvoiceListView(invoices) {
                     </div>
                 </div>
                 
-                <div style="margin-top: 15px; display: flex; gap: 8px;">
+                <div class="invoice-actions" style="margin-top: 15px; display: flex; gap: 8px;">
                     ${invoice.gcs_uri ? `
                         <button onclick="downloadInvoice('${invoice.invoice_id}', event)" class="btn btn-secondary btn-sm">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3051,15 +3104,9 @@ function renderInvoiceListView(invoices) {
                             Download
                         </button>
                     ` : ''}
-                    ${(!invoice.netsuite_bill_id || invoice.netsuite_bill_id === null || invoice.netsuite_bill_id === 'null' || invoice.netsuite_bill_id === 'None') ? `
-                        <button onclick="createBillInNetSuite('${invoice.invoice_id}')" class="btn btn-primary btn-sm">
-                            📋 Create Bill
-                        </button>
-                    ` : `
-                        <button onclick="updateBillInNetSuite('${invoice.invoice_id}')" class="btn btn-warning btn-sm">
-                            🔄 Update Bill
-                        </button>
-                    `}
+                    <button class="netsuite-action-btn btn btn-sm" data-invoice-id="${invoice.invoice_id}" data-loading="true">
+                        ⏳ Checking...
+                    </button>
                 </div>
             </div>
         `;
