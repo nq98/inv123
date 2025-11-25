@@ -2253,17 +2253,40 @@ def gmail_import_stream():
                 for idx, (message, metadata, confidence) in enumerate(text_lane, 1):
                     email_id = f"text_email_{idx}"
                     
-                    # Get email body content
-                    html_body = gmail_service.extract_html_body(message)
+                    # Get email body content - PREFER PLAIN TEXT or SNIPPET over raw HTML!
+                    # Raw HTML contains CSS that wastes context window
                     plain_body = gmail_service.extract_plain_text_body(message)
-                    body_content = html_body or plain_body or metadata.get('snippet', '')
+                    snippet = metadata.get('snippet', '')
+                    
+                    # Use plain text first, then snippet, HTML as last resort
+                    if plain_body and len(plain_body) > 50:
+                        body_content = plain_body
+                    elif snippet and len(snippet) > 20:
+                        # Snippet often has the key info like "$50.06 Amount paid"
+                        body_content = snippet
+                    else:
+                        # HTML fallback - try to extract text content
+                        html_body = gmail_service.extract_html_body(message)
+                        if html_body:
+                            # Strip HTML tags to get text content
+                            import re
+                            # Remove style/script blocks first
+                            text = re.sub(r'<style[^>]*>.*?</style>', '', html_body, flags=re.DOTALL | re.IGNORECASE)
+                            text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+                            # Remove HTML tags
+                            text = re.sub(r'<[^>]+>', ' ', text)
+                            # Clean up whitespace
+                            text = re.sub(r'\s+', ' ', text).strip()
+                            body_content = text
+                        else:
+                            body_content = snippet
                     
                     emails_for_batch.append({
                         'email_id': email_id,
                         'subject': metadata.get('subject', '(no subject)'),
                         'sender': metadata.get('from', 'unknown'),
                         'date': metadata.get('date', 'unknown'),
-                        'body': body_content[:2500]  # Truncate for context window
+                        'body': body_content[:3000]  # Increased limit for actual content
                     })
                     email_lookup[email_id] = (message, metadata, confidence)
                 
