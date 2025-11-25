@@ -132,23 +132,23 @@ Return ONLY valid JSON. No markdown. No commentary."""
             print(f"❌ OpenRouter API error: {e}")
             raise e
     
-    def _generate_content_with_fallback(self, model, contents, config, use_openrouter_first=False):
+    def _generate_content_with_fallback(self, model, contents, config, use_openrouter_first=True):
         """
         Generate content with tiered fallback chain:
-        1. OpenRouter Gemini 3 Pro (if use_openrouter_first=True and available)
-        2. AI Studio (primary client)
-        3. Replit AI Integrations (fallback on rate limit)
+        1. OpenRouter Gemini 3 Pro (PRIMARY - 1M context, best reasoning)
+        2. AI Studio (gemini-2.0-flash-exp - fast fallback)
+        3. Replit AI Integrations (final fallback on rate limit)
         
         Args:
             model: Model name (e.g., 'gemini-2.0-flash-exp')
             contents: Prompt contents
             config: GenerateContentConfig
-            use_openrouter_first: Try OpenRouter Gemini 3 Pro first
+            use_openrouter_first: Try OpenRouter Gemini 3 Pro first (default: True)
             
         Returns:
             Response from Gemini (primary or fallback)
         """
-        # Try OpenRouter Gemini 3 Pro first if requested and available
+        # Try OpenRouter Gemini 3 Pro first (PRIMARY)
         if use_openrouter_first and self.openrouter_client:
             try:
                 print("🚀 Using OpenRouter Gemini 3 Pro...")
