@@ -315,6 +315,77 @@ class GmailService:
         
         return links
     
+    def extract_html_body(self, message):
+        """
+        Extract the HTML body content from an email message
+        
+        Returns: HTML string content or None if not found
+        """
+        try:
+            html_content = ''
+            parts = message.get('payload', {}).get('parts', [])
+            
+            def extract_html_recursive(part):
+                nonlocal html_content
+                if part.get('mimeType') == 'text/html' and 'data' in part.get('body', {}):
+                    html_content = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                    return True
+                if 'parts' in part:
+                    for subpart in part['parts']:
+                        if extract_html_recursive(subpart):
+                            return True
+                return False
+            
+            for part in parts:
+                if extract_html_recursive(part):
+                    break
+            
+            if not html_content and 'body' in message.get('payload', {}) and 'data' in message['payload']['body']:
+                payload_type = message.get('payload', {}).get('mimeType', '')
+                if 'html' in payload_type.lower():
+                    html_content = base64.urlsafe_b64decode(message['payload']['body']['data']).decode('utf-8', errors='ignore')
+            
+            return html_content if html_content else None
+            
+        except Exception as e:
+            print(f"Error extracting HTML body: {e}")
+            return None
+    
+    def html_to_image(self, html_content, subject='email_receipt'):
+        """
+        Convert HTML email content to a PNG image using Playwright
+        
+        Returns: (filename, image_data) or None if failed
+        """
+        try:
+            from playwright.sync_api import sync_playwright
+            import hashlib
+            import time
+            
+            timestamp = int(time.time())
+            safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
+            filename = f"email_receipt_{safe_subject}_{timestamp}.png"
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={'width': 800, 'height': 1200})
+                
+                page.set_content(html_content)
+                page.wait_for_load_state('networkidle', timeout=10000)
+                
+                time.sleep(0.5)
+                
+                screenshot_data = page.screenshot(full_page=True, type='png')
+                
+                browser.close()
+                
+            print(f"📸 HTML email converted to image: {filename}")
+            return (filename, screenshot_data)
+            
+        except Exception as e:
+            print(f"Error converting HTML to image: {e}")
+            return None
+    
     def download_pdf_from_link(self, url, timeout=30):
         """
         Download PDF from a URL
@@ -330,7 +401,6 @@ class GmailService:
                 content_type = response.headers.get('Content-Type', '')
                 
                 if 'pdf' in content_type.lower() or url.lower().endswith('.pdf'):
-                    # Extract filename from URL or Content-Disposition header
                     filename = 'invoice.pdf'
                     
                     if 'Content-Disposition' in response.headers:
@@ -338,10 +408,9 @@ class GmailService:
                         if 'filename=' in cd:
                             filename = cd.split('filename=')[1].strip('"')
                     else:
-                        # Extract from URL
                         url_parts = url.split('/')
                         if url_parts[-1] and '.pdf' in url_parts[-1].lower():
-                            filename = url_parts[-1].split('?')[0]  # Remove query params
+                            filename = url_parts[-1].split('?')[0]
                     
                     return (filename, response.content)
         

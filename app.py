@@ -1007,6 +1007,14 @@ def update_bill_in_netsuite(invoice_id):
                 'netsuite_url': bill_status.get('netsuite_url')
             }), 403  # Forbidden - cannot modify approved bills
         
+        # Extract the NetSuite bill ID from the status response
+        netsuite_bill_id = bill_status.get('bill_id') or bill_status.get('netsuite_id') or bill_status.get('id')
+        if not netsuite_bill_id:
+            return jsonify({
+                'success': False,
+                'error': 'Could not determine NetSuite bill ID'
+            }), 400
+        
         # Get invoice details from BigQuery
         bigquery_service = BigQueryService()
         invoice = bigquery_service.get_invoice_details(invoice_id)
@@ -2147,7 +2155,61 @@ def gmail_import_stream():
                     links = gmail_service.extract_links_from_body(message)
                     
                     if not attachments and not links:
-                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No PDFs or download links found'})
+                        yield send_event('progress', {'type': 'info', 'message': f'  📧 No attachments/links found, trying HTML body extraction...'})
+                        html_body = gmail_service.extract_html_body(message)
+                        if html_body:
+                            yield send_event('progress', {'type': 'status', 'message': '  📸 Converting email body to image...'})
+                            html_result = gmail_service.html_to_image(html_body, subject)
+                            if html_result:
+                                filename, image_data = html_result
+                                secure_name = secure_filename(filename)
+                                filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
+                                
+                                with open(filepath, 'wb') as f:
+                                    f.write(image_data)
+                                
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body)...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                                
+                                try:
+                                    invoice_result = processor.process_local_file(filepath, 'image/png')
+                                    os.remove(filepath)
+                                    
+                                    validated = invoice_result.get('validated_data', {})
+                                    vendor_data = validated.get('vendor', {})
+                                    totals = validated.get('totals', {})
+                                    
+                                    vendor = vendor_data.get('name', 'Unknown')
+                                    total = totals.get('total', 0)
+                                    currency = validated.get('currency', 'USD')
+                                    invoice_num = validated.get('invoiceNumber', 'N/A')
+                                    
+                                    if vendor and vendor != 'Unknown' and total and total > 0:
+                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM EMAIL BODY: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                        imported_invoices.append({
+                                            'subject': subject,
+                                            'sender': sender,
+                                            'date': metadata.get('date'),
+                                            'vendor': vendor,
+                                            'invoice_number': invoice_num,
+                                            'total': total,
+                                            'currency': currency,
+                                            'line_items': validated.get('lineItems', []),
+                                            'full_data': validated,
+                                            'source_type': 'email_body'
+                                        })
+                                        continue
+                                    else:
+                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
+                                except Exception as html_proc_err:
+                                    if os.path.exists(filepath):
+                                        os.remove(filepath)
+                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_proc_err)[:80]}'})
+                            else:
+                                yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ Could not convert email body to image'})
+                        else:
+                            yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ No HTML content found in email'})
                         extraction_failures.append(subject)
                         continue
                     
@@ -2204,6 +2266,9 @@ def gmail_import_stream():
                             extraction_failures.append(subject)
                     
                     # Process links with AI-semantic intelligent processing
+                    link_success = False
+                    all_links_auth_failed = True
+                    
                     for link_url in links[:2]:  # Limit to first 2 links per email
                         yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
                         
@@ -2310,10 +2375,69 @@ def gmail_import_stream():
                                     'full_data': validated,
                                     'source_type': link_type  # Track if from screenshot or PDF
                                 })
+                                link_success = True
                         else:
                             # Processing failed - show why
                             reasoning = link_result['reasoning']
                             yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
+                            # Check if this is an authentication failure
+                            if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
+                                pass  # Keep all_links_auth_failed = True
+                            else:
+                                all_links_auth_failed = False
+                    
+                    # If we had links but all failed due to authentication, try HTML body extraction
+                    if links and not link_success and not attachments and all_links_auth_failed:
+                        yield send_event('progress', {'type': 'info', 'message': f'  📧 Links require auth, trying email body extraction...'})
+                        html_body = gmail_service.extract_html_body(message)
+                        if html_body:
+                            yield send_event('progress', {'type': 'status', 'message': '  📸 Converting email body to image...'})
+                            html_result = gmail_service.html_to_image(html_body, subject)
+                            if html_result:
+                                html_filename, html_image_data = html_result
+                                secure_html_name = secure_filename(html_filename)
+                                html_filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_html_name)
+                                
+                                with open(html_filepath, 'wb') as f:
+                                    f.write(html_image_data)
+                                
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body)...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
+                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                                
+                                try:
+                                    html_invoice_result = processor.process_local_file(html_filepath, 'image/png')
+                                    os.remove(html_filepath)
+                                    
+                                    html_validated = html_invoice_result.get('validated_data', {})
+                                    html_vendor = html_validated.get('vendor', {}).get('name', 'Unknown')
+                                    html_invoice_num = html_validated.get('invoiceNumber', 'N/A')
+                                    html_totals = html_validated.get('totals', {})
+                                    html_total = html_totals.get('total', 0)
+                                    html_currency = html_validated.get('currency', 'USD')
+                                    
+                                    if html_vendor and html_vendor != 'Unknown' and html_total and html_total > 0:
+                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM EMAIL BODY: {html_vendor} | Invoice #{html_invoice_num} | {html_currency} {html_total}'})
+                                        imported_invoices.append({
+                                            'subject': subject,
+                                            'sender': sender,
+                                            'date': metadata.get('date'),
+                                            'vendor': html_vendor,
+                                            'invoice_number': html_invoice_num,
+                                            'total': html_total,
+                                            'currency': html_currency,
+                                            'line_items': html_validated.get('lineItems', []),
+                                            'full_data': html_validated,
+                                            'source_type': 'email_body'
+                                        })
+                                    else:
+                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
+                                        extraction_failures.append(subject)
+                                except Exception as html_err:
+                                    if os.path.exists(html_filepath):
+                                        os.remove(html_filepath)
+                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_err)[:80]}'})
+                                    extraction_failures.append(subject)
                     
                 except Exception as e:
                     yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
