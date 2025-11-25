@@ -532,6 +532,20 @@ def add_header(response):
 def index():
     return render_template('index.html')
 
+@app.route('/<path:encoded_hash>', methods=['GET'])
+def handle_encoded_hash(encoded_hash):
+    """Handle URL-encoded hash fragments from 'Open in Browser' feature.
+    
+    When Replit's 'Open in Browser' is clicked, URLs like /#gmail become /%23gmail
+    This route catches those and redirects properly.
+    """
+    if encoded_hash.startswith('%23') or encoded_hash.startswith('#'):
+        hash_part = encoded_hash.replace('%23', '#').lstrip('#')
+        return redirect(f'/#{hash_part}')
+    if encoded_hash in ['gmail', 'vendors', 'invoices', 'netsuite', 'csv-import']:
+        return redirect(f'/#{encoded_hash}')
+    return render_template('index.html')
+
 @app.route('/api', methods=['GET'])
 def api_info():
     return jsonify({
