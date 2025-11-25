@@ -1,6 +1,9 @@
 import os
 import json
 import uuid
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
@@ -2149,258 +2152,106 @@ def gmail_import_stream():
             stage3_msg = f'\n🤖 STAGE 3: Deep AI Extraction ({invoice_count} invoices)'
             yield send_event('progress', {'type': 'status', 'message': stage3_msg})
             yield send_event('progress', {'type': 'info', 'message': '3-Layer Pipeline: Document AI OCR → Vertex Search RAG → Gemini Semantic'})
+            yield send_event('progress', {'type': 'info', 'message': '⚡ OPTIMIZATIONS: Text-First, Auth-Wall, Deduplication, Parallel Processing (5 workers)'})
             
             imported_invoices = []
             extraction_failures = []
             
-            print(f"[DEBUG Stage 3] Starting extraction loop. classified_invoices count: {len(classified_invoices)}")
+            # OPTIMIZATION 3: Smart Deduplication - track extracted invoice numbers
+            # Thread-safe: using lock for shared set access
+            extracted_invoice_numbers = set()
+            duplicates_skipped = 0
+            dedup_lock = threading.Lock()
             
-            for idx, (message, metadata, confidence) in enumerate(classified_invoices, 1):
+            def normalize_invoice_number(inv_num):
+                """Normalize invoice number for deduplication comparison"""
+                if not inv_num or inv_num == 'N/A':
+                    return None
+                return str(inv_num).strip().upper().replace('-', '').replace('_', '').replace(' ', '')
+            
+            def is_duplicate_invoice(invoice_num, vendor_name, total_amount, email_subject=""):
+                """Check if invoice is duplicate based on invoice_number + vendor + total (thread-safe)
+                
+                When vendor is "Unknown", uses email subject hash to differentiate between
+                invoices from different emails (prevents false deduplication across emails).
+                """
+                normalized = normalize_invoice_number(invoice_num)
+                if not normalized:
+                    return False
+                
+                # Create composite key: invoice_number + vendor_first_word + rounded_total
+                # When vendor is Unknown, add email subject hash to differentiate between different emails
+                if vendor_name and vendor_name != 'Unknown':
+                    vendor_key = vendor_name.split()[0].upper()
+                else:
+                    # Use first 8 chars of email subject hash to differentiate unknown vendors
+                    import hashlib
+                    subject_hash = hashlib.md5(email_subject.encode()).hexdigest()[:8] if email_subject else 'NONE'
+                    vendor_key = f"UNK_{subject_hash}"
+                
+                total_key = round(float(total_amount), 2) if total_amount else 0
+                composite_key = f"{normalized}|{vendor_key}|{total_key}"
+                with dedup_lock:
+                    if composite_key in extracted_invoice_numbers:
+                        return True
+                    extracted_invoice_numbers.add(composite_key)
+                return False
+            
+            # OPTIMIZATION 4: Thread-safe queue for progress messages
+            progress_queue = queue.Queue()
+            results_lock = threading.Lock()
+            
+            # OPTIMIZATION 4: Worker function for parallel processing
+            def process_single_email(idx, message, metadata, confidence, gmail_svc, proc, gemini_svc, upload_folder):
+                """Process a single email and return progress messages and results (thread-safe)"""
+                progress_msgs = []
+                extracted = []
+                failures = []
+                dup_count = 0
+                
                 try:
                     subject = metadata.get('subject', 'No subject')
                     sender = metadata.get('from', 'Unknown')
                     
-                    print(f"[DEBUG Stage 3] Processing email {idx}/{invoice_count}: {subject[:50]}")
-                    
-                    processing_msg = f'\n[{idx}/{invoice_count}] Processing: "{subject[:50]}..."'
-                    yield send_event('progress', {'type': 'analyzing', 'message': processing_msg})
-                    yield send_event('progress', {'type': 'info', 'message': f'  From: {sender}'})
+                    print(f"[PARALLEL Worker] Processing email {idx}: {subject[:50]}")
+                    progress_msgs.append({'type': 'analyzing', 'message': f'\n[{idx}/{invoice_count}] Processing: "{subject[:50]}..."'})
+                    progress_msgs.append({'type': 'info', 'message': f'  From: {sender}'})
                     
                     # Extract attachments
-                    attachments = gmail_service.extract_attachments(service, message)
+                    attachments = gmail_svc.extract_attachments(service, message)
                     
                     # Extract links
-                    links = gmail_service.extract_links_from_body(message)
+                    links = gmail_svc.extract_links_from_body(message)
                     
-                    print(f"[DEBUG Stage 3] attachments count: {len(attachments) if attachments else 0}, links count: {len(links) if links else 0}")
+                    print(f"[PARALLEL Worker {idx}] attachments={len(attachments) if attachments else 0}, links={len(links) if links else 0}")
                     
+                    # Process emails with no attachments and no links
                     if not attachments and not links:
-                        yield send_event('progress', {'type': 'info', 'message': f'  📧 No attachments/links found, trying email body extraction...'})
+                        progress_msgs.append({'type': 'info', 'message': f'  📧 No attachments/links found'})
                         
-                        html_body = gmail_service.extract_html_body(message)
-                        plain_text_body = None
+                        html_body = gmail_svc.extract_html_body(message)
+                        plain_text_body = gmail_svc.extract_plain_text_body(message)
                         
-                        if not html_body:
-                            yield send_event('progress', {'type': 'info', 'message': '  📝 No HTML found, trying plain text...'})
-                            plain_text_body = gmail_service.extract_plain_text_body(message)
-                            if plain_text_body:
-                                html_body = gmail_service.plain_text_to_html(plain_text_body, subject, sender)
-                                yield send_event('progress', {'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
-                        
-                        if html_body:
-                            yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
-                            pdf_result = gmail_service.html_to_pdf(html_body, subject)
-                            if pdf_result:
-                                filename, pdf_data = pdf_result
-                                secure_name = secure_filename(filename)
-                                filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
-                                
-                                with open(filepath, 'wb') as f:
-                                    f.write(pdf_data)
-                                
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body PDF)...'})
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
-                                
-                                try:
-                                    invoice_result = processor.process_local_file(filepath, 'application/pdf')
-                                    os.remove(filepath)
-                                    
-                                    validated = invoice_result.get('validated_data', {})
-                                    vendor_data = validated.get('vendor', {})
-                                    totals = validated.get('totals', {})
-                                    
-                                    vendor = vendor_data.get('name', 'Unknown')
-                                    total = totals.get('total', 0)
-                                    currency = validated.get('currency', 'USD')
-                                    invoice_num = validated.get('invoiceNumber', 'N/A')
-                                    
-                                    source_label = 'PLAIN TEXT EMAIL' if plain_text_body else 'HTML EMAIL BODY'
-                                    if vendor and vendor != 'Unknown' and total and total > 0:
-                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
-                                        imported_invoices.append({
-                                            'subject': subject,
-                                            'sender': sender,
-                                            'date': metadata.get('date'),
-                                            'vendor': vendor,
-                                            'invoice_number': invoice_num,
-                                            'total': total,
-                                            'currency': currency,
-                                            'line_items': validated.get('lineItems', []),
-                                            'full_data': validated,
-                                            'source_type': 'email_body_pdf'
-                                        })
-                                        continue
-                                    else:
-                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete (vendor={vendor}, total={total})'})
-                                except Exception as html_proc_err:
-                                    if os.path.exists(filepath):
-                                        os.remove(filepath)
-                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(html_proc_err)[:80]}'})
-                            else:
-                                yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ PDF rendering failed (Playwright error)'})
-                        else:
-                            yield send_event('progress', {'type': 'warning', 'message': '  ⚠️ No HTML or plain text content found in email'})
-                        extraction_failures.append(subject)
-                        continue
-                    
-                    # Process attachments
-                    for filename, file_data in attachments:
-                        yield send_event('progress', {'type': 'status', 'message': f'  📎 Attachment: {filename}'})
-                        
-                        secure_name = secure_filename(filename)
-                        filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
-                        
-                        with open(filepath, 'wb') as f:
-                            f.write(file_data)
-                        
-                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
-                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
-                        yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
-                        yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing invoice (this may take 30-60 seconds)...'})
-                        
-                        try:
-                            invoice_result = processor.process_local_file(filepath, 'application/pdf')
-                        except Exception as proc_error:
-                            os.remove(filepath)
-                            yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(proc_error)[:100]}'})
-                            extraction_failures.append(subject)
-                            continue
-                        
-                        os.remove(filepath)
-                        
-                        validated = invoice_result.get('validated_data', {})
-                        vendor_data = validated.get('vendor', {})
-                        totals = validated.get('totals', {})
-                        
-                        vendor = vendor_data.get('name', 'Unknown')
-                        total = totals.get('total', 0)
-                        currency = validated.get('currency', 'USD')
-                        invoice_num = validated.get('invoiceNumber', 'N/A')
-                        
-                        if vendor and vendor != 'Unknown' and total and total > 0:
-                            yield send_event('progress', {'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                        # OPTIMIZATION 1: Text-First Short-Circuit
+                        email_content = html_body or plain_text_body
+                        if email_content:
+                            progress_msgs.append({'type': 'status', 'message': '  ⚡ TEXT-FIRST: Extracting directly from email text (fast path)...'})
                             
-                            imported_invoices.append({
-                                'subject': subject,
-                                'sender': sender,
-                                'date': metadata.get('date'),
-                                'vendor': vendor,
-                                'invoice_number': invoice_num,
-                                'total': total,
-                                'currency': currency,
-                                'line_items': validated.get('lineItems', []),
-                                'full_data': validated
-                            })
-                        else:
-                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Extraction incomplete: Vendor={vendor}, Total={total}'})
-                            extraction_failures.append(subject)
-                    
-                    # Process links with AI-semantic intelligent processing
-                    link_success = False
-                    all_links_auth_failed = True
-                    all_screenshots_failed = True  # Track if all web_receipt screenshots failed
-                    
-                    for link_url in links[:2]:  # Limit to first 2 links per email
-                        try:
-                            yield send_event('progress', {'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:80]}...'})
+                            text_result = gemini_svc.extract_invoice_from_text(email_content, email_subject=subject, sender_email=sender)
                             
-                            # AI-semantic intelligent link processing
-                            email_context = f"{subject} - {metadata.get('snippet', '')[:100]}"
-                            link_result = gmail_service.process_link_intelligently(link_url, email_context, gemini_service)
-                            
-                            if not isinstance(link_result, dict):
-                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Invalid link result format'})
-                                continue
-                            
-                            if link_result.get('success'):
-                                filename = link_result['filename']
-                                file_data = link_result['data']
-                                link_type = link_result['type']  # 'pdf' or 'screenshot'
-                                classification = link_result['link_classification']
+                            if text_result:
+                                vendor = text_result.get('vendor', {}).get('name', 'Unknown')
+                                total = text_result.get('totals', {}).get('total', 0)
+                                currency = text_result.get('currency', 'USD')
+                                invoice_num = text_result.get('invoiceNumber', 'N/A')
                                 
-                                # Show appropriate message based on processing type
-                                if link_type == 'screenshot':
-                                    yield send_event('progress', {'type': 'success', 'message': f'  📸 Screenshot captured: {filename}'})
-                                    yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Source: Web receipt (screenshot)'})
+                                if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                    dup_count += 1
+                                    progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num} already imported'})
+                                    print(f"[DEDUP] Skipping duplicate invoice: {invoice_num} | {vendor} | {total}")
                                 else:
-                                    yield send_event('progress', {'type': 'success', 'message': f'  ✓ Downloaded: {filename}'})
-                                
-                                secure_name = secure_filename(filename)
-                                filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
-                                
-                                with open(filepath, 'wb') as f:
-                                    f.write(file_data)
-                                
-                                # Determine file type for processing
-                                if link_type == 'screenshot':
-                                    file_mimetype = 'image/png'
-                                    yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Image)...'})
-                                else:
-                                    file_mimetype = 'application/pdf'
-                                    yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR...'})
-                                
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
-                                yield send_event('progress', {'type': 'keepalive', 'message': '⏳ Processing file...'})
-                                
-                                try:
-                                    invoice_result = processor.process_local_file(filepath, file_mimetype)
-                                except Exception as link_proc_error:
-                                    os.remove(filepath)
-                                    yield send_event('progress', {'type': 'error', 'message': f'  ❌ Processing failed: {str(link_proc_error)[:100]}'})
-                                    continue
-                                
-                                os.remove(filepath)
-                                
-                                validated = invoice_result.get('validated_data', {})
-                                vendor = validated.get('vendor', {}).get('name', 'Unknown')
-                                invoice_num = validated.get('invoiceNumber', 'N/A')
-                                totals = validated.get('totals', {})
-                                total = totals.get('total', 0)
-                                currency = validated.get('currency', 'USD')
-                                
-                                # Save to BigQuery if extraction succeeded
-                                if invoice_result.get('status') == 'completed' and validated:
-                                    invoice_id = validated.get('invoiceId', 'Unknown')
-                                    total_amount = validated.get('totalAmount', 0)
-                                    currency_code = validated.get('currencyCode', 'USD')
-                                    invoice_date = validated.get('invoiceDate', None)
-                                    
-                                    invoice_data = {
-                                        'invoice_id': invoice_id,
-                                        'vendor_id': None,
-                                        'vendor_name': vendor,
-                                        'client_id': 'default_client',
-                                        'amount': total_amount,
-                                        'currency': currency_code,
-                                        'invoice_date': invoice_date,
-                                        'status': 'unmatched',
-                                        'gcs_uri': invoice_result.get('gcs_uri'),
-                                        'file_type': invoice_result.get('file_type'),
-                                        'file_size': invoice_result.get('file_size'),
-                                        'metadata': {
-                                            'file_name': invoice_result.get('file_name'),
-                                            'validated_data': validated,
-                                            'gmail_metadata': {
-                                                'subject': subject,
-                                                'from': sender,
-                                                'date': metadata.get('date'),
-                                                'source_type': link_type
-                                            }
-                                        }
-                                    }
-                                    
-                                    try:
-                                        bigquery_service = get_bigquery_service()
-                                        bigquery_service.insert_invoice(invoice_data)
-                                    except Exception as bq_error:
-                                        print(f"⚠️ Warning: Could not save Gmail invoice to BigQuery: {bq_error}")
-                                
-                                if vendor and vendor != 'Unknown' and total and total > 0:
-                                    source_label = '📸 Screenshot' if link_type == 'screenshot' else '🔗 Link'
-                                    yield send_event('progress', {'type': 'success', 'message': f'  ✅ Extracted from {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
-                                    imported_invoices.append({
+                                    progress_msgs.append({'type': 'success', 'message': f'  ✅ TEXT-FIRST SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                    extracted.append({
                                         'subject': subject,
                                         'sender': sender,
                                         'date': metadata.get('date'),
@@ -2408,132 +2259,218 @@ def gmail_import_stream():
                                         'invoice_number': invoice_num,
                                         'total': total,
                                         'currency': currency,
-                                        'line_items': validated.get('lineItems', []),
-                                        'full_data': validated,
-                                        'source_type': link_type  # Track if from screenshot or PDF
+                                        'line_items': text_result.get('lineItems', []),
+                                        'full_data': text_result,
+                                        'source_type': 'text_first_extraction'
                                     })
-                                    link_success = True
+                                return {'progress': progress_msgs, 'extracted': extracted, 'failures': failures, 'duplicates': dup_count}
                             else:
-                                # Processing failed - show why
-                                link_type = link_result.get('type', 'failed')
-                                reasoning = link_result.get('reasoning', 'Unknown error')
-                                link_classification = link_result.get('link_classification', {})
-                                # Safely get link_type even if link_classification is a string
-                                if isinstance(link_classification, dict):
-                                    classified_as = link_classification.get('link_type', 'unknown')
-                                elif isinstance(link_classification, str):
-                                    # link_classification might be the link_type string directly
-                                    classified_as = link_classification
-                                else:
-                                    classified_as = 'unknown'
-                                
-                                # Check if this link was skipped as not an invoice (icon, logo, etc)
-                                if link_type == 'skipped':
-                                    yield send_event('progress', {'type': 'info', 'message': f'  ℹ️ Skipped: {reasoning[:120]}'})
-                                    # Skipped links don't count as auth failures
-                                else:
-                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Failed: {reasoning[:120]}'})
-                                    # Check if this is an authentication failure
-                                    if 'authentication' in reasoning.lower() or 'dashboard' in reasoning.lower():
-                                        pass  # Keep all_links_auth_failed = True
-                                    else:
-                                        all_links_auth_failed = False
-                                    
-                                    # Check if this was a web_receipt that failed to screenshot (expired token, HTTP error)
-                                    if classified_as == 'web_receipt' and ('http' in reasoning.lower() or 'screenshot' in reasoning.lower() or 'err_' in reasoning.lower()):
-                                        print(f"[DEBUG] Web receipt screenshot failed: {reasoning[:100]}")
-                                        # Keep all_screenshots_failed = True
-                                    else:
-                                        all_screenshots_failed = False
-                        except Exception as link_loop_err:
-                            print(f"[DEBUG] Error processing link {link_url[:50]}: {type(link_loop_err).__name__}: {str(link_loop_err)}")
-                            yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(link_loop_err)[:80]}'})
-                            all_screenshots_failed = False
-                    
-                    # If we had links but all failed (auth OR screenshot failures), try HTML body extraction
-                    should_fallback = all_links_auth_failed or all_screenshots_failed
-                    print(f"[DEBUG Stage 3] FALLBACK CHECK: links={len(links) if links else 0}, link_success={link_success}, attachments={len(attachments) if attachments else 0}, all_links_auth_failed={all_links_auth_failed}, all_screenshots_failed={all_screenshots_failed}, should_fallback={should_fallback}")
-                    if links and not link_success and not attachments and should_fallback:
-                        print(f"[DEBUG Stage 3] FALLBACK TRIGGERED - attempting email body extraction")
-                        fallback_reason = "expired/inaccessible" if all_screenshots_failed else "require auth"
-                        yield send_event('progress', {'type': 'info', 'message': f'  📧 Links {fallback_reason}, trying email body extraction...'})
+                                progress_msgs.append({'type': 'info', 'message': '  ⚠️ Text-first incomplete, falling back to PDF conversion...'})
                         
-                        html_body = gmail_service.extract_html_body(message)
-                        plain_text_fallback = None
-                        
-                        if not html_body:
-                            yield send_event('progress', {'type': 'info', 'message': '  📝 No HTML found, trying plain text...'})
-                            plain_text_fallback = gmail_service.extract_plain_text_body(message)
-                            if plain_text_fallback:
-                                html_body = gmail_service.plain_text_to_html(plain_text_fallback, subject, sender)
-                                yield send_event('progress', {'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
+                        # FALLBACK: Original HTML→PDF→DocAI path
+                        if not html_body and plain_text_body:
+                            html_body = gmail_svc.plain_text_to_html(plain_text_body, subject, sender)
+                            progress_msgs.append({'type': 'status', 'message': '  ✓ Plain text wrapped in HTML template'})
                         
                         if html_body:
-                            print(f"[DEBUG Stage 3] html_body found, length={len(html_body)}, calling html_to_pdf")
-                            yield send_event('progress', {'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
-                            try:
-                                pdf_result = gmail_service.html_to_pdf(html_body, subject)
-                                print(f"[DEBUG Stage 3] html_to_pdf result: {'SUCCESS - got filename=' + pdf_result[0] if pdf_result else 'FAILED (returned None)'}")
-                            except Exception as pdf_gen_err:
-                                print(f"[DEBUG Stage 3] html_to_pdf EXCEPTION: {type(pdf_gen_err).__name__}: {str(pdf_gen_err)}")
-                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF generation error: {str(pdf_gen_err)[:80]}'})
-                                pdf_result = None
-                            if not pdf_result:
-                                yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ PDF rendering failed (Playwright error)'})
-                                extraction_failures.append(subject)
-                            else:
-                                pdf_filename, pdf_data = pdf_result
-                                secure_pdf_name = secure_filename(pdf_filename)
-                                pdf_filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_pdf_name)
+                            progress_msgs.append({'type': 'status', 'message': '  📄 Rendering email body to PDF via Playwright...'})
+                            pdf_result = gmail_svc.html_to_pdf(html_body, subject)
+                            if pdf_result:
+                                filename, pdf_data = pdf_result
+                                import uuid as uuid_mod
+                                secure_name = secure_filename(f"{uuid_mod.uuid4().hex}_{filename}")
+                                filepath = os.path.join(upload_folder, secure_name)
                                 
-                                with open(pdf_filepath, 'wb') as f:
+                                with open(filepath, 'wb') as f:
                                     f.write(pdf_data)
                                 
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 1: Document AI OCR (Email Body PDF)...'})
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 2: Vertex Search RAG...'})
-                                yield send_event('progress', {'type': 'status', 'message': '    → Layer 3: Gemini Semantic Extraction...'})
+                                progress_msgs.append({'type': 'status', 'message': '    → Layer 1-3: DocAI OCR + Vertex RAG + Gemini...'})
                                 
                                 try:
-                                    pdf_invoice_result = processor.process_local_file(pdf_filepath, 'application/pdf')
-                                    os.remove(pdf_filepath)
+                                    invoice_result = proc.process_local_file(filepath, 'application/pdf')
+                                    os.remove(filepath)
                                     
-                                    pdf_validated = pdf_invoice_result.get('validated_data', {})
-                                    pdf_vendor = pdf_validated.get('vendor', {}).get('name', 'Unknown')
-                                    pdf_invoice_num = pdf_validated.get('invoiceNumber', 'N/A')
-                                    pdf_totals = pdf_validated.get('totals', {})
-                                    pdf_total = pdf_totals.get('total', 0)
-                                    pdf_currency = pdf_validated.get('currency', 'USD')
+                                    validated = invoice_result.get('validated_data', {})
+                                    vendor = validated.get('vendor', {}).get('name', 'Unknown')
+                                    total = validated.get('totals', {}).get('total', 0)
+                                    currency = validated.get('currency', 'USD')
+                                    invoice_num = validated.get('invoiceNumber', 'N/A')
                                     
-                                    source_label = 'PLAIN TEXT EMAIL' if plain_text_fallback else 'HTML EMAIL BODY'
-                                    if pdf_vendor and pdf_vendor != 'Unknown' and pdf_total and pdf_total > 0:
-                                        yield send_event('progress', {'type': 'success', 'message': f'  ✅ FROM {source_label}: {pdf_vendor} | Invoice #{pdf_invoice_num} | {pdf_currency} {pdf_total}'})
-                                        imported_invoices.append({
-                                            'subject': subject,
-                                            'sender': sender,
-                                            'date': metadata.get('date'),
-                                            'vendor': pdf_vendor,
-                                            'invoice_number': pdf_invoice_num,
-                                            'total': pdf_total,
-                                            'currency': pdf_currency,
-                                            'line_items': pdf_validated.get('lineItems', []),
-                                            'full_data': pdf_validated,
-                                            'source_type': 'email_body_pdf'
-                                        })
+                                    source_label = 'PLAIN TEXT EMAIL' if plain_text_body else 'HTML EMAIL BODY'
+                                    if vendor and vendor != 'Unknown' and total and total > 0:
+                                        if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                            dup_count += 1
+                                            progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
+                                        else:
+                                            progress_msgs.append({'type': 'success', 'message': f'  ✅ FROM {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                            extracted.append({
+                                                'subject': subject, 'sender': sender, 'date': metadata.get('date'),
+                                                'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
+                                                'currency': currency, 'line_items': validated.get('lineItems', []),
+                                                'full_data': validated, 'source_type': 'email_body_pdf'
+                                            })
                                     else:
-                                        yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete (vendor={pdf_vendor}, total={pdf_total})'})
-                                        extraction_failures.append(subject)
-                                except Exception as pdf_err:
-                                    if os.path.exists(pdf_filepath):
-                                        os.remove(pdf_filepath)
-                                    yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ Email body processing failed: {str(pdf_err)[:80]}'})
-                                    extraction_failures.append(subject)
+                                        progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Email body extraction incomplete'})
+                                        failures.append(subject)
+                                except Exception as err:
+                                    if os.path.exists(filepath):
+                                        os.remove(filepath)
+                                    progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Processing failed: {str(err)[:60]}'})
+                                    failures.append(subject)
+                            else:
+                                progress_msgs.append({'type': 'warning', 'message': '  ⚠️ PDF rendering failed'})
+                                failures.append(subject)
                         else:
-                            yield send_event('progress', {'type': 'warning', 'message': f'  ⚠️ No HTML or plain text content found in email body'})
-                            extraction_failures.append(subject)
+                            progress_msgs.append({'type': 'warning', 'message': '  ⚠️ No content found in email'})
+                            failures.append(subject)
+                        return {'progress': progress_msgs, 'extracted': extracted, 'failures': failures, 'duplicates': dup_count}
+                    
+                    # Process attachments
+                    for filename, file_data in attachments:
+                        import uuid as uuid_mod
+                        progress_msgs.append({'type': 'status', 'message': f'  📎 Attachment: {filename}'})
+                        secure_name = secure_filename(f"{uuid_mod.uuid4().hex}_{filename}")
+                        filepath = os.path.join(upload_folder, secure_name)
+                        
+                        with open(filepath, 'wb') as f:
+                            f.write(file_data)
+                        
+                        progress_msgs.append({'type': 'status', 'message': '    → Layer 1-3: DocAI OCR + Vertex RAG + Gemini...'})
+                        progress_msgs.append({'type': 'keepalive', 'message': '⏳ Processing invoice...'})
+                        
+                        try:
+                            invoice_result = proc.process_local_file(filepath, 'application/pdf')
+                            os.remove(filepath)
+                            
+                            validated = invoice_result.get('validated_data', {})
+                            vendor = validated.get('vendor', {}).get('name', 'Unknown')
+                            total = validated.get('totals', {}).get('total', 0)
+                            currency = validated.get('currency', 'USD')
+                            invoice_num = validated.get('invoiceNumber', 'N/A')
+                            
+                            if vendor and vendor != 'Unknown' and total and total > 0:
+                                if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                    dup_count += 1
+                                    progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
+                                else:
+                                    progress_msgs.append({'type': 'success', 'message': f'  ✅ SUCCESS: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                    extracted.append({
+                                        'subject': subject, 'sender': sender, 'date': metadata.get('date'),
+                                        'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
+                                        'currency': currency, 'line_items': validated.get('lineItems', []),
+                                        'full_data': validated, 'source_type': 'pdf_attachment'
+                                    })
+                            else:
+                                progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Extraction incomplete'})
+                                failures.append(subject)
+                        except Exception as err:
+                            if os.path.exists(filepath):
+                                os.remove(filepath)
+                            progress_msgs.append({'type': 'error', 'message': f'  ❌ Processing failed: {str(err)[:60]}'})
+                            failures.append(subject)
+                    
+                    # Process links (simplified for parallel processing)
+                    for link_url in links[:2]:
+                        try:
+                            progress_msgs.append({'type': 'status', 'message': f'  🔗 Analyzing link: {link_url[:60]}...'})
+                            email_context = f"{subject} - {metadata.get('snippet', '')[:100]}"
+                            link_result = gmail_svc.process_link_intelligently(link_url, email_context, gemini_svc)
+                            
+                            if not isinstance(link_result, dict):
+                                progress_msgs.append({'type': 'warning', 'message': '  ⚠️ Invalid link result'})
+                                continue
+                            
+                            if link_result.get('success'):
+                                fname = link_result['filename']
+                                fdata = link_result['data']
+                                ltype = link_result['type']
+                                
+                                import uuid as uuid_mod
+                                secure_name = secure_filename(f"{uuid_mod.uuid4().hex}_{fname}")
+                                filepath = os.path.join(upload_folder, secure_name)
+                                
+                                with open(filepath, 'wb') as f:
+                                    f.write(fdata)
+                                
+                                file_mimetype = 'image/png' if ltype == 'screenshot' else 'application/pdf'
+                                progress_msgs.append({'type': 'status', 'message': '    → Layer 1-3: DocAI OCR + Vertex RAG + Gemini...'})
+                                
+                                try:
+                                    invoice_result = proc.process_local_file(filepath, file_mimetype)
+                                    os.remove(filepath)
+                                    
+                                    validated = invoice_result.get('validated_data', {})
+                                    vendor = validated.get('vendor', {}).get('name', 'Unknown')
+                                    total = validated.get('totals', {}).get('total', 0)
+                                    currency = validated.get('currency', 'USD')
+                                    invoice_num = validated.get('invoiceNumber', 'N/A')
+                                    
+                                    if vendor and vendor != 'Unknown' and total and total > 0:
+                                        if is_duplicate_invoice(invoice_num, vendor, total, subject):
+                                            dup_count += 1
+                                            progress_msgs.append({'type': 'info', 'message': f'  🔄 DUPLICATE SKIPPED: Invoice #{invoice_num}'})
+                                        else:
+                                            source_label = '📸 Screenshot' if ltype == 'screenshot' else '🔗 Link'
+                                            progress_msgs.append({'type': 'success', 'message': f'  ✅ {source_label}: {vendor} | Invoice #{invoice_num} | {currency} {total}'})
+                                            extracted.append({
+                                                'subject': subject, 'sender': sender, 'date': metadata.get('date'),
+                                                'vendor': vendor, 'invoice_number': invoice_num, 'total': total,
+                                                'currency': currency, 'line_items': validated.get('lineItems', []),
+                                                'full_data': validated, 'source_type': ltype
+                                            })
+                                except Exception as err:
+                                    if os.path.exists(filepath):
+                                        os.remove(filepath)
+                                    progress_msgs.append({'type': 'error', 'message': f'  ❌ Processing failed: {str(err)[:60]}'})
+                            else:
+                                reasoning = link_result.get('reasoning', 'Unknown')[:80]
+                                progress_msgs.append({'type': 'warning', 'message': f'  ⚠️ Link failed: {reasoning}'})
+                        except Exception as link_err:
+                            progress_msgs.append({'type': 'error', 'message': f'  ❌ Link error: {str(link_err)[:60]}'})
                     
                 except Exception as e:
-                    yield send_event('progress', {'type': 'error', 'message': f'  ❌ Extraction error: {str(e)}'})
-                    extraction_failures.append(subject)
+                    progress_msgs.append({'type': 'error', 'message': f'  ❌ Error: {str(e)[:80]}'})
+                    failures.append(metadata.get('subject', 'Unknown'))
+                
+                return {'progress': progress_msgs, 'extracted': extracted, 'failures': failures, 'duplicates': dup_count}
+            
+            print(f"[DEBUG Stage 3] Starting PARALLEL extraction. classified_invoices count: {len(classified_invoices)}")
+            
+            # OPTIMIZATION 4: Use ThreadPoolExecutor for parallel processing
+            max_workers = min(5, len(classified_invoices)) if classified_invoices else 1
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all emails for parallel processing
+                future_to_idx = {}
+                for idx, (message, metadata, confidence) in enumerate(classified_invoices, 1):
+                    future = executor.submit(
+                        process_single_email,
+                        idx, message, metadata, confidence,
+                        gmail_service, processor, gemini_service,
+                        app.config['UPLOAD_FOLDER']
+                    )
+                    future_to_idx[future] = idx
+                
+                # Process results as they complete (as_completed maintains SSE streaming)
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        result = future.result()
+                        
+                        # Yield all progress messages from this worker
+                        for msg in result.get('progress', []):
+                            yield send_event('progress', msg)
+                        
+                        # Aggregate results (thread-safe with locks already applied in is_duplicate_invoice)
+                        imported_invoices.extend(result.get('extracted', []))
+                        extraction_failures.extend(result.get('failures', []))
+                        duplicates_skipped += result.get('duplicates', 0)
+                        
+                    except Exception as exc:
+                        print(f"[PARALLEL] Worker {idx} generated an exception: {exc}")
+                        yield send_event('progress', {'type': 'error', 'message': f'  ❌ Worker error: {str(exc)[:80]}'})
+            
+            # Parallel processing completed above
             
             imported_count = len(imported_invoices)
             failed_extraction = len(extraction_failures)
@@ -2545,8 +2482,10 @@ def gmail_import_stream():
             yield send_event('progress', {'type': 'info', 'message': f'  • Emails scanned: {total_found}'})
             yield send_event('progress', {'type': 'info', 'message': f'  • Clean invoices found: {invoice_count}'})
             yield send_event('progress', {'type': 'success', 'message': f'  • Successfully extracted: {imported_count} ✓'})
+            if duplicates_skipped > 0:
+                yield send_event('progress', {'type': 'info', 'message': f'  • Duplicates skipped: {duplicates_skipped} 🔄'})
             yield send_event('progress', {'type': 'warning', 'message': f'  • Extraction failed: {failed_extraction}'})
-            yield send_event('complete', {'imported': imported_count, 'skipped': non_invoice_count, 'total': total_found, 'invoices': imported_invoices})
+            yield send_event('complete', {'imported': imported_count, 'skipped': non_invoice_count, 'duplicates_skipped': duplicates_skipped, 'total': total_found, 'invoices': imported_invoices})
             
         except Exception as e:
             yield send_event('error', {'message': f'Import failed: {str(e)}'})

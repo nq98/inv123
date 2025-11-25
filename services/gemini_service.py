@@ -623,6 +623,172 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
         
         return response.text or "{}"
     
+    def extract_invoice_from_text(self, email_html_or_text, email_subject="", sender_email=""):
+        """
+        OPTIMIZATION 1: Text-First Short-Circuit
+        Extract invoice data directly from email HTML/text WITHOUT PDF conversion.
+        This is MUCH faster than HTML → PDF → Document AI OCR pipeline.
+        
+        Args:
+            email_html_or_text: Raw HTML or plain text content from email body
+            email_subject: Email subject for additional context
+            sender_email: Sender email for vendor identification
+        
+        Returns:
+            dict: Validated invoice data structure OR None if extraction incomplete
+        """
+        import re
+        from html.parser import HTMLParser
+        
+        class TextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.text_parts = []
+                self.in_script = False
+                self.in_style = False
+                
+            def handle_starttag(self, tag, attrs):
+                if tag == 'script':
+                    self.in_script = True
+                elif tag == 'style':
+                    self.in_style = True
+                elif tag in ('br', 'p', 'div', 'tr', 'li'):
+                    self.text_parts.append('\n')
+                elif tag == 'td':
+                    self.text_parts.append(' | ')
+                    
+            def handle_endtag(self, tag):
+                if tag == 'script':
+                    self.in_script = False
+                elif tag == 'style':
+                    self.in_style = False
+                    
+            def handle_data(self, data):
+                if not self.in_script and not self.in_style:
+                    text = data.strip()
+                    if text:
+                        self.text_parts.append(text)
+            
+            def get_text(self):
+                return ' '.join(self.text_parts)
+        
+        try:
+            if '<html' in email_html_or_text.lower() or '<body' in email_html_or_text.lower():
+                parser = TextExtractor()
+                parser.feed(email_html_or_text)
+                clean_text = parser.get_text()
+            else:
+                clean_text = email_html_or_text
+            
+            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+            clean_text = clean_text[:8000]
+            
+            prompt = f"""You are the **Omni-Global Financial AI** extracting invoice/receipt data from email text.
+
+### EMAIL CONTEXT
+- **Subject:** {email_subject}
+- **Sender:** {sender_email}
+
+### EMAIL BODY TEXT
+{clean_text}
+
+### EXTRACTION RULES
+1. Extract ALL financial data visible in the email text
+2. Look for: vendor name, invoice number, amounts, dates, line items
+3. Currency detection: Use symbols ($, €, £, ₪) or codes (USD, EUR, ILS)
+4. Date format: Normalize to YYYY-MM-DD
+5. If email is a receipt (payment confirmation), set documentType="RECEIPT"
+6. If email is an invoice (payment request), set documentType="INVOICE"
+
+### CRITICAL - VENDOR EXTRACTION
+- The VENDOR is the company/person RECEIVING payment (not the buyer)
+- Look for: company name in header, "From:", payment recipient, billing entity
+- Use sender email domain as hint (e.g., @stripe.com → vendor might be Stripe)
+
+### OUTPUT SCHEMA (Strict JSON)
+Return ONLY valid JSON (NO markdown, NO code blocks):
+{{
+  "vendor": {{
+    "name": "Vendor/merchant name (who receives payment)",
+    "email": "vendor email or null",
+    "address": "vendor address or null",
+    "taxId": "VAT/Tax ID or null"
+  }},
+  "invoiceNumber": "Invoice/receipt number or null",
+  "documentType": "INVOICE|RECEIPT",
+  "documentDate": "YYYY-MM-DD or null",
+  "dueDate": "YYYY-MM-DD or null (for invoices)",
+  "paymentDate": "YYYY-MM-DD or null (for receipts)",
+  "currency": "USD|EUR|ILS|GBP|etc (ISO 4217)",
+  "totals": {{
+    "subtotal": float or 0,
+    "tax": float or 0,
+    "taxPercent": float or 0,
+    "total": float (REQUIRED - the main amount)
+  }},
+  "lineItems": [
+    {{
+      "description": "Item description",
+      "quantity": float or 1,
+      "unitPrice": float,
+      "lineTotal": float
+    }}
+  ],
+  "extractionConfidence": 0.0-1.0,
+  "reasoning": "Brief explanation of extraction decisions",
+  "warnings": ["List any issues or ambiguities"]
+}}
+
+IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extraction_incomplete": true, "reason": "Missing vendor/total"}}
+"""
+            
+            response = self._generate_content_with_fallback(
+                model='gemini-2.0-flash-exp',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type='application/json'
+                )
+            )
+            
+            result_text = response.text or "{}"
+            result = json.loads(result_text)
+            
+            if result.get('extraction_incomplete'):
+                print(f"⚠️ Text-first extraction incomplete: {result.get('reason', 'Unknown')}")
+                return None
+            
+            vendor = result.get('vendor', {}).get('name', 'Unknown')
+            total = result.get('totals', {}).get('total', 0)
+            
+            if not vendor or vendor == 'Unknown' or not total or total <= 0:
+                print(f"⚠️ Text-first extraction incomplete: vendor={vendor}, total={total}")
+                return None
+            
+            validated_data = {
+                'vendor': result.get('vendor', {}),
+                'invoiceNumber': result.get('invoiceNumber'),
+                'documentType': result.get('documentType', 'RECEIPT'),
+                'documentDate': result.get('documentDate'),
+                'issueDate': result.get('documentDate'),
+                'dueDate': result.get('dueDate'),
+                'paymentDate': result.get('paymentDate'),
+                'currency': result.get('currency', 'USD'),
+                'totals': result.get('totals', {}),
+                'lineItems': result.get('lineItems', []),
+                'extractionConfidence': result.get('extractionConfidence', 0.7),
+                'auditReasoning': result.get('reasoning', 'Extracted from email text'),
+                'warnings': result.get('warnings', []),
+                'source': 'text_first_extraction'
+            }
+            
+            print(f"✅ Text-first extraction SUCCESS: {vendor} | {result.get('currency', 'USD')} {total}")
+            return validated_data
+            
+        except Exception as e:
+            print(f"❌ Text-first extraction error: {e}")
+            return None
+    
     def _create_error_response(self, error_message, warnings, raw_response=None):
         """Create a standardized error response matching the comprehensive schema"""
         response = {

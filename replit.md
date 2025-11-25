@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### November 25, 2025
+- **Improved Smart Deduplication**: Fixed false negative deduplication issue when vendor is "Unknown"
+  - Added email subject hash to deduplication key when vendor cannot be identified
+  - Prevents false duplicates across different emails with the same invoice number
+  - Uses MD5 hash of email subject for differentiation (UNK_HASH format)
+
 ### November 24, 2025
 - **Fixed Critical Bug**: Resolved vendor_id NULL issue in invoice storage despite successful vendor matching (95% confidence)
   - Enhanced Supreme Judge AI prompt to correctly extract and return candidate_id as selected_vendor_id

@@ -872,6 +872,37 @@ p {{ margin: 4px 0; }}
         try:
             url_lower = url.lower()
             
+            # OPTIMIZATION 2: Auth-Wall Early Exit - FAST PRE-CHECK for dashboard/console URLs
+            # These ALWAYS require authentication, skip expensive AI classification and Playwright attempts
+            auth_wall_patterns = [
+                'dashboard.', 'console.', '/dashboard', '/admin', 
+                '/signin', '/login', '/account/settings', '/account/billing',
+                '/settings/', '/profile/', '/user/', '/my-account',
+                'accounts.google.com', 'login.microsoftonline.com',
+                '/oauth/', '/auth/', '/sso/'
+            ]
+            
+            # Check if URL matches any auth-wall pattern (without long tokens)
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            path_segments = parsed_url.path.split('/')
+            has_long_token = any(len(seg) > 40 and seg.replace('-', '').replace('_', '').isalnum() 
+                                for seg in path_segments)
+            
+            # Only apply auth-wall if NO long token (long tokens usually mean public receipt links)
+            if not has_long_token:
+                for pattern in auth_wall_patterns:
+                    if pattern in url_lower:
+                        print(f"🚫 Auth-wall fast-exit: URL matches '{pattern}' pattern")
+                        return {
+                            'success': False,
+                            'type': 'failed',
+                            'filename': None,
+                            'data': None,
+                            'link_classification': 'auth_required',
+                            'reasoning': f'Auth-wall fast-exit: URL contains {pattern} (no token = requires login)'
+                        }
+            
             # FAST PRE-CHECK 1: Skip obvious non-invoice images (no AI needed)
             if any(x in url_lower for x in ['/icons/', '/images/', '/assets/', '/logos/', '/notifications/icons/']):
                 if any(url_lower.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg']):
