@@ -496,58 +496,84 @@ class GmailService:
         
         Returns: (filename, pdf_data) or None if failed
         """
-        try:
-            from playwright.sync_api import sync_playwright
-            import time
-            
-            timestamp = int(time.time())
-            safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
-            filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
-            
-            chromium_path = self._find_chromium_executable()
-            
-            with sync_playwright() as p:
-                launch_options = {
-                    'headless': True,
-                    'args': [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        '--single-process'
-                    ]
-                }
+        import threading
+        import time
+        
+        timestamp = int(time.time())
+        safe_subject = re.sub(r'[^\w\s-]', '', subject)[:30].strip().replace(' ', '_')
+        filename = f"email_receipt_{safe_subject}_{timestamp}.pdf"
+        
+        result = {'pdf_data': None, 'error': None}
+        
+        def generate_pdf():
+            try:
+                from playwright.sync_api import sync_playwright
                 
-                if chromium_path:
-                    launch_options['executable_path'] = chromium_path
-                    print(f"📄 Using Chromium at: {chromium_path}")
+                chromium_path = self._find_chromium_executable()
+                print(f"📄 Starting PDF generation with Chromium...")
                 
-                browser = p.chromium.launch(**launch_options)
-                page = browser.new_page(viewport={'width': 800, 'height': 1200})
-                
-                page.set_content(html_content, timeout=30000)
-                try:
-                    page.wait_for_load_state('networkidle', timeout=8000)
-                except Exception as load_err:
-                    print(f"⚠️ Network idle timeout (expected for emails with external resources) - continuing anyway")
-                
-                time.sleep(0.5)
-                
-                pdf_data = page.pdf(
-                    format='A4',
-                    print_background=True,
-                    margin={'top': '20px', 'right': '20px', 'bottom': '20px', 'left': '20px'}
-                )
-                
-                browser.close()
-                
-            print(f"📄 HTML email converted to PDF: {filename} ({len(pdf_data)} bytes)")
-            return (filename, pdf_data)
-            
-        except Exception as e:
-            print(f"Error converting HTML to PDF: {e}")
-            import traceback
-            traceback.print_exc()
+                with sync_playwright() as p:
+                    launch_options = {
+                        'headless': True,
+                        'timeout': 15000,
+                        'args': [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                            '--single-process',
+                            '--disable-web-security',
+                            '--disable-features=IsolateOrigins,site-per-process'
+                        ]
+                    }
+                    
+                    if chromium_path:
+                        launch_options['executable_path'] = chromium_path
+                        print(f"📄 Using Chromium at: {chromium_path}")
+                    
+                    browser = p.chromium.launch(**launch_options)
+                    context = browser.new_context(
+                        viewport={'width': 800, 'height': 1200},
+                        bypass_csp=True,
+                        java_script_enabled=False
+                    )
+                    page = context.new_page()
+                    
+                    page.set_content(html_content, wait_until='commit', timeout=10000)
+                    
+                    time.sleep(0.3)
+                    
+                    result['pdf_data'] = page.pdf(
+                        format='A4',
+                        print_background=True,
+                        margin={'top': '20px', 'right': '20px', 'bottom': '20px', 'left': '20px'}
+                    )
+                    
+                    context.close()
+                    browser.close()
+                    
+                print(f"📄 PDF generated successfully: {len(result['pdf_data'])} bytes")
+                    
+            except Exception as e:
+                result['error'] = str(e)
+                print(f"⚠️ PDF generation error: {e}")
+        
+        thread = threading.Thread(target=generate_pdf, daemon=True)
+        thread.start()
+        thread.join(timeout=25)
+        
+        if thread.is_alive():
+            print(f"⚠️ PDF generation timed out after 25 seconds - skipping")
+            return None
+        
+        if result['pdf_data']:
+            print(f"📄 HTML email converted to PDF: {filename} ({len(result['pdf_data'])} bytes)")
+            return (filename, result['pdf_data'])
+        elif result['error']:
+            print(f"Error converting HTML to PDF: {result['error']}")
+            return None
+        else:
+            print(f"⚠️ PDF generation returned no data")
             return None
     
     def html_to_image(self, html_content, subject='email_receipt'):
