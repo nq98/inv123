@@ -1217,7 +1217,8 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
     }
     
     try {
-        const response = await fetch(`/api/netsuite/bills/create/${encodeURIComponent(invoiceId)}`, {
+        // Use existing invoice create endpoint with proper dedup and audit logging
+        const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -1227,19 +1228,16 @@ window.createBillFromGmail = async function(encodedInvoiceId, idx) {
             if (container) {
                 container.innerHTML = `<span style="color: #198754;">✅ Bill created: ${result.netsuite_bill_id || 'Success'}</span>`;
             }
-            alert('Bill created successfully in NetSuite!');
         } else {
             if (container) {
-                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || 'Failed'}</span>`;
+                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || result.message || 'Failed'}</span>`;
             }
-            alert('Failed to create bill: ' + (result.error || result.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error creating bill:', error);
         if (container) {
             container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
         }
-        alert('Error creating bill: ' + error.message);
     }
 };
 
@@ -1253,7 +1251,8 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
     }
     
     try {
-        const response = await fetch(`/api/netsuite/bills/update/${encodeURIComponent(invoiceId)}`, {
+        // Use existing invoice update endpoint with proper dedup and audit logging
+        const response = await fetch(`/api/netsuite/invoice/${encodeURIComponent(invoiceId)}/update`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -1263,19 +1262,16 @@ window.updateBillFromGmail = async function(encodedInvoiceId, idx) {
             if (container) {
                 container.innerHTML = `<span style="color: #198754;">✅ Bill updated: ${result.netsuite_bill_id || 'Success'}</span>`;
             }
-            alert('Bill updated successfully in NetSuite!');
         } else {
             if (container) {
-                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || 'Failed'}</span>`;
+                container.innerHTML = `<span style="color: #dc3545;">❌ ${result.error || result.message || 'Failed'}</span>`;
             }
-            alert('Failed to update bill: ' + (result.error || result.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error updating bill:', error);
         if (container) {
             container.innerHTML = `<span style="color: #dc3545;">❌ Error: ${error.message}</span>`;
         }
-        alert('Error updating bill: ' + error.message);
     }
 };
 
