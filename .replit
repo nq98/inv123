@@ -9,6 +9,10 @@ localPort = 33623
 externalPort = 6800
 
 [[ports]]
+localPort = 34147
+externalPort = 8008
+
+[[ports]]
 localPort = 34335
 externalPort = 3000
 
@@ -84,3 +88,5 @@ run = ["sh", "start.sh"]
 
 [userenv.shared]
 SECRET_KEY = "f8e9a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8"
+LANGCHAIN_TRACING_V2 = "true"
+LANGCHAIN_PROJECT = "payouts-automation"
