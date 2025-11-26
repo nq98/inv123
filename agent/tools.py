@@ -44,6 +44,123 @@ def _check_gmail_connected():
 
 
 @tool
+def get_dashboard_status(user_email: str) -> str:
+    """
+    Get a comprehensive dashboard status - CALL THIS ON STARTUP.
+    Returns vendor count, invoice count, Gmail status, NetSuite status, and recent activity.
+    Use this to greet users proactively with their current data status.
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
+    
+    Returns:
+        JSON with complete dashboard status for proactive greeting
+    """
+    try:
+        status = {
+            "user_email": user_email,
+            "gmail_connected": _check_gmail_connected(),
+            "gmail_auth_url": _get_gmail_connect_url() if not _check_gmail_connected() else None,
+            "vendor_count": 0,
+            "invoice_count": 0,
+            "pending_invoices": 0,
+            "recent_invoices": [],
+            "netsuite_connected": False,
+            "suggested_actions": []
+        }
+        
+        # Get vendor count
+        try:
+            vendor_query = f"""
+            SELECT COUNT(*) as count 
+            FROM `invoicereader-477008.vendors_ai.global_vendors`
+            WHERE owner_email = @user_email
+            """
+            results = bigquery_service.query(vendor_query, {"user_email": user_email})
+            if results:
+                status["vendor_count"] = results[0].get("count", 0)
+        except Exception as e:
+            print(f"Error getting vendor count: {e}")
+        
+        # Get invoice counts
+        try:
+            invoice_query = f"""
+            SELECT 
+                COUNT(*) as total,
+                COUNTIF(status = 'pending' OR status IS NULL) as pending
+            FROM `invoicereader-477008.vendors_ai.invoices`
+            WHERE owner_email = @user_email OR owner_email IS NULL
+            """
+            results = bigquery_service.query(invoice_query, {"user_email": user_email})
+            if results:
+                status["invoice_count"] = results[0].get("total", 0)
+                status["pending_invoices"] = results[0].get("pending", 0)
+        except Exception as e:
+            print(f"Error getting invoice count: {e}")
+        
+        # Get recent invoices (last 5)
+        try:
+            recent_query = f"""
+            SELECT invoice_id, vendor_name, amount, currency, created_at, status
+            FROM `invoicereader-477008.vendors_ai.invoices`
+            WHERE owner_email = @user_email OR owner_email IS NULL
+            ORDER BY created_at DESC
+            LIMIT 5
+            """
+            results = bigquery_service.query(recent_query, {"user_email": user_email})
+            if results:
+                for r in results:
+                    status["recent_invoices"].append({
+                        "id": r.get("invoice_id"),
+                        "vendor": r.get("vendor_name"),
+                        "amount": float(r.get("amount", 0)) if r.get("amount") else 0,
+                        "currency": r.get("currency", "USD"),
+                        "status": r.get("status", "pending")
+                    })
+        except Exception as e:
+            print(f"Error getting recent invoices: {e}")
+        
+        # Check NetSuite connection
+        try:
+            status["netsuite_connected"] = netsuite_service.test_connection().get("connected", False)
+        except:
+            status["netsuite_connected"] = False
+        
+        # Build suggested actions based on status
+        if not status["gmail_connected"]:
+            status["suggested_actions"].append({
+                "action": "connect_gmail",
+                "label": "Connect Gmail to scan invoices",
+                "priority": "high"
+            })
+        else:
+            status["suggested_actions"].append({
+                "action": "scan_gmail",
+                "label": "Scan Gmail for new invoices",
+                "priority": "medium"
+            })
+        
+        if status["pending_invoices"] > 0:
+            status["suggested_actions"].append({
+                "action": "review_pending",
+                "label": f"Review {status['pending_invoices']} pending invoices",
+                "priority": "high"
+            })
+        
+        if status["vendor_count"] == 0:
+            status["suggested_actions"].append({
+                "action": "import_vendors",
+                "label": "Import vendors from CSV or NetSuite",
+                "priority": "high"
+            })
+        
+        return json.dumps(status, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e), "user_email": user_email})
+
+
+@tool
 def check_gmail_status(user_email: str) -> str:
     """
     Check if Gmail is connected and get connection URL if needed.
@@ -1960,6 +2077,8 @@ def get_all_tools():
     Note: Use get_tools_for_user(user_email) for multi-tenant data isolation
     """
     return [
+        # Startup & Dashboard (call on chat open)
+        get_dashboard_status,
         # Omniscient Tools (use these first for comprehensive answers)
         get_vendor_full_profile,
         deep_search,

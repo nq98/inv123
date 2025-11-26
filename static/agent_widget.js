@@ -2207,6 +2207,8 @@
         uploadBtn.classList.remove('has-file');
     }
 
+    let hasShownStartup = false;
+
     function toggleChat() {
         isOpen = !isOpen;
         chatWindow.classList.toggle('open', isOpen);
@@ -2216,6 +2218,50 @@
             setTimeout(() => {
                 document.getElementById('payouts-chat-input').focus();
             }, 300);
+            
+            // Trigger startup behavior on first open
+            if (!hasShownStartup && messages.length === 0) {
+                hasShownStartup = true;
+                triggerStartupGreeting();
+            }
+        }
+    }
+
+    async function triggerStartupGreeting() {
+        // Show loading state
+        showLoading();
+        
+        try {
+            const sessionId = getSessionId();
+            const response = await fetch(API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    message: '__STARTUP__',
+                    thread_id: sessionId
+                })
+            });
+            
+            const data = await response.json();
+            hideLoading();
+            
+            if (data.success) {
+                const tools = data.tools_used || [];
+                addMessage('assistant', data.response, tools);
+            }
+        } catch (error) {
+            hideLoading();
+            console.error('Startup greeting failed:', error);
+            // Show fallback greeting
+            addMessage('assistant', `
+                <div style="margin-bottom: 12px;">👋 <strong>Hi! I'm your AP Automation Expert.</strong></div>
+                <div style="margin-bottom: 16px;">I can help you process invoices, scan Gmail, manage vendors, and sync with NetSuite.</div>
+                <div class="quick-action-buttons" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    <button class="payouts-quick-action" data-action="scan_gmail" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #e5e7eb; background: white; cursor: pointer;">📧 Scan Gmail</button>
+                    <button class="payouts-quick-action" data-action="show_vendors" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #e5e7eb; background: white; cursor: pointer;">📋 Show Vendors</button>
+                    <button class="payouts-quick-action" data-action="show_invoices" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #e5e7eb; background: white; cursor: pointer;">🧾 Show Invoices</button>
+                </div>
+            `, []);
         }
     }
 
@@ -2897,20 +2943,59 @@
 
     // ============================================
     // DYNAMIC BUTTON CLICK HANDLER
-    // Handles buttons rendered by AI that don't have onclick handlers
+    // Handles buttons rendered by AI with data-action or text patterns
     // ============================================
     document.addEventListener('click', function(e) {
-        const button = e.target.closest('button, .chat-action-btn, .action-btn');
+        const button = e.target.closest('button, .chat-action-btn, .action-btn, .payouts-quick-action');
         if (!button) return;
         
-        const buttonText = button.textContent.trim().toLowerCase();
         const container = document.getElementById('payouts-messages-container');
-        if (!container || !container.contains(button)) return;
+        const widgetContainer = document.getElementById('payouts-agent-widget');
+        if (!container?.contains(button) && !widgetContainer?.contains(button)) return;
         
         // Skip buttons that already have onclick handlers
         if (button.hasAttribute('onclick')) return;
         
-        console.log('Dynamic button click:', buttonText);
+        const buttonText = button.textContent.trim().toLowerCase();
+        const dataAction = button.getAttribute('data-action');
+        const dataMessage = button.getAttribute('data-message');
+        
+        console.log('Dynamic button click:', { buttonText, dataAction, dataMessage });
+        
+        // Handle data-action buttons first (preferred method)
+        if (dataAction) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const actionMessages = {
+                'scan_gmail': 'Scan my Gmail for invoices',
+                'show_invoices': 'Show me all invoices',
+                'show_vendors': 'Show me all vendors',
+                'connect_gmail': 'Help me connect Gmail',
+                'review_pending': 'Show pending invoices for review',
+                'import_vendors': 'Help me import vendors',
+                'sync_vendor': 'Sync this vendor to NetSuite',
+                'create_bill': 'Create the bill in NetSuite',
+                'create_vendor': 'Create this as a new vendor',
+                'use_vendor': 'Use this matched vendor'
+            };
+            
+            const message = actionMessages[dataAction] || `Action: ${dataAction}`;
+            button.disabled = true;
+            button.style.opacity = '0.7';
+            window.PayoutsAgentWidget.sendMessage(message);
+            return;
+        }
+        
+        // Handle data-message buttons
+        if (dataMessage) {
+            e.preventDefault();
+            e.stopPropagation();
+            button.disabled = true;
+            button.style.opacity = '0.7';
+            window.PayoutsAgentWidget.sendMessage(dataMessage);
+            return;
+        }
         
         // Handle "Use This Vendor" button
         if (buttonText.includes('use this vendor') || buttonText.includes('use vendor')) {
