@@ -24,17 +24,16 @@ class AgentState(TypedDict):
 
 
 def create_llm():
-    """Create the LLM using OpenRouter with Gemini 3 Pro"""
+    """Create the LLM using OpenRouter with Gemini 2.0 Flash (stable for tool calling)"""
     api_key = os.getenv("OPENROUTERA")
     if not api_key:
         raise ValueError("OPENROUTERA environment variable not set")
     
     return ChatOpenAI(
-        model="google/gemini-3-pro-preview",
+        model="google/gemini-2.0-flash-001",
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
-        temperature=0.1,
-        max_tokens=4096
+        temperature=0.1
     )
 
 

@@ -58,4 +58,22 @@ A standalone product for subscription analytics, featuring a "Subscription Pulse
     -   **BigQuery**: Vendor master data storage (`vendors_ai.global_vendors`, `netsuite_events`, `subscription_vendors`, `subscription_events`).
     -   **Google Cloud Storage (GCS)**: Invoice storage (`payouts-invoices` bucket).
     -   **Gmail API**: Integration for scanning and importing invoices from emails.
--   **Python Libraries**: Flask (web framework), Gunicorn (production server), OAuthlib.
+-   **Python Libraries**: Flask (web framework), Gunicorn (production server), OAuthlib, LangGraph, LangChain.
+
+#### LangGraph Agent - Conversational Service Controller
+A new LangGraph-based AI agent (`agent/` directory) provides conversational control over all services:
+-   **Architecture**: StateGraph with tool-calling using Gemini 2.0 Flash via OpenRouter
+-   **Available Tools**:
+    -   `search_gmail_invoices`: Search Gmail for invoice/receipt emails
+    -   `search_netsuite_vendor`: Find vendors by name, email, or tax ID
+    -   `create_netsuite_vendor`: Create new vendors in NetSuite
+    -   `create_netsuite_bill`: Create vendor bills in NetSuite
+    -   `get_bill_status`: Check bill approval status
+    -   `match_vendor_to_database`: AI-powered semantic vendor matching
+    -   `run_bigquery`: Execute SQL queries on data warehouse
+    -   `get_subscription_summary`: Get SaaS subscription analytics
+-   **Endpoints**:
+    -   `POST /api/agent/chat`: Synchronous chat with agent
+    -   `POST /api/agent/chat/stream`: SSE streaming chat
+    -   `GET /api/agent/tools`: List available tools
+-   **Tracing**: LangSmith integration for monitoring (LANGCHAIN_API_KEY, LANGCHAIN_PROJECT=payouts-automation)
