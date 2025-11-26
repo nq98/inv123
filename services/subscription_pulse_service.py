@@ -422,7 +422,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
         if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-flash-1.5",  # Fast Gemini via OpenRouter
+                    model="google/gemini-2.0-flash-001",  # Gemini 2.0 Flash via OpenRouter
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     response_format={"type": "json_object"}
@@ -438,7 +438,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             
             try:
                 response = self.gemini_client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-2.0-flash-exp',  # Working model for direct API
                     contents=prompt
                 )
                 result_text = response.text.strip()
