@@ -662,7 +662,7 @@
     }
 
     function formatContent(content) {
-        const actionButtonPattern = /<a\s+href="([^"]+)"\s+target="_blank"\s+class="chat-action-btn">([^<]+)<\/a>/g;
+        const actionButtonPattern = /<a\s+href="([^"]+)"[^>]*class="chat-action-btn"[^>]*>([^<]+)<\/a>/g;
         const preservedButtons = [];
         let buttonIndex = 0;
         
@@ -682,7 +682,7 @@
         formatted = formatted.replace(/\n/g, '<br>');
         
         preservedButtons.forEach(({ placeholder, url, text }) => {
-            const buttonHtml = `<a href="${url}" target="_blank" class="chat-action-btn" onclick="event.stopPropagation();">${text}</a>`;
+            const buttonHtml = `<a href="${url}" class="chat-action-btn" onclick="event.stopPropagation();">${text}</a>`;
             formatted = formatted.replace(placeholder, buttonHtml);
         });
         

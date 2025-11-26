@@ -63,12 +63,18 @@ A standalone product for subscription analytics, featuring a "Subscription Pulse
 #### LangGraph Agent - Conversational Service Controller
 A new LangGraph-based AI agent (`agent/` directory) provides conversational control over all services:
 -   **Architecture**: StateGraph with tool-calling using Gemini 2.0 Flash via OpenRouter
+-   **Conversation Memory**: Uses SQLiteSaver checkpointer for persistent conversation state
+    -   Frontend generates UUID `session_id` stored in localStorage
+    -   Backend receives `thread_id` parameter to maintain conversation context
+    -   Agent remembers entities discussed (vendors, invoices) for follow-up questions like "sync it" or "tell me more"
+    -   Stored at `./agent_memory.sqlite`
 -   **Semantic AI First Protocol**: Agent ALWAYS checks BigQuery database before requesting external service connections:
     1.  `search_database_first`: Queries vendors, invoices, subscriptions in BigQuery using parameterized queries (SQL injection safe)
     2.  Only if no results found, agent offers to connect external services (Gmail, NetSuite)
     3.  Returns clickable HTML buttons for OAuth flows (e.g., "Connect Gmail" button)
 -   **Available Tools**:
     -   `search_database_first`: **Priority 1** - Search BigQuery before external services
+    -   `get_top_vendors_by_spend`: Analytics tool for spend analysis (queries invoices table)
     -   `check_gmail_status`: Check if Gmail is connected, returns OAuth URL if not
     -   `search_gmail_invoices`: Search Gmail for invoice/receipt emails
     -   `search_netsuite_vendor`: Find vendors by name, email, or tax ID
@@ -79,7 +85,7 @@ A new LangGraph-based AI agent (`agent/` directory) provides conversational cont
     -   `run_bigquery`: Execute SQL queries on data warehouse
     -   `get_subscription_summary`: Get SaaS subscription analytics
 -   **Endpoints**:
-    -   `POST /api/agent/chat`: Synchronous chat with agent
+    -   `POST /api/agent/chat`: Synchronous chat with agent (accepts `thread_id` for memory)
     -   `POST /api/agent/chat/stream`: SSE streaming chat
     -   `GET /api/agent/tools`: List available tools
 -   **Tracing**: LangSmith integration for monitoring (LANGCHAIN_API_KEY, LANGCHAIN_PROJECT=payouts-automation)

@@ -8647,16 +8647,18 @@ def agent_chat():
         
         message = data['message']
         user_id = data.get('user_id', session.get('user_id', 'anonymous'))
+        thread_id = data.get('thread_id')
         
-        print(f"🤖 Agent chat from {user_id}: {message[:100]}...")
+        print(f"🤖 Agent chat from {user_id} (thread: {thread_id}): {message[:100]}...")
         
-        result = run_agent(message, user_id)
+        result = run_agent(message, user_id, thread_id=thread_id)
         
         return jsonify({
             'success': True,
             'response': result.get('response', ''),
             'tools_used': result.get('tools_used', []),
-            'user_id': user_id
+            'user_id': user_id,
+            'thread_id': result.get('thread_id')
         })
         
     except Exception as e:

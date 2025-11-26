@@ -1,14 +1,16 @@
 """
 LangGraph Brain - StateGraph with OpenRouter Gemini 3 Pro
+With persistent conversation memory using SQLite checkpointer
 """
 
 import os
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .tools import get_all_tools
 
@@ -16,11 +18,26 @@ from .tools import get_all_tools
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "payouts-automation")
 
+_checkpointer = None
+_compiled_graph = None
+
+
+def get_checkpointer():
+    """Get or create the SQLite checkpointer for conversation memory"""
+    global _checkpointer
+    if _checkpointer is None:
+        import sqlite3
+        os.makedirs('data', exist_ok=True)
+        conn = sqlite3.connect('data/agent_memory.db', check_same_thread=False)
+        _checkpointer = SqliteSaver(conn)
+    return _checkpointer
+
 
 class AgentState(TypedDict):
     """State for the agent graph"""
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_id: str
+    last_entity: Optional[str]
 
 
 def create_llm():
@@ -63,6 +80,14 @@ def create_agent_graph():
         
         system_prompt = """You are Payouts AI - a SEMANTIC AI FIRST intelligent assistant for managing invoices, vendors, and subscriptions.
 
+## CRITICAL: CONVERSATION CONTEXT
+You have MEMORY of our conversation. When the user asks follow-up questions like:
+- "When was the last sync?" - You know which vendor they mean from the previous message
+- "Sync it to NetSuite" - You know what "it" refers to
+- "Show me more details" - You remember what we were discussing
+
+ALWAYS assume follow-up questions refer to the entity (vendor, invoice, subscription) from the previous turn.
+
 ## CRITICAL: SEMANTIC AI FIRST PROTOCOL
 You MUST follow this priority order for EVERY request:
 
@@ -81,6 +106,11 @@ You MUST follow this priority order for EVERY request:
 ### Database First (ALWAYS START HERE):
 - search_database_first: Search local database for vendors, invoices, subscriptions
 - run_bigquery: Execute custom SQL queries
+- get_top_vendors_by_spend: Get top vendors by total payment amount (from invoices table, NOT events)
+
+### Analytics (for spending/payment questions):
+- get_top_vendors_by_spend: ALWAYS use this for "top vendors", "most paid", "spending" questions
+  - This queries the INVOICES table (actual money), NOT the events table (just logs)
 
 ### Service Status:
 - check_gmail_status: Check Gmail connection, get connect button if needed
@@ -104,6 +134,7 @@ You MUST follow this priority order for EVERY request:
 - Be concise but helpful
 - Explain what you found and what actions you took
 - If data is found in database, celebrate that no external call was needed!
+- Remember the context from previous messages!
 
 ## Example Flow:
 User: "Find the Figma invoice"
@@ -111,7 +142,10 @@ User: "Find the Figma invoice"
 2. If found -> Return data (done!)
 3. If not found -> Call check_gmail_status
 4. If not connected -> Show connect button from response
-5. If connected -> Call search_gmail_invoices"""
+5. If connected -> Call search_gmail_invoices
+
+User: "When was the last sync for this vendor?"
+-> You remember we just talked about Figma, so search for Figma sync events"""
 
         from langchain_core.messages import SystemMessage
         full_messages = [SystemMessage(content=system_prompt)] + list(messages)
@@ -139,31 +173,48 @@ User: "Find the Figma invoice"
     
     workflow.add_edge("tools", "agent")
     
-    return workflow.compile()
+    checkpointer = get_checkpointer()
+    return workflow.compile(checkpointer=checkpointer)
 
 
-def run_agent(message: str, user_id: str = "default") -> dict:
+def get_compiled_graph():
+    """Get or create the compiled graph singleton"""
+    global _compiled_graph
+    if _compiled_graph is None:
+        _compiled_graph = create_agent_graph()
+    return _compiled_graph
+
+
+def run_agent(message: str, user_id: str = "default", thread_id: str = None) -> dict:
     """
-    Run the agent with a user message and return the response with tools used
+    Run the agent with a user message and return the response with tools used.
+    Uses conversation memory via thread_id for context persistence.
     
     Args:
         message: The user's message/question
         user_id: User ID for tracking
+        thread_id: Thread ID for conversation memory (from frontend session)
         
     Returns:
         Dict with 'response' (text) and 'tools_used' (list of tool names)
     """
-    graph = create_agent_graph()
+    graph = get_compiled_graph()
     
-    initial_state = {
+    if not thread_id:
+        thread_id = f"thread_{user_id}_{os.urandom(4).hex()}"
+    
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    input_state = {
         "messages": [HumanMessage(content=message)],
-        "user_id": user_id
+        "user_id": user_id,
+        "last_entity": None
     }
     
     tools_used = []
     
     try:
-        result = graph.invoke(initial_state)
+        result = graph.invoke(input_state, config=config)
         
         messages = result.get("messages", [])
         
@@ -183,13 +234,15 @@ def run_agent(message: str, user_id: str = "default") -> dict:
         
         return {
             "response": response_text,
-            "tools_used": tools_used
+            "tools_used": tools_used,
+            "thread_id": thread_id
         }
         
     except Exception as e:
         return {
             "response": f"Error running agent: {str(e)}",
-            "tools_used": tools_used
+            "tools_used": tools_used,
+            "thread_id": thread_id
         }
 
 

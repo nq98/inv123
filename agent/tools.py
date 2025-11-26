@@ -150,6 +150,69 @@ def search_database_first(query: str, search_type: str = "all") -> str:
 
 
 @tool
+def get_top_vendors_by_spend(limit: int = 10) -> str:
+    """
+    Get the top vendors by total payment amount from the INVOICES table.
+    Use this for questions about "top vendors", "who did I pay most", "spending analysis".
+    
+    IMPORTANT: This queries the invoices table (actual financial data), 
+    NOT the netsuite_events table (which is just API logs).
+    
+    Args:
+        limit: Number of top vendors to return (default: 10)
+    
+    Returns:
+        JSON with top vendors ranked by total spend
+    """
+    try:
+        query = """
+        SELECT 
+            vendor_name,
+            SUM(amount) as total_spend,
+            COUNT(*) as invoice_count,
+            MAX(invoice_date) as last_invoice_date,
+            STRING_AGG(DISTINCT currency, ', ') as currencies
+        FROM `invoicereader-477008.vendors_ai.invoices`
+        WHERE vendor_name IS NOT NULL AND amount IS NOT NULL
+        GROUP BY vendor_name
+        ORDER BY total_spend DESC
+        LIMIT @limit
+        """
+        
+        results = bigquery_service.query(query, {"limit": limit})
+        
+        if not results:
+            return json.dumps({
+                "message": "No invoice data found in the database yet.",
+                "suggestion": "Try importing invoices from Gmail or uploading them manually first."
+            })
+        
+        formatted = []
+        for i, row in enumerate(results, 1):
+            formatted.append({
+                "rank": i,
+                "vendor_name": row.get("vendor_name"),
+                "total_spend": float(row.get("total_spend", 0)),
+                "invoice_count": row.get("invoice_count"),
+                "last_invoice": str(row.get("last_invoice_date")),
+                "currencies": row.get("currencies")
+            })
+        
+        total_spend = sum(r["total_spend"] for r in formatted)
+        
+        return json.dumps({
+            "success": True,
+            "top_vendors": formatted,
+            "total_vendors_shown": len(formatted),
+            "total_spend_shown": total_spend,
+            "message": f"Top {len(formatted)} vendors by spend (from invoices table)"
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
 def search_gmail_invoices(days: int = 30, max_results: int = 20, access_token: Optional[str] = None) -> str:
     """
     Search Gmail for invoice and receipt emails.
@@ -481,6 +544,7 @@ def get_all_tools():
     """Return list of all available tools for the agent - SEMANTIC AI FIRST ORDER"""
     return [
         search_database_first,
+        get_top_vendors_by_spend,
         check_gmail_status,
         search_gmail_invoices,
         create_netsuite_bill,
