@@ -12,7 +12,10 @@
         'get_bill_status': '📋',
         'match_vendor_to_database': '🔗',
         'run_bigquery': '🗄️',
-        'get_subscription_summary': '📊'
+        'get_subscription_summary': '📊',
+        'search_database_first': '🔍',
+        'check_gmail_status': '📧',
+        'get_top_vendors_by_spend': '💰'
     };
 
     const TOOL_LABELS = {
@@ -23,8 +26,25 @@
         'get_bill_status': 'Checked Status',
         'match_vendor_to_database': 'Matched Vendor',
         'run_bigquery': 'Queried Database',
-        'get_subscription_summary': 'Got Subscriptions'
+        'get_subscription_summary': 'Got Subscriptions',
+        'search_database_first': 'Searched Database',
+        'check_gmail_status': 'Checked Gmail',
+        'get_top_vendors_by_spend': 'Top Vendors by Spend'
     };
+
+    function getSessionId() {
+        let sessionId = localStorage.getItem('payouts_session_id');
+        if (!sessionId) {
+            sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('payouts_session_id', sessionId);
+        }
+        return sessionId;
+    }
+
+    function clearSession() {
+        localStorage.removeItem('payouts_session_id');
+        messages = [];
+    }
 
     let isOpen = false;
     let isLoading = false;
@@ -580,12 +600,16 @@
         showLoading();
 
         try {
+            const sessionId = getSessionId();
             const response = await fetch(API_ENDPOINT, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ 
+                    message,
+                    thread_id: sessionId
+                })
             });
 
             const data = await response.json();
