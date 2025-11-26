@@ -133,11 +133,11 @@ def search_database_first(user_email: str, query: str, search_type: str = "all")
         
         if search_type in ["subscriptions", "all"]:
             sub_query = """
-            SELECT vendor_name, amount, currency, payment_date, subscription_type
+            SELECT vendor_name, amount, currency, timestamp, event_type
             FROM `invoicereader-477008.vendors_ai.subscription_events`
             WHERE owner_email = @user_email
               AND LOWER(vendor_name) LIKE @search_pattern
-            ORDER BY payment_date DESC
+            ORDER BY timestamp DESC
             LIMIT 10
             """
             try:
@@ -650,8 +650,8 @@ def get_subscription_summary(user_email: str) -> str:
             vendor_name,
             SUM(amount) as total_spend,
             COUNT(*) as payment_count,
-            MAX(payment_date) as last_payment,
-            MIN(payment_date) as first_payment
+            MAX(timestamp) as last_payment,
+            MIN(timestamp) as first_payment
         FROM `invoicereader-477008.vendors_ai.subscription_events`
         WHERE owner_email = @user_email
         GROUP BY vendor_name
@@ -935,7 +935,7 @@ def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vend
         
         if vendor_name and not vendor_id:
             vendor_query = """
-            SELECT vendor_id, global_name, netsuite_id, email, domains, sync_status
+            SELECT vendor_id, global_name, netsuite_internal_id, emails, domains, source_system
             FROM `invoicereader-477008.vendors_ai.global_vendors`
             WHERE owner_email = @user_email
               AND LOWER(global_name) LIKE @search_pattern
@@ -948,9 +948,11 @@ def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vend
             if results:
                 vendor = results[0]
                 vendor_id = vendor.get('vendor_id')
+                ns_id = vendor.get('netsuite_internal_id')
                 report["vendor_id"] = vendor_id
                 report["vendor_name"] = vendor.get('global_name')
-                report["netsuite_internal_id"] = vendor.get('netsuite_id')
+                report["netsuite_internal_id"] = ns_id
+                report["sync_status"] = "SYNCED" if ns_id else "NOT_SYNCED"
         
         if not vendor_id:
             return json.dumps({
@@ -1126,8 +1128,8 @@ def get_vendor_full_profile(user_email: str, vendor_name: str) -> str:
         
         vendor_query = """
         SELECT 
-            vendor_id, global_name, netsuite_id, email, phone, 
-            tax_id, address, country, domains, sync_status, created_at
+            vendor_id, global_name, netsuite_internal_id, emails, 
+            custom_attributes, countries, domains, source_system, created_at
         FROM `invoicereader-477008.vendors_ai.global_vendors`
         WHERE owner_email = @user_email
           AND LOWER(global_name) LIKE @search_pattern
@@ -1140,16 +1142,17 @@ def get_vendor_full_profile(user_email: str, vendor_name: str) -> str:
             })
             if vendors:
                 v = vendors[0]
+                custom_attrs = v.get("custom_attributes") or {}
                 dossier["profile"] = {
                     "vendor_id": v.get("vendor_id"),
                     "name": v.get("global_name"),
-                    "netsuite_id": v.get("netsuite_id"),
-                    "email": v.get("email"),
-                    "phone": v.get("phone"),
-                    "tax_id": v.get("tax_id"),
-                    "country": v.get("country"),
+                    "netsuite_id": v.get("netsuite_internal_id"),
+                    "email": v.get("emails", [None])[0] if v.get("emails") else None,
+                    "phone": custom_attrs.get("phone") if isinstance(custom_attrs, dict) else None,
+                    "tax_id": custom_attrs.get("tax_id") if isinstance(custom_attrs, dict) else None,
+                    "country": v.get("countries", [None])[0] if v.get("countries") else None,
                     "domains": v.get("domains"),
-                    "status": "Active ✅" if v.get("netsuite_id") else "Not Synced ⚠️"
+                    "status": "Active ✅" if v.get("netsuite_internal_id") else "Not Synced ⚠️"
                 }
         except Exception as e:
             dossier["profile_error"] = str(e)
@@ -1505,7 +1508,7 @@ def pull_netsuite_vendors(user_email: str) -> str:
                 email = vendor.get('email', '')
                 
                 existing = bigquery_service.query(
-                    "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_id = @netsuite_id LIMIT 1",
+                    "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_internal_id = @netsuite_id LIMIT 1",
                     {"netsuite_id": str(netsuite_id), "user_email": user_email}
                 )
                 
@@ -1516,11 +1519,10 @@ def pull_netsuite_vendors(user_email: str) -> str:
                     new_vendor = {
                         'vendor_id': f"V{uuid.uuid4().hex[:8].upper()}",
                         'global_name': company_name,
-                        'netsuite_id': str(netsuite_id),
+                        'netsuite_internal_id': str(netsuite_id),
                         'emails': [email] if email else [],
                         'domains': [],
                         'countries': [],
-                        'sync_status': 'SYNCED',
                         'source_system': 'netsuite',
                         'owner_email': user_email
                     }
@@ -1583,14 +1585,14 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         
         where_clause = "WHERE owner_email = @user_email"
         if filter_type == "synced":
-            where_clause += " AND netsuite_id IS NOT NULL"
+            where_clause += " AND netsuite_internal_id IS NOT NULL"
         elif filter_type == "unsynced":
-            where_clause += " AND netsuite_id IS NULL"
+            where_clause += " AND netsuite_internal_id IS NULL"
         
         query = f"""
         SELECT 
-            vendor_id, global_name, netsuite_id, email, 
-            tax_id, country, sync_status, created_at
+            vendor_id, global_name, netsuite_internal_id, emails, 
+            custom_attributes, countries, source_system, created_at
         FROM `invoicereader-477008.vendors_ai.global_vendors`
         {where_clause}
         ORDER BY created_at DESC
@@ -1610,10 +1612,12 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         
         for v in vendors:
             name = v.get('global_name', 'N/A')
-            tax_id = v.get('tax_id', '-')
-            ns_id = v.get('netsuite_id')
+            custom_attrs = v.get('custom_attributes') or {}
+            tax_id = custom_attrs.get('tax_id', '-') if isinstance(custom_attrs, dict) else '-'
+            ns_id = v.get('netsuite_internal_id')
             ns_status = f'✅ Synced (ID: {ns_id})' if ns_id else '⚠️ Not Synced'
-            country = v.get('country', '-')
+            countries = v.get('countries', [])
+            country = countries[0] if countries else '-'
             
             html_table += f'<tr><td><strong>{name}</strong></td><td>{tax_id}</td><td>{ns_status}</td><td>{country}</td></tr>'
         
@@ -1623,7 +1627,7 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         total_result = bigquery_service.query(total_query, {"user_email": user_email})
         total_count = total_result[0]['count'] if total_result else len(vendors)
         
-        synced_query = "SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_id IS NOT NULL"
+        synced_query = "SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_internal_id IS NOT NULL"
         synced_result = bigquery_service.query(synced_query, {"user_email": user_email})
         synced_count = synced_result[0]['count'] if synced_result else 0
         
