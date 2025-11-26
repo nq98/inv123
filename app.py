@@ -8621,33 +8621,97 @@ def get_subscription_analytics():
 def agent_chat():
     """
     Chat with the LangGraph AI Agent that controls Gmail, NetSuite, and BigQuery services.
+    Supports both JSON and multipart/form-data (for file uploads).
     
-    Request body:
+    Request body (JSON):
         {
             "message": "Your question or command",
-            "user_id": "optional user identifier"
+            "user_id": "optional user identifier",
+            "thread_id": "session thread ID"
         }
+    
+    Request body (multipart/form-data):
+        message: "Your question or command"
+        thread_id: "session thread ID"
+        file: PDF or CSV file (optional)
     
     Response:
         {
             "success": true,
             "response": "Agent's response text",
-            "user_id": "user identifier used"
+            "tools_used": ["list", "of", "tools"],
+            "user_id": "user identifier used",
+            "thread_id": "session thread ID"
         }
     """
     try:
         from agent.brain import run_agent
+        import uuid
+        from werkzeug.utils import secure_filename
         
-        data = request.get_json()
-        if not data or 'message' not in data:
+        file_context = None
+        
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            message = request.form.get('message', '')
+            user_id = request.form.get('user_id', session.get('user_id', 'anonymous'))
+            thread_id = request.form.get('thread_id')
+            
+            if 'file' in request.files:
+                file = request.files['file']
+                if file and file.filename:
+                    os.makedirs('uploads', exist_ok=True)
+                    
+                    filename = secure_filename(file.filename)
+                    file_ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                    unique_filename = f"{uuid.uuid4().hex[:8]}_{filename}"
+                    file_path = os.path.join('uploads', unique_filename)
+                    
+                    file.save(file_path)
+                    
+                    if file_ext == 'pdf':
+                        file_type = 'invoice_pdf'
+                    elif file_ext == 'csv':
+                        file_type = 'vendor_csv'
+                    else:
+                        file_type = 'unknown'
+                    
+                    file_context = {
+                        'file_path': file_path,
+                        'file_type': file_type,
+                        'original_filename': filename,
+                        'file_extension': file_ext
+                    }
+                    
+                    print(f"📎 File uploaded: {filename} ({file_type}) -> {file_path}")
+        else:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing request body'
+                }), 400
+            
+            message = data.get('message', '')
+            user_id = data.get('user_id', session.get('user_id', 'anonymous'))
+            thread_id = data.get('thread_id')
+        
+        if not message and not file_context:
             return jsonify({
                 'success': False,
-                'error': 'Missing "message" field in request body'
+                'error': 'Missing "message" field or file in request'
             }), 400
         
-        message = data['message']
-        user_id = data.get('user_id', session.get('user_id', 'anonymous'))
-        thread_id = data.get('thread_id')
+        if file_context:
+            if file_context['file_type'] == 'invoice_pdf':
+                if message:
+                    message = f"[UPLOADED FILE: {file_context['original_filename']}] {message}\n\nFile path: {file_context['file_path']}"
+                else:
+                    message = f"I've uploaded an invoice PDF: {file_context['original_filename']}. Please process it and extract the invoice data.\n\nFile path: {file_context['file_path']}"
+            elif file_context['file_type'] == 'vendor_csv':
+                if message:
+                    message = f"[UPLOADED FILE: {file_context['original_filename']}] {message}\n\nFile path: {file_context['file_path']}"
+                else:
+                    message = f"I've uploaded a vendor CSV file: {file_context['original_filename']}. Please analyze and import the vendors.\n\nFile path: {file_context['file_path']}"
         
         print(f"🤖 Agent chat from {user_id} (thread: {thread_id}): {message[:100]}...")
         
@@ -8658,7 +8722,8 @@ def agent_chat():
             'response': result.get('response', ''),
             'tools_used': result.get('tools_used', []),
             'user_id': user_id,
-            'thread_id': result.get('thread_id')
+            'thread_id': result.get('thread_id'),
+            'file_processed': file_context is not None
         })
         
     except Exception as e:

@@ -1065,6 +1065,352 @@ def get_vendor_full_profile(vendor_name: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+# ========== INGESTION TOOLS - FILE PROCESSING ==========
+
+@tool
+def process_uploaded_invoice(file_path: str) -> str:
+    """
+    Process an uploaded invoice PDF through the full extraction pipeline.
+    Uses Document AI for OCR, Gemini for semantic extraction, and Supreme Judge for vendor matching.
+    
+    AUTOMATICALLY CALL THIS when user uploads a PDF file.
+    
+    Args:
+        file_path: Path to the uploaded PDF file (e.g., "uploads/abc123_invoice.pdf")
+    
+    Returns:
+        Extraction results with vendor match and action buttons for next steps
+    """
+    try:
+        import sys
+        sys.path.insert(0, '.')
+        from invoice_processor import InvoiceProcessor
+        
+        if not os.path.exists(file_path):
+            return json.dumps({
+                "error": f"File not found: {file_path}",
+                "suggestion": "The file may have been moved or deleted."
+            })
+        
+        processor = InvoiceProcessor()
+        
+        print(f"📄 Processing invoice: {file_path}")
+        
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        
+        result = processor.process_invoice(file_content, filename=os.path.basename(file_path))
+        
+        if result.get('success'):
+            extracted = result.get('extraction', {})
+            vendor_name = extracted.get('vendor', {}).get('name', 'Unknown Vendor')
+            invoice_number = extracted.get('invoiceNumber', 'N/A')
+            total = extracted.get('totals', {}).get('total', 0)
+            currency = extracted.get('currency', 'USD')
+            confidence = result.get('confidence', 0) * 100
+            
+            vendor_match = result.get('vendor_match', {})
+            matched_vendor_id = vendor_match.get('vendor_id')
+            netsuite_id = vendor_match.get('netsuite_id')
+            
+            response = {
+                "success": True,
+                "extraction": {
+                    "vendor_name": vendor_name,
+                    "invoice_number": invoice_number,
+                    "total": f"{currency} {total}",
+                    "date": extracted.get('documentDate'),
+                    "confidence": f"{confidence:.0f}%"
+                },
+                "vendor_match": {
+                    "matched": matched_vendor_id is not None,
+                    "vendor_id": matched_vendor_id,
+                    "netsuite_id": netsuite_id
+                },
+                "gcs_uri": result.get('gcs_uri'),
+                "message": f"Successfully extracted Invoice #{invoice_number} from {vendor_name}. Total: {currency} {total}. Confidence: {confidence:.0f}%"
+            }
+            
+            if netsuite_id:
+                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Create a bill in NetSuite for invoice {invoice_number} from {vendor_name}\'); return false;">📝 Create Bill in NetSuite</a>'
+                response["message"] += f"\n\n✅ Vendor matched to NetSuite ID: {netsuite_id}"
+            elif matched_vendor_id:
+                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Sync vendor {vendor_name} to NetSuite\'); return false;">🔄 Sync Vendor to NetSuite</a>'
+                response["message"] += f"\n\n⚠️ Vendor found in database but not synced to NetSuite."
+            else:
+                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Create new vendor {vendor_name} and sync to NetSuite\'); return false;">➕ Create New Vendor</a>'
+                response["message"] += f"\n\n🆕 New vendor detected. Would you like to create it?"
+            
+            return json.dumps(response, indent=2, default=str)
+        else:
+            return json.dumps({
+                "success": False,
+                "error": result.get('error', 'Unknown extraction error'),
+                "file_path": file_path
+            })
+        
+    except Exception as e:
+        return json.dumps({"error": str(e), "file_path": file_path})
+
+
+@tool
+def import_vendor_csv(file_path: str) -> str:
+    """
+    Import vendors from an uploaded CSV file using AI-powered column mapping.
+    Analyzes the CSV structure, maps columns to schema, and imports to BigQuery.
+    
+    AUTOMATICALLY CALL THIS when user uploads a CSV file.
+    
+    Args:
+        file_path: Path to the uploaded CSV file (e.g., "uploads/abc123_vendors.csv")
+    
+    Returns:
+        Import results with count of new/updated vendors and HTML table preview
+    """
+    try:
+        import sys
+        sys.path.insert(0, '.')
+        from services.vendor_csv_mapper import VendorCSVMapper
+        
+        if not os.path.exists(file_path):
+            return json.dumps({
+                "error": f"File not found: {file_path}",
+                "suggestion": "The file may have been moved or deleted."
+            })
+        
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            csv_content = f.read()
+        
+        mapper = VendorCSVMapper()
+        
+        print(f"📋 Analyzing CSV: {file_path}")
+        mapping_result = mapper.analyze_csv_headers(csv_content, os.path.basename(file_path))
+        
+        if not mapping_result.get('success'):
+            return json.dumps({
+                "success": False,
+                "error": mapping_result.get('error', 'Failed to analyze CSV'),
+                "file_path": file_path
+            })
+        
+        column_mapping = mapping_result.get('mapping', {})
+        
+        vendors = mapper.transform_csv_data(csv_content, column_mapping)
+        
+        new_count = 0
+        updated_count = 0
+        errors = []
+        
+        for vendor in vendors:
+            try:
+                if vendor.get('global_name'):
+                    existing = bigquery_service.query(
+                        "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE LOWER(global_name) = @name LIMIT 1",
+                        {"name": vendor['global_name'].lower()}
+                    )
+                    
+                    if existing:
+                        updated_count += 1
+                    else:
+                        import uuid
+                        vendor['vendor_id'] = vendor.get('vendor_id') or f"V{uuid.uuid4().hex[:8].upper()}"
+                        bigquery_service.insert_vendor(vendor)
+                        new_count += 1
+            except Exception as e:
+                errors.append(str(e))
+        
+        html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th></tr></thead><tbody>'
+        for v in vendors[:10]:
+            name = v.get('global_name', 'N/A')
+            email = v.get('emails', ['N/A'])[0] if v.get('emails') else 'N/A'
+            country = v.get('countries', ['N/A'])[0] if v.get('countries') else 'N/A'
+            status = '🆕 New' if not v.get('existing') else '✅ Updated'
+            html_table += f'<tr><td>{name}</td><td>{email}</td><td>{country}</td><td>{status}</td></tr>'
+        
+        if len(vendors) > 10:
+            html_table += f'<tr><td colspan="4" style="text-align:center;color:#6b7280;">... and {len(vendors) - 10} more vendors</td></tr>'
+        html_table += '</tbody></table>'
+        
+        response = {
+            "success": True,
+            "total_vendors": len(vendors),
+            "new_vendors": new_count,
+            "updated_vendors": updated_count,
+            "errors": len(errors),
+            "mapping_confidence": mapping_result.get('confidence', 0),
+            "detected_language": column_mapping.get('detectedLanguage', 'Unknown'),
+            "message": f"Analyzed CSV with {len(vendors)} vendors.\n✅ {new_count} new vendors imported.\n🔄 {updated_count} existing vendors found.",
+            "html_table": html_table,
+            "html_action": '<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Show me all vendors\'); return false;">📋 View All Vendors</a>'
+        }
+        
+        if errors:
+            response["message"] += f"\n⚠️ {len(errors)} errors occurred during import."
+        
+        return json.dumps(response, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e), "file_path": file_path})
+
+
+@tool
+def pull_netsuite_vendors() -> str:
+    """
+    Pull and sync all vendors from NetSuite to the local database.
+    Fetches vendor records from NetSuite API and updates BigQuery.
+    
+    Returns:
+        Sync results with count of vendors and HTML table preview
+    """
+    try:
+        print("🔄 Pulling vendors from NetSuite...")
+        
+        vendors = netsuite_service.search_vendors(limit=500)
+        
+        if not vendors:
+            return json.dumps({
+                "success": True,
+                "message": "No vendors found in NetSuite.",
+                "total_vendors": 0
+            })
+        
+        synced_count = 0
+        new_count = 0
+        updated_count = 0
+        
+        for vendor in vendors:
+            try:
+                netsuite_id = vendor.get('id') or vendor.get('internalId')
+                company_name = vendor.get('companyName') or vendor.get('entityId', 'Unknown')
+                email = vendor.get('email', '')
+                
+                existing = bigquery_service.query(
+                    "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE netsuite_id = @netsuite_id LIMIT 1",
+                    {"netsuite_id": str(netsuite_id)}
+                )
+                
+                if existing:
+                    updated_count += 1
+                else:
+                    import uuid
+                    new_vendor = {
+                        'vendor_id': f"V{uuid.uuid4().hex[:8].upper()}",
+                        'global_name': company_name,
+                        'netsuite_id': str(netsuite_id),
+                        'email': email,
+                        'sync_status': 'SYNCED',
+                        'source_system': 'netsuite'
+                    }
+                    bigquery_service.insert_vendor(new_vendor)
+                    new_count += 1
+                
+                synced_count += 1
+                
+            except Exception as e:
+                print(f"Error syncing vendor: {e}")
+        
+        html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>NetSuite ID</th><th>Email</th><th>Status</th></tr></thead><tbody>'
+        for v in vendors[:10]:
+            name = v.get('companyName') or v.get('entityId', 'N/A')
+            ns_id = v.get('id') or v.get('internalId', 'N/A')
+            email = v.get('email', 'N/A')
+            html_table += f'<tr><td>{name}</td><td>{ns_id}</td><td>{email}</td><td>✅ Synced</td></tr>'
+        
+        if len(vendors) > 10:
+            html_table += f'<tr><td colspan="4" style="text-align:center;color:#6b7280;">... and {len(vendors) - 10} more vendors</td></tr>'
+        html_table += '</tbody></table>'
+        
+        response = {
+            "success": True,
+            "total_vendors": len(vendors),
+            "new_vendors": new_count,
+            "updated_vendors": updated_count,
+            "message": f"Successfully synced {synced_count} vendors from NetSuite.\n🆕 {new_count} new vendors added.\n🔄 {updated_count} existing vendors updated.",
+            "html_table": html_table,
+            "html_action": '<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Show me all vendors\'); return false;">📋 View All Vendors</a>'
+        }
+        
+        return json.dumps(response, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
+    """
+    Show vendors in a rich HTML table format.
+    Use this when user asks to "show vendors", "list vendors", or "see all vendors".
+    
+    Args:
+        limit: Maximum number of vendors to show (default 20)
+        filter_type: Filter by "all", "synced" (in NetSuite), or "unsynced"
+    
+    Returns:
+        HTML table with vendor data
+    """
+    try:
+        where_clause = ""
+        if filter_type == "synced":
+            where_clause = "WHERE netsuite_id IS NOT NULL"
+        elif filter_type == "unsynced":
+            where_clause = "WHERE netsuite_id IS NULL"
+        
+        query = f"""
+        SELECT 
+            vendor_id, global_name, netsuite_id, email, 
+            tax_id, country, sync_status, created_at
+        FROM `invoicereader-477008.vendors_ai.global_vendors`
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT {limit}
+        """
+        
+        vendors = bigquery_service.query(query, {})
+        
+        if not vendors:
+            return json.dumps({
+                "success": True,
+                "message": "No vendors found matching your criteria.",
+                "html_table": "<p>No vendors in database.</p>"
+            })
+        
+        html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>Tax ID</th><th>NetSuite Status</th><th>Country</th></tr></thead><tbody>'
+        
+        for v in vendors:
+            name = v.get('global_name', 'N/A')
+            tax_id = v.get('tax_id', '-')
+            ns_id = v.get('netsuite_id')
+            ns_status = f'✅ Synced (ID: {ns_id})' if ns_id else '⚠️ Not Synced'
+            country = v.get('country', '-')
+            
+            html_table += f'<tr><td><strong>{name}</strong></td><td>{tax_id}</td><td>{ns_status}</td><td>{country}</td></tr>'
+        
+        html_table += '</tbody></table>'
+        
+        total_query = f"SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` {where_clause}"
+        total_result = bigquery_service.query(total_query, {})
+        total_count = total_result[0]['count'] if total_result else len(vendors)
+        
+        synced_query = "SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE netsuite_id IS NOT NULL"
+        synced_result = bigquery_service.query(synced_query, {})
+        synced_count = synced_result[0]['count'] if synced_result else 0
+        
+        response = {
+            "success": True,
+            "total_vendors": total_count,
+            "synced_vendors": synced_count,
+            "showing": len(vendors),
+            "message": f"Showing {len(vendors)} of {total_count} vendors. {synced_count} synced to NetSuite.",
+            "html_table": html_table
+        }
+        
+        return json.dumps(response, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def get_all_tools():
     """Return list of all available tools for the agent - OMNISCIENT SEMANTIC AI FIRST ORDER"""
     return [
@@ -1073,6 +1419,11 @@ def get_all_tools():
         deep_search,
         get_invoice_pdf_link,
         check_netsuite_health,
+        # Ingestion Tools (for file uploads)
+        process_uploaded_invoice,
+        import_vendor_csv,
+        pull_netsuite_vendors,
+        show_vendors_table,
         # Database First
         search_database_first,
         get_top_vendors_by_spend,

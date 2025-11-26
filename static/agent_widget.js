@@ -15,7 +15,10 @@
         'get_subscription_summary': '📊',
         'search_database_first': '🔍',
         'check_gmail_status': '📧',
-        'get_top_vendors_by_spend': '💰'
+        'get_top_vendors_by_spend': '💰',
+        'process_uploaded_invoice': '📄',
+        'import_vendor_csv': '📋',
+        'pull_netsuite_vendors': '🔄'
     };
 
     const TOOL_LABELS = {
@@ -29,7 +32,10 @@
         'get_subscription_summary': 'Got Subscriptions',
         'search_database_first': 'Searched Database',
         'check_gmail_status': 'Checked Gmail',
-        'get_top_vendors_by_spend': 'Top Vendors by Spend'
+        'get_top_vendors_by_spend': 'Top Vendors by Spend',
+        'process_uploaded_invoice': 'Processed Invoice',
+        'import_vendor_csv': 'Imported CSV',
+        'pull_netsuite_vendors': 'Synced NetSuite'
     };
 
     function getSessionId() {
@@ -52,6 +58,7 @@
     let widgetContainer = null;
     let chatWindow = null;
     let floatingButton = null;
+    let selectedFile = null;
 
     function injectStyles() {
         if (document.getElementById('payouts-agent-widget-styles')) return;
@@ -324,6 +331,57 @@
                 background: white;
                 border-top: 1px solid #e5e7eb;
                 display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .payouts-file-indicator {
+                display: none;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px;
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                border-radius: 8px;
+                font-size: 12px;
+                color: #667eea;
+            }
+
+            .payouts-file-indicator.active {
+                display: flex;
+            }
+
+            .payouts-file-indicator .file-icon {
+                font-size: 16px;
+            }
+
+            .payouts-file-indicator .file-name {
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-weight: 500;
+            }
+
+            .payouts-file-indicator .file-remove {
+                background: none;
+                border: none;
+                color: #667eea;
+                cursor: pointer;
+                padding: 2px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                transition: background 0.2s;
+            }
+
+            .payouts-file-indicator .file-remove:hover {
+                background: rgba(102, 126, 234, 0.2);
+            }
+
+            .payouts-input-row {
+                display: flex;
                 gap: 10px;
                 align-items: flex-end;
             }
@@ -348,6 +406,46 @@
 
             .payouts-chat-input::placeholder {
                 color: #9ca3af;
+            }
+
+            .payouts-file-input {
+                display: none;
+            }
+
+            .payouts-upload-btn {
+                width: 44px;
+                height: 44px;
+                border-radius: 50%;
+                background: #f3f4f6;
+                border: 2px solid #e5e7eb;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+                flex-shrink: 0;
+            }
+
+            .payouts-upload-btn:hover {
+                background: #e5e7eb;
+                border-color: #667eea;
+            }
+
+            .payouts-upload-btn.has-file {
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+                border-color: #667eea;
+            }
+
+            .payouts-upload-btn svg {
+                width: 20px;
+                height: 20px;
+                stroke: #6b7280;
+                transition: stroke 0.2s;
+            }
+
+            .payouts-upload-btn:hover svg,
+            .payouts-upload-btn.has-file svg {
+                stroke: #667eea;
             }
 
             .payouts-chat-send {
@@ -447,6 +545,52 @@
                 transform: translateY(0);
             }
 
+            /* Data table styles for rich rendering */
+            .payouts-table-wrapper {
+                overflow-x: auto;
+                margin: 8px 0;
+                border-radius: 8px;
+                border: 1px solid #e5e7eb;
+            }
+
+            .payouts-data-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12px;
+                min-width: 200px;
+            }
+
+            .payouts-data-table th {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 10px 12px;
+                text-align: left;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .payouts-data-table td {
+                padding: 8px 12px;
+                border-bottom: 1px solid #e5e7eb;
+                text-align: left;
+            }
+
+            .payouts-data-table tr:nth-child(even) {
+                background: #f8f9ff;
+            }
+
+            .payouts-data-table tr:nth-child(odd) {
+                background: white;
+            }
+
+            .payouts-data-table tr:hover td {
+                background: rgba(102, 126, 234, 0.08);
+            }
+
+            .payouts-data-table tr:last-child td {
+                border-bottom: none;
+            }
+
             @media (max-width: 480px) {
                 #payouts-agent-widget {
                     bottom: 16px;
@@ -463,6 +607,16 @@
                 #payouts-chat-button {
                     width: 54px;
                     height: 54px;
+                }
+
+                .payouts-upload-btn {
+                    width: 40px;
+                    height: 40px;
+                }
+
+                .payouts-chat-send {
+                    width: 40px;
+                    height: 40px;
                 }
             }
         `;
@@ -495,7 +649,7 @@
             <div class="payouts-chat-messages" id="payouts-messages-container">
                 <div class="payouts-welcome-message">
                     <h3>Welcome to Payouts AI</h3>
-                    <p>I can help you search invoices, manage vendors, check NetSuite bills, and analyze subscriptions.</p>
+                    <p>I can help you search invoices, manage vendors, check NetSuite bills, and analyze subscriptions. You can also upload PDF invoices or CSV files.</p>
                     <div class="payouts-quick-actions">
                         <button class="payouts-quick-action" data-message="Show me my SaaS subscription summary">📊 Subscription Summary</button>
                         <button class="payouts-quick-action" data-message="Search for recent Gmail invoices">📧 Search Gmail</button>
@@ -504,17 +658,39 @@
                 </div>
             </div>
             <div class="payouts-chat-input-area">
-                <textarea 
-                    class="payouts-chat-input" 
-                    id="payouts-chat-input"
-                    placeholder="Ask about invoices, vendors, or subscriptions..."
-                    rows="1"
-                ></textarea>
-                <button class="payouts-chat-send" id="payouts-send-btn" aria-label="Send message">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
+                <div class="payouts-file-indicator" id="payouts-file-indicator">
+                    <span class="file-icon">📎</span>
+                    <span class="file-name" id="payouts-file-name"></span>
+                    <button class="file-remove" id="payouts-file-remove" aria-label="Remove file">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="payouts-input-row">
+                    <input 
+                        type="file" 
+                        class="payouts-file-input" 
+                        id="payouts-file-input"
+                        accept=".pdf,.csv"
+                    />
+                    <button class="payouts-upload-btn" id="payouts-upload-btn" aria-label="Upload file">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                    <textarea 
+                        class="payouts-chat-input" 
+                        id="payouts-chat-input"
+                        placeholder="Ask about invoices, vendors, or subscriptions..."
+                        rows="1"
+                    ></textarea>
+                    <button class="payouts-chat-send" id="payouts-send-btn" aria-label="Send message">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
         `;
 
@@ -542,6 +718,9 @@
 
         const input = document.getElementById('payouts-chat-input');
         const sendBtn = document.getElementById('payouts-send-btn');
+        const fileInput = document.getElementById('payouts-file-input');
+        const uploadBtn = document.getElementById('payouts-upload-btn');
+        const fileRemoveBtn = document.getElementById('payouts-file-remove');
 
         sendBtn.addEventListener('click', sendMessage);
 
@@ -557,6 +736,14 @@
             input.style.height = Math.min(input.scrollHeight, 120) + 'px';
         });
 
+        uploadBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        fileRemoveBtn.addEventListener('click', clearSelectedFile);
+
         const quickActions = chatWindow.querySelectorAll('.payouts-quick-action');
         quickActions.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -567,6 +754,31 @@
                 }
             });
         });
+    }
+
+    function handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (file) {
+            selectedFile = file;
+            const fileIndicator = document.getElementById('payouts-file-indicator');
+            const fileName = document.getElementById('payouts-file-name');
+            const uploadBtn = document.getElementById('payouts-upload-btn');
+
+            fileName.textContent = file.name;
+            fileIndicator.classList.add('active');
+            uploadBtn.classList.add('has-file');
+        }
+    }
+
+    function clearSelectedFile() {
+        selectedFile = null;
+        const fileInput = document.getElementById('payouts-file-input');
+        const fileIndicator = document.getElementById('payouts-file-indicator');
+        const uploadBtn = document.getElementById('payouts-upload-btn');
+
+        fileInput.value = '';
+        fileIndicator.classList.remove('active');
+        uploadBtn.classList.remove('has-file');
     }
 
     function toggleChat() {
@@ -591,26 +803,46 @@
         const input = document.getElementById('payouts-chat-input');
         const message = input.value.trim();
 
-        if (!message || isLoading) return;
+        if ((!message && !selectedFile) || isLoading) return;
+
+        const displayMessage = selectedFile 
+            ? (message || `Uploaded: ${selectedFile.name}`)
+            : message;
 
         input.value = '';
         input.style.height = 'auto';
 
-        addMessage('user', message);
+        addMessage('user', displayMessage);
         showLoading();
 
         try {
             const sessionId = getSessionId();
-            const response = await fetch(API_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    message,
-                    thread_id: sessionId
-                })
-            });
+            let response;
+
+            if (selectedFile) {
+                const formData = new FormData();
+                formData.append('message', message);
+                formData.append('thread_id', sessionId);
+                formData.append('file', selectedFile);
+
+                response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearSelectedFile();
+            } else {
+                response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        message,
+                        thread_id: sessionId
+                    })
+                });
+            }
 
             const data = await response.json();
             hideLoading();
@@ -672,6 +904,20 @@
             buttonIndex++;
             return placeholder;
         });
+
+        const tablePattern = /<table[^>]*>[\s\S]*?<\/table>/gi;
+        const preservedTables = [];
+        let tableIndex = 0;
+
+        processed = processed.replace(tablePattern, (match) => {
+            const placeholder = `__TABLE_${tableIndex}__`;
+            let styledTable = match
+                .replace(/<table[^>]*>/gi, '<div class="payouts-table-wrapper"><table class="payouts-data-table">')
+                .replace(/<\/table>/gi, '</table></div>');
+            preservedTables.push({ placeholder, html: styledTable });
+            tableIndex++;
+            return placeholder;
+        });
         
         let formatted = processed
             .replace(/&/g, '&amp;')
@@ -684,6 +930,10 @@
         preservedButtons.forEach(({ placeholder, url, text }) => {
             const buttonHtml = `<a href="${url}" class="chat-action-btn" onclick="event.stopPropagation();">${text}</a>`;
             formatted = formatted.replace(placeholder, buttonHtml);
+        });
+
+        preservedTables.forEach(({ placeholder, html }) => {
+            formatted = formatted.replace(placeholder, html);
         });
         
         return formatted;
@@ -746,7 +996,8 @@
         sendMessage: (msg) => {
             document.getElementById('payouts-chat-input').value = msg;
             sendMessage();
-        }
+        },
+        clearSession: clearSession
     };
 
 })();
