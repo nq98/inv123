@@ -60,21 +60,29 @@ A standalone product for subscription analytics, featuring a "Subscription Pulse
     -   **Gmail API**: Integration for scanning and importing invoices from emails.
 -   **Python Libraries**: Flask (web framework), Gunicorn (production server), OAuthlib, LangGraph, LangChain.
 
-#### LangGraph Agent - Conversational Service Controller
-A new LangGraph-based AI agent (`agent/` directory) provides conversational control over all services:
+#### LangGraph Agent - Omniscient Auditor for AP Automation
+A LangGraph-based AI agent (`agent/` directory) provides conversational control with proactive auditor capabilities:
 -   **Architecture**: StateGraph with tool-calling using Gemini 2.0 Flash via OpenRouter
 -   **Conversation Memory**: Uses SQLiteSaver checkpointer for persistent conversation state
     -   Frontend generates UUID `session_id` stored in localStorage
     -   Backend receives `thread_id` parameter to maintain conversation context
     -   Agent remembers entities discussed (vendors, invoices) for follow-up questions like "sync it" or "tell me more"
-    -   Stored at `./agent_memory.sqlite`
--   **Semantic AI First Protocol**: Agent ALWAYS checks BigQuery database before requesting external service connections:
-    1.  `search_database_first`: Queries vendors, invoices, subscriptions in BigQuery using parameterized queries (SQL injection safe)
-    2.  Only if no results found, agent offers to connect external services (Gmail, NetSuite)
-    3.  Returns clickable HTML buttons for OAuth flows (e.g., "Connect Gmail" button)
--   **Available Tools**:
-    -   `search_database_first`: **Priority 1** - Search BigQuery before external services
+    -   Stored at `data/agent_memory.db`
+-   **Omniscient Auditor Behavior**: Agent proactively provides comprehensive answers:
+    1.  Always provides PDF links when showing invoices
+    2.  Always checks NetSuite sync status when showing vendors
+    3.  Notices missing invoices (>30 days) and offers to scan Gmail
+    4.  Suggests fixes for failed syncs and missing data
+-   **Omniscient Tools** (Priority 1 - Use for comprehensive answers):
+    -   `get_vendor_full_profile`: All-in-one vendor dossier (profile + NetSuite + invoices + PDFs + alerts)
+    -   `deep_search`: Semantic AI search using Vertex AI Search + BigQuery (for vague queries)
+    -   `get_invoice_pdf_link`: Convert GCS URIs to clickable signed HTTPS URLs (1 hour validity)
+    -   `check_netsuite_health`: Full NetSuite sync story with alerts and recommendations
+-   **Database Tools**:
+    -   `search_database_first`: Quick BigQuery lookup for vendors, invoices, subscriptions
     -   `get_top_vendors_by_spend`: Analytics tool for spend analysis (queries invoices table)
+    -   `run_bigquery`: Execute SQL queries on data warehouse
+-   **Service Tools**:
     -   `check_gmail_status`: Check if Gmail is connected, returns OAuth URL if not
     -   `search_gmail_invoices`: Search Gmail for invoice/receipt emails
     -   `search_netsuite_vendor`: Find vendors by name, email, or tax ID
@@ -82,7 +90,6 @@ A new LangGraph-based AI agent (`agent/` directory) provides conversational cont
     -   `create_netsuite_bill`: Create vendor bills in NetSuite
     -   `get_bill_status`: Check bill approval status
     -   `match_vendor_to_database`: AI-powered semantic vendor matching
-    -   `run_bigquery`: Execute SQL queries on data warehouse
     -   `get_subscription_summary`: Get SaaS subscription analytics
 -   **Endpoints**:
     -   `POST /api/agent/chat`: Synchronous chat with agent (accepts `thread_id` for memory)
