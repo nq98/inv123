@@ -5,7 +5,11 @@ import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context, flash, g
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField
+from wtforms.validators import DataRequired, Email
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from google.cloud import bigquery
@@ -288,8 +292,31 @@ app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['PERMANENT_SESSION_LIFETIME'] = 300
+app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+from services.auth_service import get_auth_service, init_login_manager
+
+login_manager = init_login_manager(app)
+
+auth_service = get_auth_service()
+auth_service.seed_initial_user("barak@payouts.com", "123456789")
+
+
+class LoginForm(FlaskForm):
+    """Login form with CSRF protection"""
+    email = StringField('Email', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+
+
+class RegisterForm(FlaskForm):
+    """Registration form with CSRF protection"""
+    display_name = StringField('Display Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    confirm_password = PasswordField('Confirm Password', validators=[DataRequired()])
+
 
 csv_uploads = {}
 
@@ -785,7 +812,86 @@ def add_header(response):
     response.cache_control.max_age = 0
     return response
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and authentication"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    form = LoginForm()
+    
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        
+        if not email or not password:
+            flash('Please enter both email and password.', 'error')
+            return render_template('login.html', form=form)
+        
+        auth_svc = get_auth_service()
+        user = auth_svc.authenticate(email, password)
+        
+        if user:
+            login_user(user, remember=True)
+            flash(f'Welcome back, {user.display_name}!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            flash('Invalid email or password.', 'error')
+    
+    return render_template('login.html', form=form)
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    form = RegisterForm()
+    
+    if request.method == 'POST':
+        display_name = request.form.get('display_name', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        if not all([display_name, email, password, confirm_password]):
+            flash('All fields are required.', 'error')
+            return render_template('register.html', form=form)
+        
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('register.html', form=form)
+        
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+            return render_template('register.html', form=form)
+        
+        auth_svc = get_auth_service()
+        user = auth_svc.register_user(email, password, display_name)
+        
+        if user:
+            login_user(user, remember=True)
+            flash(f'Account created! Welcome, {user.display_name}!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Email already registered. Please log in instead.', 'error')
+    
+    return render_template('register.html', form=form)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout the current user"""
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+
 @app.route('/', methods=['GET'])
+@login_required
 def index():
     return render_template('index.html')
 
