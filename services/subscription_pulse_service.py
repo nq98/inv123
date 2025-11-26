@@ -346,9 +346,13 @@ class SubscriptionPulseService:
         return None
         
     def _classify_with_gemini_flash(self, subject, body, sender):
-        """Use Gemini Flash for SEMANTIC subscription classification"""
+        """Use Gemini Flash for SEMANTIC subscription classification with rate limiting"""
         if not self.gemini_client:
             return None
+        
+        # Rate limiting: Add small delay to stay within API quotas
+        import time
+        time.sleep(0.15)  # ~400 requests/minute max to avoid 429 errors
             
         prompt = f"""You are a SaaS Subscription Detector. Your job is to distinguish TRUE RECURRING SUBSCRIPTIONS from one-time purchases and marketplace transactions.
 
@@ -396,7 +400,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
 
         try:
             response = self.gemini_client.models.generate_content(
-                model='gemini-2.0-flash-exp',
+                model='gemini-1.5-flash',  # Higher rate limits than gemini-2.0-flash-exp
                 contents=prompt
             )
             
