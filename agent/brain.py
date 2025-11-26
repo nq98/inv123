@@ -124,25 +124,101 @@ When user asks to scan Gmail (e.g., "scan Gmail", "pull invoices from email", "c
 
 ## RICH CARD FORMATS - ALWAYS USE THESE HTML FORMATS:
 
-### INVOICE CARD:
-<div class="invoice-card">
-  <div class="invoice-header">
-    <span class="vendor-name">🏢 {Vendor Name}</span>
-    <span class="amount">{Currency} {Amount}</span>
+### COMPREHENSIVE INVOICE WORKFLOW CARD - Full details + Match + Actions:
+<div class="invoice-workflow-card" data-invoice-id="{invoice_id}">
+  <div class="invoice-main-header">
+    <div class="vendor-info-section">
+      <h3 class="vendor-name-large">🏢 {Vendor Name}</h3>
+      <span class="invoice-id-badge">Invoice #{invoice_number}</span>
+    </div>
+    <div class="amount-section">
+      <span class="amount-large">{Amount}</span>
+      <span class="currency-badge">{Currency}</span>
+    </div>
   </div>
-  <div class="invoice-details">
-    <span>📄 Invoice #{invoice_number}</span>
-    <span>📅 {date}</span>
+  
+  <div class="invoice-details-grid">
+    <div class="detail-item"><span class="detail-label">Invoice Date</span><span class="detail-value">{date}</span></div>
+    <div class="detail-item"><span class="detail-label">Due Date</span><span class="detail-value">{due_date}</span></div>
+    <div class="detail-item"><span class="detail-label">Subtotal</span><span class="detail-value">{subtotal}</span></div>
+    <div class="detail-item"><span class="detail-label">Tax</span><span class="detail-value">{tax}</span></div>
   </div>
-  <div class="invoice-status">
-    <span class="matched">✅ Matched</span> OR <span class="new-vendor">⚠️ New Vendor</span>
-    <span class="synced">🔗 In NetSuite</span> OR <span class="not-synced">📤 Not synced</span>
+  
+  <div class="line-items-section">
+    <button class="line-items-toggle" id="line-items-toggle-{invoice_id}" onclick="toggleLineItems('{invoice_id}')">📋 Show Line Items ▼</button>
+    <div class="line-items-table" id="line-items-{invoice_id}">
+      <table><thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
+      <tbody>{line_items_rows}</tbody></table>
+    </div>
   </div>
-  <div class="invoice-actions">
-    <button class="approve-btn" onclick="approveInvoice('{id}')">✅ Approve</button>
-    <button class="reject-btn" onclick="rejectInvoice('{id}')">❌ Reject</button>
-    <button class="create-bill-btn" onclick="createBill('{id}')">📝 Create Bill</button>
-    <a href="{pdf_link}" target="_blank" class="view-pdf-btn">📄 View PDF</a>
+  
+  <div id="match-status-{invoice_id}">
+    <!-- Match result section inserted here -->
+  </div>
+  
+  <a href="{pdf_url}" target="_blank" class="pdf-link-btn">📄 View Original PDF</a>
+  
+  <div id="create-vendor-form-{invoice_id}" style="display:none;"></div>
+  
+  <div class="invoice-action-bar">
+    <div id="selected-vendor-{invoice_id}"></div>
+    <div id="sync-status-{invoice_id}"></div>
+    <div id="bill-status-{invoice_id}"></div>
+    <button class="action-btn primary-action" id="sync-btn-{invoice_id}" onclick="syncVendorToNetsuite('{invoice_id}')" disabled>🔄 Sync to NetSuite</button>
+    <button class="action-btn success-action" id="bill-btn-{invoice_id}" onclick="createBillInNetsuite('{invoice_id}')" disabled>📄 Create Bill in NetSuite</button>
+  </div>
+</div>
+
+### MATCH RESULT SECTION (insert inside invoice card):
+For MATCH verdict:
+<div class="match-result-section verdict-match">
+  <div class="match-result-header">
+    <div class="match-verdict-badge matched">✅ Vendor Matched</div>
+    <div class="confidence-indicator">
+      <div class="confidence-bar"><div class="confidence-fill high" style="width: {confidence}%"></div></div>
+      <span class="confidence-text">{confidence}%</span>
+    </div>
+  </div>
+  <div class="match-result-body">
+    <div class="matched-vendor-card">
+      <div class="matched-vendor-avatar">{initials}</div>
+      <div class="matched-vendor-details">
+        <div class="matched-vendor-name">{vendor_name}</div>
+        <div class="matched-vendor-meta">
+          <span>📧 {email}</span>
+          <span>🔗 NetSuite: {netsuite_id}</span>
+        </div>
+      </div>
+    </div>
+    <div class="match-reasoning">{reasoning}</div>
+    <button class="action-btn secondary-action" onclick="useMatchedVendor('{invoice_id}', '{vendor_id}', '{vendor_name}', '{netsuite_id}')">Use This Vendor</button>
+  </div>
+</div>
+
+For NEW_VENDOR verdict:
+<div class="match-result-section verdict-new">
+  <div class="match-result-header">
+    <div class="match-verdict-badge new-vendor">⚠️ New Vendor Required</div>
+  </div>
+  <div class="match-result-body">
+    <div class="match-reasoning">{reasoning}</div>
+    <button class="action-btn primary-action" onclick="showCreateVendorForm('{invoice_id}', {vendor_data_json})">➕ Create New Vendor</button>
+  </div>
+</div>
+
+For AMBIGUOUS verdict:
+<div class="match-result-section verdict-ambiguous">
+  <div class="match-result-header">
+    <div class="match-verdict-badge ambiguous">🤔 Multiple Candidates Found</div>
+  </div>
+  <div class="match-result-body">
+    <div class="match-reasoning">{reasoning}</div>
+    <div class="vendor-select-section">
+      <div class="vendor-select-header">👥 Select a Vendor:</div>
+      <input type="text" class="vendor-search-input" placeholder="Search vendors..." oninput="searchVendors('{invoice_id}', this.value)">
+      <div class="vendor-candidates-list" id="vendor-candidates-{invoice_id}">{candidates_html}</div>
+    </div>
+    <button class="action-btn secondary-action" onclick="showCreateVendorForm('{invoice_id}', {vendor_data_json})">➕ Or Create New Vendor</button>
   </div>
 </div>
 
@@ -160,16 +236,6 @@ When user asks to scan Gmail (e.g., "scan Gmail", "pull invoices from email", "c
   <div class="vendor-financials">
     <div><strong>Total Spend:</strong> ${total_spend}</div>
     <div><strong>Recent Invoices:</strong> {count}</div>
-  </div>
-</div>
-
-### VENDOR MATCH RESULT - after matching invoice to vendor:
-<div class="match-result">
-  <div class="match-header">⚖️ Vendor Match Result</div>
-  <div class="match-confidence"><strong>{confidence}%</strong> match</div>
-  <div class="match-details">
-    <div>Matched: <strong>{invoice_vendor}</strong> → <strong>{database_vendor}</strong></div>
-    <div>Reason: {match_reasoning}</div>
   </div>
 </div>
 

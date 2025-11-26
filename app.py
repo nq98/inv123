@@ -4736,16 +4736,27 @@ def search_vendors():
         limit = int(request.args.get('limit', 10))
         
         if not query:
-            return jsonify({'vendors': []}), 200
+            return jsonify({'success': True, 'vendors': []}), 200
         
         bq_service = get_bigquery_service()
         vendors = bq_service.search_vendor_by_name(query, limit)
         
-        return jsonify({'vendors': vendors}), 200
+        # Ensure each vendor has the required fields for the UI
+        formatted_vendors = []
+        for v in (vendors or []):
+            formatted_vendors.append({
+                'id': v.get('vendor_id', ''),
+                'name': v.get('global_name', v.get('name', '')),
+                'email': v.get('emails', [None])[0] if v.get('emails') else None,
+                'netsuite_id': v.get('netsuite_internal_id'),
+                'tax_id': v.get('tax_id', '')
+            })
+        
+        return jsonify({'success': True, 'vendors': formatted_vendors}), 200
         
     except Exception as e:
         print(f"❌ Error searching vendors: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/vendors/list', methods=['GET'])
 def list_vendors():
@@ -9108,6 +9119,240 @@ def submit_invoice_feedback():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ============================================
+# INVOICE WORKFLOW API ENDPOINTS
+# ============================================
+
+@app.route('/api/vendors/create', methods=['POST'])
+@login_required
+def create_vendor_api():
+    """
+    Create a new vendor from the invoice workflow form.
+    Auto-fills from invoice data and creates in BigQuery.
+    """
+    try:
+        data = request.json
+        user_email = current_user.email
+        
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': 'Vendor name is required'}), 400
+        
+        # Generate unique vendor ID
+        import uuid
+        vendor_id = f"VENDOR_{str(uuid.uuid4())[:8].upper()}"
+        
+        # Prepare vendor data
+        bq_service = get_bigquery_service()
+        
+        vendor_data = {
+            'vendor_id': vendor_id,
+            'global_name': name,
+            'emails': [data.get('email')] if data.get('email') else [],
+            'phone_numbers': [data.get('phone')] if data.get('phone') else [],
+            'tax_id': data.get('tax_id', ''),
+            'address': data.get('address', ''),
+            'city': data.get('city', ''),
+            'country': data.get('country', ''),
+            'vendor_type': 'Company',
+            'source': 'invoice_workflow',
+            'source_invoice_id': data.get('invoice_id', ''),
+            'owner_email': user_email,
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        
+        # Insert into BigQuery
+        from google.cloud import bigquery
+        client = bq_service.client
+        table_id = f"{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors"
+        table = client.get_table(table_id)
+        
+        errors = client.insert_rows_json(table, [vendor_data])
+        
+        if errors:
+            return jsonify({'success': False, 'error': f'Failed to create vendor: {errors}'}), 500
+        
+        # Link to invoice if provided
+        invoice_id = data.get('invoice_id')
+        if invoice_id:
+            update_query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+            SET vendor_id = @vendor_id, updated_at = CURRENT_TIMESTAMP()
+            WHERE invoice_id = @invoice_id
+            """
+            bq_service.execute(update_query, {
+                'vendor_id': vendor_id,
+                'invoice_id': invoice_id
+            })
+        
+        return jsonify({
+            'success': True,
+            'vendor_id': vendor_id,
+            'message': f'Vendor "{name}" created successfully'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error creating vendor: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/netsuite/sync-vendor', methods=['POST'])
+@login_required
+def sync_vendor_workflow():
+    """
+    Sync a vendor from BigQuery to NetSuite (Invoice Workflow).
+    Creates the vendor in NetSuite and updates the netsuite_internal_id.
+    """
+    try:
+        data = request.json
+        vendor_id = data.get('vendor_id')
+        
+        if not vendor_id:
+            return jsonify({'success': False, 'error': 'Vendor ID is required'}), 400
+        
+        # Get vendor from BigQuery
+        bq_service = get_bigquery_service()
+        vendor = bq_service.get_vendor_by_id(vendor_id)
+        
+        if not vendor:
+            return jsonify({'success': False, 'error': 'Vendor not found'}), 404
+        
+        # Check if already synced
+        if vendor.get('netsuite_internal_id'):
+            return jsonify({
+                'success': True,
+                'netsuite_id': vendor['netsuite_internal_id'],
+                'message': 'Vendor already synced to NetSuite'
+            })
+        
+        # Create vendor in NetSuite
+        netsuite_service = get_netsuite_service()
+        
+        vendor_payload = {
+            'companyName': vendor.get('global_name'),
+            'email': vendor.get('emails', [None])[0] if vendor.get('emails') else None,
+            'phone': vendor.get('phone_numbers', [None])[0] if vendor.get('phone_numbers') else None,
+            'externalId': vendor_id
+        }
+        
+        result = netsuite_service.create_vendor(vendor_payload)
+        
+        if result.get('success'):
+            netsuite_id = result.get('internalId')
+            
+            # Update BigQuery with NetSuite ID
+            update_query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.global_vendors`
+            SET netsuite_internal_id = @netsuite_id, netsuite_synced_at = CURRENT_TIMESTAMP()
+            WHERE vendor_id = @vendor_id
+            """
+            bq_service.execute(update_query, {
+                'netsuite_id': netsuite_id,
+                'vendor_id': vendor_id
+            })
+            
+            return jsonify({
+                'success': True,
+                'netsuite_id': netsuite_id,
+                'message': 'Vendor synced to NetSuite successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to create vendor in NetSuite')
+            }), 500
+        
+    except Exception as e:
+        print(f"❌ Error syncing vendor to NetSuite: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/netsuite/create-bill', methods=['POST'])
+@login_required
+def create_netsuite_bill():
+    """
+    Create a vendor bill in NetSuite from an invoice.
+    """
+    try:
+        data = request.json
+        invoice_id = data.get('invoice_id')
+        vendor_netsuite_id = data.get('vendor_netsuite_id')
+        
+        if not invoice_id:
+            return jsonify({'success': False, 'error': 'Invoice ID is required'}), 400
+        
+        # Get invoice from BigQuery
+        bq_service = get_bigquery_service()
+        invoice = bq_service.get_invoice_by_id(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+        
+        # Get vendor NetSuite ID if not provided
+        if not vendor_netsuite_id:
+            vendor_id = invoice.get('vendor_id')
+            if vendor_id:
+                vendor = bq_service.get_vendor_by_id(vendor_id)
+                vendor_netsuite_id = vendor.get('netsuite_internal_id') if vendor else None
+        
+        if not vendor_netsuite_id:
+            return jsonify({'success': False, 'error': 'Vendor must be synced to NetSuite first'}), 400
+        
+        # Create bill in NetSuite
+        netsuite_service = get_netsuite_service()
+        
+        bill_payload = {
+            'entity': {'internalId': vendor_netsuite_id},
+            'tranId': invoice.get('invoice_number', invoice_id),
+            'externalId': invoice_id,
+            'tranDate': invoice.get('date') or invoice.get('invoice_date'),
+            'dueDate': invoice.get('due_date'),
+            'memo': f"Bill from invoice {invoice.get('invoice_number', invoice_id)}",
+            'currency': {'name': invoice.get('currency', 'USD')},
+            'itemList': [{
+                'description': 'Invoice total',
+                'amount': float(invoice.get('total_amount', 0))
+            }]
+        }
+        
+        result = netsuite_service.create_vendor_bill(bill_payload)
+        
+        if result.get('success'):
+            bill_id = result.get('internalId')
+            tran_id = result.get('tranId')
+            
+            # Update invoice with NetSuite bill info
+            update_query = f"""
+            UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.invoices`
+            SET 
+                netsuite_id = @bill_id,
+                netsuite_status = 'synced',
+                synced_at = CURRENT_TIMESTAMP()
+            WHERE invoice_id = @invoice_id
+            """
+            bq_service.execute(update_query, {
+                'bill_id': bill_id,
+                'invoice_id': invoice_id
+            })
+            
+            return jsonify({
+                'success': True,
+                'bill_id': bill_id,
+                'tranId': tran_id,
+                'message': 'Bill created in NetSuite successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to create bill in NetSuite')
+            }), 500
+        
+    except Exception as e:
+        print(f"❌ Error creating NetSuite bill: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':
