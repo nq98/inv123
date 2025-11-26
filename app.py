@@ -8359,6 +8359,14 @@ def subscription_scan_stream():
             
             processed_events = []
             skipped_count = 0
+            last_save_count = 0
+            
+            # Get client email for incremental saving
+            try:
+                profile = service.users().getProfile(userId='me').execute()
+                client_email = profile.get('emailAddress', 'unknown')
+            except:
+                client_email = 'unknown'
             
             for i, msg_id in enumerate(all_message_ids):
                 try:
@@ -8420,21 +8428,29 @@ def subscription_scan_stream():
                 if i > 0 and i % 50 == 0:
                     percent = 22 + int((i / total_emails) * 58)
                     yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments (skipped {skipped_count} non-financial)'})}\n\n"
+                
+                # INCREMENTAL SAVE: Save progress every 5 new subscriptions found
+                if len(processed_events) >= last_save_count + 5:
+                    try:
+                        interim_results = pulse_service.aggregate_subscription_data(processed_events)
+                        pulse_service.store_subscription_results(client_email, interim_results)
+                        last_save_count = len(processed_events)
+                        yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'💾 Auto-saved {len(processed_events)} subscriptions (checkpoint)'})}\n\n"
+                    except Exception as save_error:
+                        print(f"Incremental save error: {save_error}")
                     
             yield f"data: {json.dumps({'type': 'progress', 'percent': 85, 'message': f'Aggregating data from {len(processed_events)} payment events...'})}\n\n"
             
             # Aggregate results
             results = pulse_service.aggregate_subscription_data(processed_events)
             
-            yield f"data: {json.dumps({'type': 'progress', 'percent': 95, 'message': 'Saving results...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 95, 'message': 'Saving final results...'})}\n\n"
             
-            # Get client email for storage
+            # Final save
             try:
-                profile = service.users().getProfile(userId='me').execute()
-                client_email = profile.get('emailAddress', 'unknown')
                 pulse_service.store_subscription_results(client_email, results)
-            except:
-                pass
+            except Exception as save_error:
+                print(f"Final save error: {save_error}")
                 
             yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
             
