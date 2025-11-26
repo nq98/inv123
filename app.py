@@ -8781,6 +8781,58 @@ def agent_chat_stream():
         }), 500
 
 
+@app.route('/api/agent/status', methods=['GET'])
+def get_agent_status():
+    """
+    Get real-time connection status for Gmail and NetSuite.
+    Used by the chat widget to show live status indicators.
+    """
+    try:
+        gmail_connected = False
+        gmail_email = None
+        netsuite_connected = False
+        
+        gmail_token = session.get('gmail_token')
+        if gmail_token and gmail_token.get('token'):
+            gmail_connected = True
+            gmail_email = session.get('gmail_email', 'Connected')
+        
+        try:
+            if all([
+                os.environ.get('NETSUITE_ACCOUNT_ID'),
+                os.environ.get('NETSUITE_CONSUMER_KEY'),
+                os.environ.get('NETSUITE_CONSUMER_SECRET'),
+                os.environ.get('NETSUITE_TOKEN_ID'),
+                os.environ.get('NETSUITE_TOKEN_SECRET')
+            ]):
+                netsuite_connected = True
+        except:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'gmail': {
+                'connected': gmail_connected,
+                'email': gmail_email,
+                'status': 'online' if gmail_connected else 'offline'
+            },
+            'netsuite': {
+                'connected': netsuite_connected,
+                'status': 'online' if netsuite_connected else 'offline'
+            },
+            'overall_status': 'online' if (gmail_connected or netsuite_connected) else 'offline'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'gmail': {'connected': False, 'status': 'unknown'},
+            'netsuite': {'connected': False, 'status': 'unknown'},
+            'overall_status': 'unknown'
+        })
+
+
 @app.route('/api/agent/tools', methods=['GET'])
 def get_agent_tools():
     """List all available agent tools and their descriptions"""

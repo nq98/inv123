@@ -169,6 +169,71 @@
                 margin: 0;
             }
 
+            .payouts-status-indicator {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 4px 12px;
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 20px;
+                font-size: 11px;
+                margin-left: auto;
+                margin-right: 12px;
+            }
+
+            .payouts-status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                animation: payouts-pulse 2s ease-in-out infinite;
+            }
+
+            .payouts-status-dot.online {
+                background: #10b981;
+                box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+            }
+
+            .payouts-status-dot.offline {
+                background: #ef4444;
+                box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+            }
+
+            .payouts-status-dot.checking {
+                background: #f59e0b;
+                animation: payouts-blink 0.8s ease-in-out infinite;
+            }
+
+            @keyframes payouts-pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.6; }
+            }
+
+            @keyframes payouts-blink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.3; }
+            }
+
+            .payouts-status-services {
+                display: flex;
+                gap: 6px;
+            }
+
+            .payouts-service-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 3px;
+                font-size: 10px;
+                opacity: 0.9;
+            }
+
+            .payouts-service-badge.connected {
+                color: #a7f3d0;
+            }
+
+            .payouts-service-badge.disconnected {
+                color: #fecaca;
+            }
+
             .payouts-chat-close {
                 background: rgba(255, 255, 255, 0.2);
                 border: none;
@@ -640,6 +705,13 @@
                         <p class="payouts-chat-subtitle">Ask me anything about invoices & vendors</p>
                     </div>
                 </div>
+                <div class="payouts-status-indicator" id="payouts-status-indicator">
+                    <div class="payouts-status-dot checking" id="payouts-status-dot"></div>
+                    <div class="payouts-status-services">
+                        <span class="payouts-service-badge" id="gmail-status">📧 Checking...</span>
+                        <span class="payouts-service-badge" id="netsuite-status">🔗 Checking...</span>
+                    </div>
+                </div>
                 <button class="payouts-chat-close" aria-label="Close chat">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -971,15 +1043,61 @@
         document.getElementById('payouts-send-btn').disabled = false;
     }
 
+    async function checkAgentStatus() {
+        const statusDot = document.getElementById('payouts-status-dot');
+        const gmailStatus = document.getElementById('gmail-status');
+        const netsuiteStatus = document.getElementById('netsuite-status');
+        
+        if (!statusDot || !gmailStatus || !netsuiteStatus) return;
+        
+        try {
+            const response = await fetch('/api/agent/status');
+            const data = await response.json();
+            
+            if (data.success) {
+                if (data.gmail.connected) {
+                    gmailStatus.textContent = '📧 Gmail';
+                    gmailStatus.className = 'payouts-service-badge connected';
+                } else {
+                    gmailStatus.textContent = '📧 Offline';
+                    gmailStatus.className = 'payouts-service-badge disconnected';
+                }
+                
+                if (data.netsuite.connected) {
+                    netsuiteStatus.textContent = '🔗 NetSuite';
+                    netsuiteStatus.className = 'payouts-service-badge connected';
+                } else {
+                    netsuiteStatus.textContent = '🔗 Offline';
+                    netsuiteStatus.className = 'payouts-service-badge disconnected';
+                }
+                
+                const isOnline = data.gmail.connected || data.netsuite.connected;
+                statusDot.className = 'payouts-status-dot ' + (isOnline ? 'online' : 'offline');
+            }
+        } catch (error) {
+            console.error('Failed to check agent status:', error);
+            statusDot.className = 'payouts-status-dot offline';
+            gmailStatus.textContent = '📧 Unknown';
+            netsuiteStatus.textContent = '🔗 Unknown';
+        }
+    }
+
+    function startStatusPolling() {
+        checkAgentStatus();
+        setInterval(checkAgentStatus, 30000);
+    }
+
     function init() {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 injectStyles();
                 createWidget();
+                startStatusPolling();
             });
         } else {
             injectStyles();
             createWidget();
+            startStatusPolling();
         }
     }
 

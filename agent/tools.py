@@ -213,19 +213,21 @@ def get_top_vendors_by_spend(limit: int = 10) -> str:
 
 
 @tool
-def search_gmail_invoices(days: int = 30, max_results: int = 20, access_token: Optional[str] = None) -> str:
+def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Optional[str] = None) -> str:
     """
-    Search Gmail for invoice and receipt emails.
+    Search Gmail for invoice and receipt emails with ROBUST date handling.
     IMPORTANT: Check database first with search_database_first, then use check_gmail_status before this tool!
     
     Args:
-        days: Number of days to look back (default: 30)
+        days: Number of days to look back (default: 7 for better reliability)
         max_results: Maximum number of emails to return (default: 20)
         access_token: Optional Gmail access token (uses stored token if not provided)
     
     Returns:
         JSON string with list of invoice emails found, including subject, sender, date, and snippet
     """
+    from datetime import datetime, timedelta
+    
     try:
         from flask import session
         stored_token = session.get('gmail_token') if not access_token else None
@@ -241,36 +243,112 @@ def search_gmail_invoices(days: int = 30, max_results: int = 20, access_token: O
                     "auth_url": auth_url,
                     "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail Now</a>'
                 })
-            return json.dumps({"error": "Gmail not connected and could not generate auth URL"})
+            return json.dumps({
+                "error": "Gmail not connected and could not generate auth URL",
+                "error_type": "AUTH_URL_GENERATION_FAILED",
+                "suggestion": "Try refreshing the page and connecting again"
+            })
         
-        service = gmail_service.build_service(stored_token or {'token': token_to_use})
+        try:
+            service = gmail_service.build_service(stored_token or {'token': token_to_use})
+        except Exception as build_error:
+            return json.dumps({
+                "error": f"Failed to build Gmail service: {str(build_error)}",
+                "error_type": "SERVICE_BUILD_FAILED",
+                "suggestion": "Your Gmail token may have expired. Try reconnecting Gmail.",
+                "action_required": True
+            })
+        
         if not service:
-            return json.dumps({"error": "Failed to build Gmail service"})
+            return json.dumps({
+                "error": "Failed to build Gmail service - service is None",
+                "error_type": "SERVICE_NULL",
+                "suggestion": "Try disconnecting and reconnecting Gmail"
+            })
         
-        messages = gmail_service.search_invoice_emails(service, max_results=max_results, days=days)
+        try:
+            if days < 1:
+                days = 1
+            elif days > 365:
+                days = 365
+            
+            after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
+            print(f"📧 Gmail search: Looking for invoices after {after_date} (last {days} days)")
+            
+            messages = gmail_service.search_invoice_emails(service, max_results=max_results, days=days)
+            
+        except Exception as search_error:
+            error_str = str(search_error)
+            
+            if 'invalid_grant' in error_str.lower() or 'token' in error_str.lower():
+                return json.dumps({
+                    "error": f"Gmail token expired or invalid: {error_str}",
+                    "error_type": "TOKEN_EXPIRED",
+                    "action_required": True,
+                    "suggestion": "Your Gmail session has expired. Please reconnect.",
+                    "html_button": '<a href="/gmail/connect" class="chat-action-btn">Reconnect Gmail</a>'
+                })
+            elif 'quota' in error_str.lower() or 'rate' in error_str.lower():
+                return json.dumps({
+                    "error": f"Gmail API rate limit: {error_str}",
+                    "error_type": "RATE_LIMIT",
+                    "suggestion": "Too many requests. Please wait a minute and try again."
+                })
+            else:
+                return json.dumps({
+                    "error": f"Gmail search failed: {error_str}",
+                    "error_type": "SEARCH_FAILED",
+                    "query_info": f"Searched for invoices after {after_date}",
+                    "suggestion": "Try again with a shorter time range (e.g., last 7 days)"
+                })
+        
+        if not messages:
+            return json.dumps({
+                "success": True,
+                "total_found": 0,
+                "emails": [],
+                "message": f"No invoice emails found in the last {days} days.",
+                "search_date_range": f"after:{after_date}",
+                "suggestion": "Try extending the search range or check if invoices go to a different folder"
+            })
         
         results = []
         for msg in messages[:10]:
-            details = gmail_service.get_message_details(service, msg['id'])
-            if details:
-                metadata = gmail_service.get_email_metadata(details)
-                results.append({
-                    'id': metadata['id'],
-                    'subject': metadata.get('subject', 'No subject'),
-                    'from': metadata.get('from', 'Unknown'),
-                    'date': metadata.get('date', 'Unknown'),
-                    'snippet': metadata.get('snippet', '')[:200],
-                    'has_attachments': len(metadata.get('attachments', [])) > 0
-                })
+            try:
+                details = gmail_service.get_message_details(service, msg['id'])
+                if details:
+                    metadata = gmail_service.get_email_metadata(details)
+                    results.append({
+                        'id': metadata['id'],
+                        'subject': metadata.get('subject', 'No subject'),
+                        'from': metadata.get('from', 'Unknown'),
+                        'date': metadata.get('date', 'Unknown'),
+                        'snippet': metadata.get('snippet', '')[:200],
+                        'has_attachments': len(metadata.get('attachments', [])) > 0
+                    })
+            except Exception as msg_error:
+                print(f"⚠️ Error processing message {msg.get('id')}: {msg_error}")
+                continue
         
         return json.dumps({
             "success": True,
             "total_found": len(messages),
-            "emails": results
+            "emails": results,
+            "search_info": {
+                "days_searched": days,
+                "date_range": f"after:{after_date}",
+                "max_results": max_results
+            }
         }, indent=2)
         
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        import traceback
+        return json.dumps({
+            "error": str(e),
+            "error_type": "UNEXPECTED_ERROR",
+            "traceback": traceback.format_exc(),
+            "suggestion": "An unexpected error occurred. Check the logs for details."
+        })
 
 
 @tool
