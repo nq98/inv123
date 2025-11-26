@@ -22,6 +22,11 @@ os.environ.setdefault("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
 os.environ.setdefault("LANGCHAIN_PROJECT", "pr-impressionable-instructor-1")
 os.environ.setdefault("LANGSMITH_PROJECT", "pr-impressionable-instructor-1")
 
+# Use langapi secret for LangSmith API key
+if os.getenv("langapi"):
+    os.environ["LANGCHAIN_API_KEY"] = os.getenv("langapi")
+    os.environ["LANGSMITH_API_KEY"] = os.getenv("langapi")
+
 _checkpointer = None
 _compiled_graph = None
 
