@@ -97,15 +97,29 @@ A LangGraph-based AI agent (`agent/` directory) provides conversational control 
     -   `GET /api/agent/tools`: List available tools
 -   **Tracing**: LangSmith integration for monitoring (LANGCHAIN_API_KEY, LANGCHAIN_PROJECT=payouts-automation)
 
-#### Payouts AI Chat Widget
-A self-contained, embeddable chat widget (`static/agent_widget.js`) that provides conversational access to the LangGraph Agent:
+#### Payouts AI Chat Widget - Full Interface Replacement
+A self-contained, embeddable chat widget (`static/agent_widget.js`) that provides conversational access to the LangGraph Agent AND handles all file operations:
 -   **Features**:
     -   Floating chat button in bottom-right corner (like Intercom/ChatGPT)
     -   Modern chat window with message history
     -   Tool call badges showing which services the agent used (e.g., "🔍 Checked NetSuite", "📧 Scanned Gmail")
     -   Quick action buttons for common queries
     -   Loading indicators during processing
-    -   **HTML Rendering**: Renders clickable action buttons (e.g., "Connect Gmail") returned by the agent
+    -   **HTML Rendering**: Renders clickable action buttons (e.g., "Connect Gmail") and HTML tables
+    -   **File Upload (Paperclip Icon)**: Upload PDFs/CSVs directly in chat - no separate UI needed
+    -   **Rich Table Rendering**: Agent returns vendor/invoice lists as scrollable HTML tables inside chat bubbles
+-   **File Upload Flow**:
+    1.  User clicks paperclip icon and selects PDF or CSV file
+    2.  Widget shows filename indicator with X to remove
+    3.  On send, widget uses FormData with multipart/form-data
+    4.  API saves file to `uploads/` directory
+    5.  Agent auto-detects file type and calls appropriate tool
+    6.  Response includes extraction results + action buttons
 -   **Self-Contained**: Can be embedded on any page with just `<script src="/static/agent_widget.js"></script>`
--   **API Integration**: Communicates with `POST /api/agent/chat` and displays `tools_used` as visual badges
+-   **API Integration**: Communicates with `POST /api/agent/chat` (supports both JSON and FormData)
 -   **JavaScript API**: `window.PayoutsAgentWidget.open()`, `.close()`, `.toggle()`, `.sendMessage(msg)`
+-   **Ingestion Tools** (New - for file processing):
+    -   `process_uploaded_invoice`: Document AI pipeline for PDF invoices with vendor matching
+    -   `import_vendor_csv`: AI-powered CSV column mapping with BigQuery import
+    -   `pull_netsuite_vendors`: Sync vendors from NetSuite to local database
+    -   `show_vendors_table`: Rich HTML table display for vendor listings
