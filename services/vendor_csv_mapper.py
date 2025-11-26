@@ -4,6 +4,7 @@ import csv
 import io
 from google import genai
 from google.genai import types
+from openai import OpenAI
 from config import config
 
 try:
@@ -14,15 +15,41 @@ except Exception as e:
     VERTEX_SEARCH_AVAILABLE = False
 
 class VendorCSVMapper:
-    """AI-First Universal CSV Mapper using Gemini + Vertex AI Search RAG for semantic column mapping"""
+    """
+    AI-First Universal CSV Mapper using Gemini 3 Pro (via OpenRouter) + Vertex AI Search RAG.
+    
+    MODEL HIERARCHY:
+    1. OpenRouter Gemini 3 Pro Preview - PRIMARY
+    2. AI Studio gemini-2.5-flash - FALLBACK
+    """
     
     def __init__(self):
+        # PRIMARY: OpenRouter Gemini 3 Pro
+        self.openrouter_client = None
+        self.openrouter_model = "google/gemini-3-pro-preview"
+        openrouter_api_key = os.getenv('OPENROUTERA')
+        
+        if openrouter_api_key:
+            try:
+                self.openrouter_client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=openrouter_api_key,
+                    default_headers={
+                        "HTTP-Referer": "https://replit.com",
+                        "X-Title": "Enterprise Invoice Extraction System"
+                    }
+                )
+                print("✅ VendorCSVMapper: OpenRouter Gemini 3 Pro initialized")
+            except Exception as e:
+                print(f"⚠️ OpenRouter init failed: {e}")
+        
+        # FALLBACK: AI Studio
         api_key = config.GOOGLE_GEMINI_API_KEY or os.getenv('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("GEMINI_API_KEY is required for CSV mapping")
         
         self.client = genai.Client(api_key=api_key)
-        self.model_name = 'gemini-2.0-flash-exp'
+        self.model_name = 'gemini-2.5-flash'
         
         # Initialize Vertex AI Search for RAG-enhanced mapping
         self.vertex_search = None

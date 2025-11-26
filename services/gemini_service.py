@@ -13,17 +13,24 @@ class OpenRouterResponse:
 
 
 class GeminiService:
-    """Service for semantic validation and reasoning using Gemini 3 Pro (via OpenRouter) with automatic fallback"""
+    """
+    Service for semantic validation and reasoning using Gemini 3 Pro (via OpenRouter) as PRIMARY.
+    
+    MODEL HIERARCHY (in order of priority):
+    1. OpenRouter Gemini 3 Pro Preview - PRIMARY (1M context, best reasoning)
+    2. AI Studio gemini-2.5-flash - FALLBACK (if OpenRouter fails)
+    3. Replit AI Integrations - FINAL FALLBACK (if rate limited)
+    """
     
     def __init__(self):
-        # Primary client: User's AI Studio API key (gemini-2.0-flash-exp)
+        # Fallback client: User's AI Studio API key (used if OpenRouter fails)
         api_key = config.GOOGLE_GEMINI_API_KEY or os.getenv('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY is required")
         
         self.client = genai.Client(api_key=api_key)
         
-        # OpenRouter client: Gemini 3 Pro (flagship model with 1M context)
+        # PRIMARY: OpenRouter Gemini 3 Pro (flagship model with 1M context)
         self.openrouter_client = None
         self.openrouter_model = "google/gemini-3-pro-preview"
         openrouter_api_key = os.getenv('OPENROUTERA')
@@ -80,7 +87,8 @@ CAPABILITIES:
 
 Return ONLY valid JSON. No markdown. No commentary."""
         
-        self.model_name = 'gemini-2.0-flash-exp'
+        # Fallback model for AI Studio (when OpenRouter unavailable)
+        self.model_name = 'gemini-2.5-flash'
     
     def _is_rate_limit_error(self, exception):
         """Check if the exception is a rate limit or quota violation error"""
@@ -135,18 +143,18 @@ Return ONLY valid JSON. No markdown. No commentary."""
     def _generate_content_with_fallback(self, model, contents, config, use_openrouter_first=True):
         """
         Generate content with tiered fallback chain:
-        1. OpenRouter Gemini 3 Pro (PRIMARY - 1M context, best reasoning)
-        2. AI Studio (gemini-2.0-flash-exp - fast fallback)
+        1. OpenRouter Gemini 3 Pro Preview (PRIMARY - 1M context, best reasoning)
+        2. AI Studio (gemini-2.5-flash - fast fallback)
         3. Replit AI Integrations (final fallback on rate limit)
         
         Args:
-            model: Model name (e.g., 'gemini-2.0-flash-exp')
+            model: Model name for fallback (e.g., 'gemini-2.5-flash')
             contents: Prompt contents
             config: GenerateContentConfig
             use_openrouter_first: Try OpenRouter Gemini 3 Pro first (default: True)
             
         Returns:
-            Response from Gemini (primary or fallback)
+            Response from Gemini 3 Pro (primary) or fallback model
         """
         # Try OpenRouter Gemini 3 Pro first (PRIMARY)
         if use_openrouter_first and self.openrouter_client:
@@ -665,9 +673,9 @@ Your ONLY job is to decide if an incoming email contains a **Financial Document*
 """
         
         try:
-            # Use Gemini Flash with automatic fallback (rate limit protection)
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self._generate_content_with_fallback(
-                model='gemini-2.0-flash-exp',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
@@ -777,8 +785,9 @@ IMPORTANT: Use the EXACT email IDs provided above (e.g., "email_1", "email_2", e
             import time
             start_time = time.time()
             
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self._generate_content_with_fallback(
-                model='gemini-2.0-flash-exp',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
@@ -787,7 +796,7 @@ IMPORTANT: Use the EXACT email IDs provided above (e.g., "email_1", "email_2", e
             )
             
             elapsed = time.time() - start_time
-            print(f"⚡ Batch gatekeeper completed in {elapsed:.2f}s ({batch_size} emails, {elapsed/batch_size:.3f}s avg)")
+            print(f"⚡ Batch gatekeeper (Gemini 3) completed in {elapsed:.2f}s ({batch_size} emails, {elapsed/batch_size:.3f}s avg)")
             
             response_text = response.text or "{}"
             results = json.loads(response_text)
@@ -1293,8 +1302,9 @@ Return ONLY valid JSON (NO markdown, NO code blocks):
 IMPORTANT: If you cannot find a vendor name OR a total amount, return {{"extraction_incomplete": true, "reason": "Missing vendor/total"}}
 """
             
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self._generate_content_with_fallback(
-                model='gemini-2.0-flash-exp',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,

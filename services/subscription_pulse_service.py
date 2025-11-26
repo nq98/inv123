@@ -439,7 +439,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             
             try:
                 response = self.gemini_client.models.generate_content(
-                    model='gemini-2.0-flash-exp',  # Working model for direct API
+                    model='gemini-2.5-flash',  # Updated fallback model
                     contents=prompt
                 )
                 result_text = response.text.strip()

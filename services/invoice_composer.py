@@ -214,9 +214,9 @@ class InvoiceComposer:
         Return ONLY valid JSON, no markdown or commentary."""
         
         try:
-            # Call Gemini for parsing
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self.gemini_service._generate_content_with_fallback(
-                model='gemini-2.0-flash-exp',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
@@ -396,9 +396,9 @@ class InvoiceComposer:
         Return ONLY valid JSON, no markdown or commentary."""
         
         try:
-            # Call Gemini for validation
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self.gemini_service._generate_content_with_fallback(
-                model='gemini-2.0-flash-exp',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,

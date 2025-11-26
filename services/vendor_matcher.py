@@ -834,8 +834,7 @@ Use these principles to think like a human accountant:
 """
         
         try:
-            # Call Gemini with automatic fallback (rate limit protection)
-            # Use the gemini service's configured model (gemini-2.0-flash-exp)
+            # PRIMARY: OpenRouter Gemini 3 Pro, FALLBACK: gemini-2.5-flash
             response = self.gemini._generate_content_with_fallback(
                 model=self.gemini.model_name,
                 contents=prompt,
