@@ -2043,18 +2043,38 @@ def _remove_user_email_from_schema(schema_class):
     """
     Create a modified schema class that excludes user_email field.
     This hides the user_email parameter from the LLM since it's injected by the system.
+    Supports both Pydantic v1 and v2.
     """
     if schema_class is None:
         return None
     
-    from pydantic import create_model
+    from pydantic import create_model, Field
     from typing import get_type_hints, Optional
     
     try:
         original_fields = {}
-        for name, field in schema_class.__fields__.items():
-            if name != 'user_email':
-                original_fields[name] = (field.annotation, field.default if field.default is not None else ...)
+        
+        if hasattr(schema_class, 'model_fields'):
+            from pydantic.fields import PydanticUndefined
+            for name, field in schema_class.model_fields.items():
+                if name != 'user_email':
+                    if field.default is not PydanticUndefined:
+                        original_fields[name] = (field.annotation, field.default)
+                    elif field.default_factory is not None:
+                        original_fields[name] = (field.annotation, Field(default_factory=field.default_factory))
+                    else:
+                        original_fields[name] = (field.annotation, ...)
+        else:
+            for name, field in schema_class.__fields__.items():
+                if name != 'user_email':
+                    if field.default is not None:
+                        original_fields[name] = (field.outer_type_, field.default)
+                    elif field.default_factory is not None:
+                        original_fields[name] = (field.outer_type_, Field(default_factory=field.default_factory))
+                    elif not field.required:
+                        original_fields[name] = (field.outer_type_, None)
+                    else:
+                        original_fields[name] = (field.outer_type_, ...)
         
         if not original_fields:
             return None
