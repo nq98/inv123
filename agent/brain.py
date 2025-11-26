@@ -122,16 +122,16 @@ Available BigQuery tables:
     return workflow.compile()
 
 
-def run_agent(message: str, user_id: str = "default") -> str:
+def run_agent(message: str, user_id: str = "default") -> dict:
     """
-    Run the agent with a user message and return the response
+    Run the agent with a user message and return the response with tools used
     
     Args:
         message: The user's message/question
         user_id: User ID for tracking
         
     Returns:
-        The agent's text response
+        Dict with 'response' (text) and 'tools_used' (list of tool names)
     """
     graph = create_agent_graph()
     
@@ -140,19 +140,37 @@ def run_agent(message: str, user_id: str = "default") -> str:
         "user_id": user_id
     }
     
+    tools_used = []
+    
     try:
         result = graph.invoke(initial_state)
         
         messages = result.get("messages", [])
+        
+        for msg in messages:
+            if isinstance(msg, AIMessage) and getattr(msg, 'tool_calls', None):
+                for tool_call in msg.tool_calls:
+                    tool_name = tool_call.get("name")
+                    if tool_name and tool_name not in tools_used:
+                        tools_used.append(tool_name)
+        
+        response_text = "I processed your request but have no additional response."
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and msg.content:
                 if not getattr(msg, 'tool_calls', None):
-                    return msg.content
+                    response_text = msg.content
+                    break
         
-        return "I processed your request but have no additional response."
+        return {
+            "response": response_text,
+            "tools_used": tools_used
+        }
         
     except Exception as e:
-        return f"Error running agent: {str(e)}"
+        return {
+            "response": f"Error running agent: {str(e)}",
+            "tools_used": tools_used
+        }
 
 
 def stream_agent(message: str, user_id: str = "default"):

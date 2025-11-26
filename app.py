@@ -8650,11 +8650,12 @@ def agent_chat():
         
         print(f"🤖 Agent chat from {user_id}: {message[:100]}...")
         
-        response = run_agent(message, user_id)
+        result = run_agent(message, user_id)
         
         return jsonify({
             'success': True,
-            'response': response,
+            'response': result.get('response', ''),
+            'tools_used': result.get('tools_used', []),
             'user_id': user_id
         })
         
