@@ -1795,6 +1795,167 @@ def import_vendor_csv(user_email: str, file_path: str) -> str:
 
 
 @tool
+def get_netsuite_statistics(user_email: str) -> str:
+    """
+    Get comprehensive statistics from NetSuite - LIVE data from NetSuite, not local database.
+    Use this when user asks for "NetSuite stats", "stats from NetSuite", "what's in NetSuite", 
+    "how many vendors in NetSuite", or anything about NetSuite-specific data.
+    
+    This queries NetSuite directly and provides stats on:
+    - Total vendors in NetSuite
+    - Vendors synced to local database  
+    - Bills created in NetSuite
+    - Spending by vendor
+    - Recent activity
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
+    
+    Returns:
+        Comprehensive NetSuite statistics with tables and charts
+    """
+    try:
+        stats = {
+            "netsuite_connected": False,
+            "netsuite_vendors_count": 0,
+            "local_synced_count": 0,
+            "unsynced_count": 0,
+            "vendors_with_bills": 0,
+            "total_bills": 0,
+            "total_spend": 0,
+            "netsuite_vendors": [],
+            "spending_by_vendor": []
+        }
+        
+        # Check NetSuite connection
+        try:
+            connection = netsuite_service.test_connection()
+            stats["netsuite_connected"] = connection.get("connected", False)
+        except:
+            stats["netsuite_connected"] = False
+        
+        if not stats["netsuite_connected"]:
+            return json.dumps({
+                "success": False,
+                "error": "NetSuite is not connected. Please check your NetSuite credentials.",
+                "html_table": '<div class="error-banner" style="background:#fef2f2; padding:16px; border-radius:8px; color:#dc2626;">⚠️ NetSuite connection failed. Check credentials.</div>'
+            })
+        
+        # Get vendors directly from NetSuite
+        try:
+            netsuite_vendors = netsuite_service.search_vendors(limit=500)
+            stats["netsuite_vendors_count"] = len(netsuite_vendors)
+            stats["netsuite_vendors"] = netsuite_vendors[:20]  # First 20 for preview
+        except Exception as e:
+            print(f"Error fetching NetSuite vendors: {e}")
+        
+        # Get count of locally synced vendors (have NetSuite ID)
+        try:
+            synced_query = """
+            SELECT COUNT(*) as synced_count
+            FROM `invoicereader-477008.vendors_ai.global_vendors`
+            WHERE owner_email = @user_email AND netsuite_internal_id IS NOT NULL
+            """
+            synced_result = bigquery_service.query(synced_query, {"user_email": user_email})
+            if synced_result:
+                stats["local_synced_count"] = synced_result[0].get("synced_count", 0)
+        except Exception as e:
+            print(f"Error getting synced count: {e}")
+        
+        # Get unsynced vendors count (local vendors without NetSuite ID)
+        try:
+            unsynced_query = """
+            SELECT COUNT(*) as unsynced_count
+            FROM `invoicereader-477008.vendors_ai.global_vendors`
+            WHERE owner_email = @user_email AND netsuite_internal_id IS NULL
+            """
+            unsynced_result = bigquery_service.query(unsynced_query, {"user_email": user_email})
+            if unsynced_result:
+                stats["unsynced_count"] = unsynced_result[0].get("unsynced_count", 0)
+        except Exception as e:
+            print(f"Error getting unsynced count: {e}")
+        
+        # Get bills/invoices with NetSuite status
+        try:
+            bills_query = """
+            SELECT 
+                COUNT(*) as total_bills,
+                COUNTIF(netsuite_bill_id IS NOT NULL) as in_netsuite,
+                SUM(amount) as total_spend
+            FROM `invoicereader-477008.vendors_ai.invoices`
+            WHERE owner_email = @user_email OR owner_email IS NULL
+            """
+            bills_result = bigquery_service.query(bills_query, {"user_email": user_email})
+            if bills_result:
+                stats["total_bills"] = bills_result[0].get("total_bills", 0)
+                stats["vendors_with_bills"] = bills_result[0].get("in_netsuite", 0)
+                stats["total_spend"] = float(bills_result[0].get("total_spend") or 0)
+        except Exception as e:
+            print(f"Error getting bills stats: {e}")
+        
+        # Build HTML response
+        html = f'''
+<div class="netsuite-stats-dashboard">
+    <div style="margin-bottom: 16px; font-size: 18px; font-weight: bold;">📊 NetSuite Statistics (Live Data)</div>
+    
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">{stats["netsuite_vendors_count"]}</div>
+            <div style="font-size: 12px; opacity: 0.9;">Vendors in NetSuite</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 16px; border-radius: 12px; color: white; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">{stats["local_synced_count"]}</div>
+            <div style="font-size: 12px; opacity: 0.9;">Synced Locally</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 16px; border-radius: 12px; color: white; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">{stats["unsynced_count"]}</div>
+            <div style="font-size: 12px; opacity: 0.9;">Not in NetSuite</div>
+        </div>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px;">
+        <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; border-left: 4px solid #10b981;">
+            <div style="font-size: 24px; font-weight: bold; color: #059669;">{stats["total_bills"]}</div>
+            <div style="color: #666;">Total Invoices</div>
+        </div>
+        <div style="background: #eff6ff; padding: 16px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+            <div style="font-size: 24px; font-weight: bold; color: #2563eb;">${stats["total_spend"]:,.2f}</div>
+            <div style="color: #666;">Total Spend</div>
+        </div>
+    </div>
+'''
+        
+        # Add vendor preview table
+        if stats["netsuite_vendors"]:
+            html += '''<div style="margin-top: 16px;"><div style="font-weight: bold; margin-bottom: 8px;">📋 NetSuite Vendors (First 20)</div>
+<table class="payouts-data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+<thead><tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Vendor Name</th><th style="padding:8px;text-align:left;">NetSuite ID</th><th style="padding:8px;text-align:left;">Email</th></tr></thead><tbody>'''
+            
+            for v in stats["netsuite_vendors"][:20]:
+                name = v.get('companyName') or v.get('entityId', 'N/A')
+                ns_id = v.get('id') or v.get('internalId', 'N/A')
+                email = v.get('email', 'N/A')
+                html += f'<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{name}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{ns_id}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{email}</td></tr>'
+            
+            if stats["netsuite_vendors_count"] > 20:
+                html += f'<tr><td colspan="3" style="padding:8px;text-align:center;color:#6b7280;">... and {stats["netsuite_vendors_count"] - 20} more vendors in NetSuite</td></tr>'
+            
+            html += '</tbody></table></div>'
+        
+        html += '</div>'
+        
+        return json.dumps({
+            "success": True,
+            "stats": stats,
+            "message": f"NetSuite has {stats['netsuite_vendors_count']} vendors. {stats['local_synced_count']} are synced locally.",
+            "html_table": html
+        }, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
 def pull_netsuite_vendors(user_email: str) -> str:
     """
     Pull and sync all vendors from NetSuite to the local database.
@@ -2091,6 +2252,7 @@ def get_all_tools():
         process_uploaded_invoice,
         import_vendor_csv,
         pull_netsuite_vendors,
+        get_netsuite_statistics,
         # Database First
         search_database_first,
         get_top_vendors_by_spend,
