@@ -735,8 +735,25 @@ class NetSuiteService:
         SOLUTION 3: Fixed REST API Search
         Search for vendors in NetSuite using DOUBLE QUOTES for string values.
         PRIORITY: External ID -> Tax ID -> Email -> Name.
+        If no criteria provided, returns all vendors (up to limit).
         """
         if not self.enabled:
+            return []
+        
+        # If no criteria provided, list all vendors using SuiteQL
+        if not any([name, tax_id, email, external_id]):
+            logger.info(f"No search criteria - fetching all vendors (limit: {limit})")
+            query = f"SELECT id, companyname, entityid, email FROM vendor WHERE isinactive = 'F' ORDER BY id"
+            query_data = {"q": query}
+            result = self._make_request('POST', '/query/v1/suiteql', 
+                                       data=query_data,
+                                       entity_type='vendor',
+                                       entity_id='list_all',
+                                       action='list_vendors',
+                                       params={'limit': limit})
+            if result and 'items' in result:
+                logger.info(f"Listed {len(result['items'])} vendor(s) from NetSuite")
+                return result['items']
             return []
         
         # 0. Try External ID first (if provided)
