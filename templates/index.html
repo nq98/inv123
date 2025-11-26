@@ -148,6 +148,10 @@
                     <span class="nav-icon">📧</span>
                     <span class="nav-text">Gmail</span>
                 </a>
+                <a href="/#subscription-pulse" class="nav-link" data-tab="subscription-pulse">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Subscription Pulse</span>
+                </a>
                 <a href="/#generate" class="nav-link" data-tab="generate">
                     <span class="nav-icon">📝</span>
                     <span class="nav-text">Generate</span>
@@ -772,6 +776,184 @@
                     </div>
                 </div>
             </section>
+            
+        </div>
+        
+        <!-- ==================== SUBSCRIPTION PULSE TAB ==================== -->
+        <div class="tab-content" id="tab-subscription-pulse">
+            
+            <!-- Subscription Pulse Header -->
+            <section class="card subscription-pulse-header">
+                <div class="card-header">
+                    <h2 class="card-title">📊 Subscription Pulse</h2>
+                    <p class="card-desc">SaaS Spend Management & Shadow IT Discovery - Instant analytics on all your subscriptions and recurring payments</p>
+                </div>
+                
+                <div id="subscriptionPulseStatus" class="status-banner"></div>
+                
+                <!-- Gmail Connect for Subscription Pulse -->
+                <div id="subscriptionGmailConnect">
+                    <div class="pulse-connect-section">
+                        <div class="pulse-connect-info">
+                            <h3>🔗 Connect Your Gmail</h3>
+                            <p>Connect your Gmail to instantly discover all subscriptions and recurring payments. We use a <strong>Fast Lane</strong> scanner that analyzes email text (not attachments) for instant results.</p>
+                            <ul class="pulse-features-list">
+                                <li>⚡ <strong>Instant Results</strong> - See your subscriptions in seconds, not hours</li>
+                                <li>🔍 <strong>Shadow IT Discovery</strong> - Find hidden employee subscriptions</li>
+                                <li>📈 <strong>Spend Tracking</strong> - See total spend per vendor over time</li>
+                                <li>⚠️ <strong>Price Alerts</strong> - Detect when vendors increase prices</li>
+                                <li>🔄 <strong>Active vs. Stopped</strong> - Know which subscriptions are still running</li>
+                            </ul>
+                        </div>
+                        <button id="subscriptionGmailConnectBtn" class="btn btn-primary btn-lg pulse-connect-btn">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                            Connect Gmail for Subscription Analytics
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Connected State - Scan Controls -->
+                <div id="subscriptionScanSection" class="hidden">
+                    <div class="pulse-scan-controls">
+                        <div class="form-group">
+                            <label for="subscriptionTimeRange" class="form-label">📅 Analyze subscriptions from:</label>
+                            <select id="subscriptionTimeRange" class="form-select">
+                                <option value="90">Last 3 months</option>
+                                <option value="180">Last 6 months</option>
+                                <option value="365" selected>Last year</option>
+                                <option value="730">Last 2 years</option>
+                                <option value="1825">Last 5 years</option>
+                            </select>
+                        </div>
+                        
+                        <div class="button-group">
+                            <button id="subscriptionScanBtn" class="btn btn-primary btn-lg">
+                                ⚡ Run Fast Analytics Scan
+                            </button>
+                            <button id="subscriptionDisconnectBtn" class="btn btn-secondary">
+                                Disconnect
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Scan Progress -->
+                    <div id="subscriptionScanProgress" class="hidden">
+                        <div class="pulse-progress-container">
+                            <div class="pulse-progress-header">
+                                <span class="pulse-progress-title">🔍 Fast Lane Scanner Active</span>
+                                <span id="subscriptionProgressPercent">0%</span>
+                            </div>
+                            <div class="pulse-progress-bar">
+                                <div id="subscriptionProgressFill" class="pulse-progress-fill" style="width: 0%"></div>
+                            </div>
+                            <div id="subscriptionProgressStatus" class="pulse-progress-status">Initializing...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Subscription Dashboard (shows after scan) -->
+            <div id="subscriptionDashboard" class="hidden">
+                
+                <!-- Overview Cards -->
+                <div class="pulse-overview-cards">
+                    <div class="pulse-card pulse-card-active">
+                        <div class="pulse-card-icon">🟢</div>
+                        <div class="pulse-card-content">
+                            <div id="activeSubCount" class="pulse-card-value">-</div>
+                            <div class="pulse-card-label">Active Subscriptions</div>
+                        </div>
+                    </div>
+                    <div class="pulse-card pulse-card-spend">
+                        <div class="pulse-card-icon">💰</div>
+                        <div class="pulse-card-content">
+                            <div id="monthlySpend" class="pulse-card-value">-</div>
+                            <div class="pulse-card-label">Monthly Spend</div>
+                        </div>
+                    </div>
+                    <div class="pulse-card pulse-card-stopped">
+                        <div class="pulse-card-icon">🔴</div>
+                        <div class="pulse-card-content">
+                            <div id="stoppedSubCount" class="pulse-card-value">-</div>
+                            <div class="pulse-card-label">Stopped This Year</div>
+                        </div>
+                    </div>
+                    <div class="pulse-card pulse-card-savings">
+                        <div class="pulse-card-icon">💵</div>
+                        <div class="pulse-card-content">
+                            <div id="potentialSavings" class="pulse-card-value">-</div>
+                            <div class="pulse-card-label">Potential Savings</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Alert Cards -->
+                <div id="subscriptionAlerts" class="pulse-alerts-section">
+                    <h3 class="section-title">⚠️ Alerts & Insights</h3>
+                    <div id="alertsContainer" class="pulse-alerts-container">
+                        <!-- Alerts will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Subscription Tabs -->
+                <div class="pulse-tabs">
+                    <button class="pulse-tab active" data-pulse-tab="active">🟢 Active Subscriptions</button>
+                    <button class="pulse-tab" data-pulse-tab="stopped">🔴 Stopped/Churned</button>
+                    <button class="pulse-tab" data-pulse-tab="price-alerts">📈 Price Changes</button>
+                    <button class="pulse-tab" data-pulse-tab="duplicates">🔄 Duplicate Tools</button>
+                    <button class="pulse-tab" data-pulse-tab="shadow-it">👤 Shadow IT</button>
+                    <button class="pulse-tab" data-pulse-tab="timeline">📅 Full Timeline</button>
+                </div>
+                
+                <!-- Tab Contents -->
+                <div id="pulseTabContent" class="pulse-tab-content">
+                    
+                    <!-- Active Subscriptions -->
+                    <div class="pulse-tab-pane active" id="pulse-pane-active">
+                        <div class="pulse-subscription-list" id="activeSubscriptionsList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Stopped Subscriptions -->
+                    <div class="pulse-tab-pane" id="pulse-pane-stopped">
+                        <div class="pulse-subscription-list" id="stoppedSubscriptionsList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Price Alerts -->
+                    <div class="pulse-tab-pane" id="pulse-pane-price-alerts">
+                        <div class="pulse-price-alerts-list" id="priceAlertsList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Duplicate Tools -->
+                    <div class="pulse-tab-pane" id="pulse-pane-duplicates">
+                        <div class="pulse-duplicates-list" id="duplicatesList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Shadow IT -->
+                    <div class="pulse-tab-pane" id="pulse-pane-shadow-it">
+                        <div class="pulse-shadow-list" id="shadowItList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Full Timeline -->
+                    <div class="pulse-tab-pane" id="pulse-pane-timeline">
+                        <div class="pulse-timeline" id="fullTimeline">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
             
         </div>
         

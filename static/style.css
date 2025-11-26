@@ -3466,3 +3466,555 @@ button {
         font-size: 2rem;
     }
 }
+
+/* ===============================================
+   SUBSCRIPTION PULSE - SAAS SPEND ANALYTICS
+   =============================================== */
+
+/* Pulse Connect Section */
+.pulse-connect-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    color: white;
+    text-align: center;
+}
+
+.pulse-connect-info {
+    margin-bottom: 1.5rem;
+}
+
+.pulse-connect-info h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.pulse-connect-info p {
+    opacity: 0.9;
+    margin-bottom: 1rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.pulse-features-list {
+    list-style: none;
+    text-align: left;
+    max-width: 500px;
+    margin: 0 auto 1.5rem;
+}
+
+.pulse-features-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pulse-features-list li:last-child {
+    border-bottom: none;
+}
+
+.pulse-connect-btn {
+    background: white !important;
+    color: var(--purple-600) !important;
+    font-weight: 600;
+    padding: 1rem 2rem !important;
+    font-size: 1.1rem !important;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pulse-connect-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+/* Pulse Scan Controls */
+.pulse-scan-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 1rem;
+    padding: 1rem 0;
+}
+
+.pulse-scan-controls .form-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+/* Pulse Progress */
+.pulse-progress-container {
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.pulse-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.pulse-progress-title {
+    font-weight: 600;
+    color: var(--gray-700);
+}
+
+#subscriptionProgressPercent {
+    font-weight: bold;
+    color: var(--purple-600);
+}
+
+.pulse-progress-bar {
+    height: 8px;
+    background: var(--gray-200);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.pulse-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--purple-500) 0%, var(--purple-700) 100%);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.pulse-progress-status {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--gray-600);
+}
+
+/* Pulse Overview Cards */
+.pulse-overview-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.pulse-card {
+    background: white;
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pulse-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.pulse-card-icon {
+    font-size: 2.5rem;
+}
+
+.pulse-card-value {
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+
+.pulse-card-label {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+.pulse-card-active {
+    border-left: 4px solid var(--success);
+}
+
+.pulse-card-spend {
+    border-left: 4px solid var(--purple-500);
+}
+
+.pulse-card-stopped {
+    border-left: 4px solid var(--error);
+}
+
+.pulse-card-savings {
+    border-left: 4px solid var(--warning);
+}
+
+/* Pulse Alerts Section */
+.pulse-alerts-section {
+    margin: 1.5rem 0;
+}
+
+.pulse-alerts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.pulse-alert {
+    background: white;
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow);
+}
+
+.pulse-alert-price {
+    border-left: 4px solid var(--warning);
+}
+
+.pulse-alert-duplicate {
+    border-left: 4px solid var(--info);
+}
+
+.pulse-alert-zombie {
+    border-left: 4px solid var(--error);
+}
+
+.pulse-alert-shadow {
+    border-left: 4px solid var(--purple-500);
+}
+
+.pulse-alert-icon {
+    font-size: 1.5rem;
+}
+
+.pulse-alert-content {
+    flex: 1;
+}
+
+.pulse-alert-title {
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 0.25rem;
+}
+
+.pulse-alert-desc {
+    font-size: 0.875rem;
+    color: var(--gray-600);
+}
+
+.pulse-alert-action {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Pulse Tabs */
+.pulse-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--gray-200);
+    padding-bottom: 0;
+    margin: 1.5rem 0 0;
+}
+
+.pulse-tab {
+    padding: 0.75rem 1.25rem;
+    border: none;
+    background: transparent;
+    color: var(--gray-600);
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.pulse-tab:hover {
+    color: var(--purple-600);
+}
+
+.pulse-tab.active {
+    color: var(--purple-600);
+    border-bottom-color: var(--purple-600);
+}
+
+/* Pulse Tab Content */
+.pulse-tab-content {
+    background: white;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    padding: 1.5rem;
+    min-height: 300px;
+}
+
+.pulse-tab-pane {
+    display: none;
+}
+
+.pulse-tab-pane.active {
+    display: block;
+}
+
+/* Subscription List Items */
+.pulse-subscription-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.pulse-subscription-item {
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: background 0.2s;
+}
+
+.pulse-subscription-item:hover {
+    background: var(--gray-100);
+}
+
+.pulse-sub-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--purple-500), var(--purple-700));
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: white;
+}
+
+.pulse-sub-info {
+    flex: 1;
+}
+
+.pulse-sub-name {
+    font-weight: 600;
+    color: var(--gray-900);
+    margin-bottom: 0.25rem;
+}
+
+.pulse-sub-meta {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+.pulse-sub-stats {
+    text-align: right;
+}
+
+.pulse-sub-amount {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--gray-900);
+}
+
+.pulse-sub-frequency {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+}
+
+.pulse-sub-lifetime {
+    font-size: 0.875rem;
+    color: var(--gray-600);
+    margin-top: 0.25rem;
+}
+
+.pulse-sub-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.pulse-sub-status.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+}
+
+.pulse-sub-status.stopped {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error);
+}
+
+/* Sparkline Graph Container */
+.pulse-sparkline {
+    width: 100px;
+    height: 30px;
+    background: var(--gray-100);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.pulse-sparkline-bar {
+    position: absolute;
+    bottom: 0;
+    width: 8px;
+    background: var(--purple-500);
+    border-radius: 2px 2px 0 0;
+}
+
+/* Timeline */
+.pulse-timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.pulse-timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--gray-200);
+}
+
+.pulse-timeline-item {
+    position: relative;
+    padding-bottom: 1.5rem;
+}
+
+.pulse-timeline-dot {
+    position: absolute;
+    left: -1.75rem;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid var(--purple-500);
+}
+
+.pulse-timeline-dot.start {
+    border-color: var(--success);
+}
+
+.pulse-timeline-dot.end {
+    border-color: var(--error);
+}
+
+.pulse-timeline-dot.payment {
+    border-color: var(--info);
+}
+
+.pulse-timeline-content {
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    padding: 1rem;
+}
+
+.pulse-timeline-date {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-bottom: 0.25rem;
+}
+
+.pulse-timeline-title {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.pulse-timeline-amount {
+    font-weight: bold;
+    color: var(--purple-600);
+}
+
+/* Empty State */
+.pulse-empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--gray-500);
+}
+
+.pulse-empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.pulse-empty-state-text {
+    font-size: 1rem;
+}
+
+/* Duplicate Card */
+.pulse-duplicate-card {
+    background: var(--gray-50);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    border-left: 4px solid var(--info);
+}
+
+.pulse-duplicate-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.pulse-duplicate-category {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.pulse-duplicate-savings {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.pulse-duplicate-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.pulse-duplicate-item {
+    background: white;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .pulse-overview-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .pulse-subscription-item {
+        flex-wrap: wrap;
+    }
+    
+    .pulse-sub-stats {
+        width: 100%;
+        text-align: left;
+        margin-top: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .pulse-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+    
+    .pulse-tab {
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .pulse-overview-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .pulse-connect-section {
+        padding: 1.5rem;
+    }
+}

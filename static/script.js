@@ -6804,3 +6804,557 @@ async function syncAllPayments() {
         alert('Payment sync connection error');
     };
 }
+
+// ===============================================
+// SUBSCRIPTION PULSE - SAAS SPEND ANALYTICS
+// ===============================================
+
+// Subscription Pulse Elements
+const subscriptionGmailConnectBtn = document.getElementById('subscriptionGmailConnectBtn');
+const subscriptionScanBtn = document.getElementById('subscriptionScanBtn');
+const subscriptionDisconnectBtn = document.getElementById('subscriptionDisconnectBtn');
+const subscriptionGmailConnect = document.getElementById('subscriptionGmailConnect');
+const subscriptionScanSection = document.getElementById('subscriptionScanSection');
+const subscriptionDashboard = document.getElementById('subscriptionDashboard');
+const subscriptionPulseStatus = document.getElementById('subscriptionPulseStatus');
+const subscriptionScanProgress = document.getElementById('subscriptionScanProgress');
+
+// Pulse Tab Elements
+const pulseTabs = document.querySelectorAll('.pulse-tab');
+const pulseTabPanes = document.querySelectorAll('.pulse-tab-pane');
+
+// Initialize Subscription Pulse on load
+if (subscriptionGmailConnectBtn) {
+    initSubscriptionPulse();
+}
+
+/**
+ * Initialize Subscription Pulse module
+ */
+function initSubscriptionPulse() {
+    // Check Gmail connection status for Subscription Pulse
+    checkSubscriptionGmailStatus();
+    
+    // Connect Gmail button
+    subscriptionGmailConnectBtn.addEventListener('click', () => {
+        // Use same OAuth flow but redirect back to subscription-pulse tab
+        const returnUrl = encodeURIComponent(window.location.origin + '/#subscription-pulse');
+        window.location.href = '/api/ap-automation/gmail/auth?return_tab=subscription-pulse';
+    });
+    
+    // Disconnect button
+    if (subscriptionDisconnectBtn) {
+        subscriptionDisconnectBtn.addEventListener('click', async () => {
+            if (confirm('Disconnect Gmail from Subscription Pulse?')) {
+                try {
+                    await fetch('/api/ap-automation/gmail/disconnect', { method: 'POST' });
+                    checkSubscriptionGmailStatus();
+                    if (subscriptionDashboard) {
+                        subscriptionDashboard.classList.add('hidden');
+                    }
+                } catch (error) {
+                    showPulseStatus('error', 'Failed to disconnect: ' + error.message);
+                }
+            }
+        });
+    }
+    
+    // Scan button
+    if (subscriptionScanBtn) {
+        subscriptionScanBtn.addEventListener('click', startSubscriptionScan);
+    }
+    
+    // Pulse tabs
+    pulseTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabId = tab.getAttribute('data-pulse-tab');
+            switchPulseTab(tabId);
+        });
+    });
+}
+
+/**
+ * Check if Gmail is connected for Subscription Pulse
+ */
+async function checkSubscriptionGmailStatus() {
+    try {
+        const response = await fetch('/api/ap-automation/gmail/status');
+        const data = await response.json();
+        
+        if (data.connected) {
+            subscriptionGmailConnect.classList.add('hidden');
+            subscriptionScanSection.classList.remove('hidden');
+            showPulseStatus('success', `Connected as ${data.email}`);
+            
+            // Check if we have cached subscription data
+            loadCachedSubscriptionData();
+        } else {
+            subscriptionGmailConnect.classList.remove('hidden');
+            subscriptionScanSection.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Failed to check subscription Gmail status:', error);
+    }
+}
+
+/**
+ * Show status message in Subscription Pulse
+ */
+function showPulseStatus(type, message) {
+    if (!subscriptionPulseStatus) return;
+    
+    const typeClass = type === 'error' ? 'alert-error' : 
+                      type === 'success' ? 'alert-success' : 'alert-info';
+    
+    subscriptionPulseStatus.innerHTML = `<div class="${typeClass}">${message}</div>`;
+    subscriptionPulseStatus.style.display = 'block';
+}
+
+/**
+ * Start Fast Lane subscription scan
+ */
+async function startSubscriptionScan() {
+    const days = document.getElementById('subscriptionTimeRange').value;
+    
+    subscriptionScanProgress.classList.remove('hidden');
+    subscriptionScanBtn.disabled = true;
+    
+    updateScanProgress(0, 'Connecting to Gmail...');
+    
+    try {
+        // Use SSE for real-time progress
+        const eventSource = new EventSource(`/api/subscriptions/scan/stream?days=${days}`);
+        
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'progress') {
+                updateScanProgress(data.percent, data.message);
+            } else if (data.type === 'complete') {
+                eventSource.close();
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                displaySubscriptionDashboard(data.results);
+            } else if (data.type === 'error') {
+                eventSource.close();
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                showPulseStatus('error', data.message);
+            }
+        };
+        
+        eventSource.onerror = function(error) {
+            eventSource.close();
+            subscriptionScanProgress.classList.add('hidden');
+            subscriptionScanBtn.disabled = false;
+            showPulseStatus('error', 'Scan connection lost. Please try again.');
+        };
+        
+    } catch (error) {
+        subscriptionScanProgress.classList.add('hidden');
+        subscriptionScanBtn.disabled = false;
+        showPulseStatus('error', 'Failed to start scan: ' + error.message);
+    }
+}
+
+/**
+ * Update scan progress bar
+ */
+function updateScanProgress(percent, message) {
+    const progressFill = document.getElementById('subscriptionProgressFill');
+    const progressPercent = document.getElementById('subscriptionProgressPercent');
+    const progressStatus = document.getElementById('subscriptionProgressStatus');
+    
+    if (progressFill) progressFill.style.width = percent + '%';
+    if (progressPercent) progressPercent.textContent = percent + '%';
+    if (progressStatus) progressStatus.textContent = message;
+}
+
+/**
+ * Display the subscription dashboard with results
+ */
+function displaySubscriptionDashboard(results) {
+    if (!subscriptionDashboard) return;
+    
+    subscriptionDashboard.classList.remove('hidden');
+    
+    // Update overview cards
+    document.getElementById('activeSubCount').textContent = results.active_count || 0;
+    document.getElementById('monthlySpend').textContent = formatCurrency(results.monthly_spend || 0);
+    document.getElementById('stoppedSubCount').textContent = results.stopped_count || 0;
+    document.getElementById('potentialSavings').textContent = formatCurrency(results.potential_savings || 0);
+    
+    // Display alerts
+    displayPulseAlerts(results.alerts || []);
+    
+    // Display subscriptions in each tab
+    displayActiveSubscriptions(results.active_subscriptions || []);
+    displayStoppedSubscriptions(results.stopped_subscriptions || []);
+    displayPriceAlerts(results.price_alerts || []);
+    displayDuplicates(results.duplicates || []);
+    displayShadowIT(results.shadow_it || []);
+    displayTimeline(results.timeline || []);
+}
+
+/**
+ * Display alert cards
+ */
+function displayPulseAlerts(alerts) {
+    const container = document.getElementById('alertsContainer');
+    if (!container) return;
+    
+    if (alerts.length === 0) {
+        container.innerHTML = '<div class="pulse-empty-state"><p>No alerts at this time</p></div>';
+        return;
+    }
+    
+    container.innerHTML = alerts.slice(0, 5).map(alert => `
+        <div class="pulse-alert pulse-alert-${alert.type}">
+            <div class="pulse-alert-icon">${getAlertIcon(alert.type)}</div>
+            <div class="pulse-alert-content">
+                <div class="pulse-alert-title">${escapeHtml(alert.title)}</div>
+                <div class="pulse-alert-desc">${escapeHtml(alert.description)}</div>
+            </div>
+            ${alert.action ? `<button class="btn btn-sm pulse-alert-action">${alert.action}</button>` : ''}
+        </div>
+    `).join('');
+}
+
+/**
+ * Get icon for alert type
+ */
+function getAlertIcon(type) {
+    const icons = {
+        'price': '📈',
+        'duplicate': '🔄',
+        'zombie': '⚠️',
+        'shadow': '👤'
+    };
+    return icons[type] || '📌';
+}
+
+/**
+ * Display active subscriptions
+ */
+function displayActiveSubscriptions(subscriptions) {
+    const container = document.getElementById('activeSubscriptionsList');
+    if (!container) return;
+    
+    if (subscriptions.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">📭</div>
+                <div class="pulse-empty-state-text">No active subscriptions found</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = subscriptions.map(sub => `
+        <div class="pulse-subscription-item">
+            <div class="pulse-sub-icon">${getVendorIcon(sub.vendor_name)}</div>
+            <div class="pulse-sub-info">
+                <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
+                <div class="pulse-sub-meta">First payment: ${formatDate(sub.first_seen)} | Last: ${formatDate(sub.last_seen)}</div>
+            </div>
+            <div class="pulse-sparkline" title="Payment history">
+                ${renderSparkline(sub.payment_history || [])}
+            </div>
+            <div class="pulse-sub-stats">
+                <div class="pulse-sub-amount">${formatCurrency(sub.monthly_amount)}</div>
+                <div class="pulse-sub-frequency">${sub.frequency || 'monthly'}</div>
+                <div class="pulse-sub-lifetime">Lifetime: ${formatCurrency(sub.lifetime_spend)}</div>
+            </div>
+            <span class="pulse-sub-status active">Active</span>
+        </div>
+    `).join('');
+}
+
+/**
+ * Display stopped/churned subscriptions
+ */
+function displayStoppedSubscriptions(subscriptions) {
+    const container = document.getElementById('stoppedSubscriptionsList');
+    if (!container) return;
+    
+    if (subscriptions.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">✅</div>
+                <div class="pulse-empty-state-text">No stopped subscriptions found - all your subscriptions are active!</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = subscriptions.map(sub => `
+        <div class="pulse-subscription-item">
+            <div class="pulse-sub-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);">${getVendorIcon(sub.vendor_name)}</div>
+            <div class="pulse-sub-info">
+                <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
+                <div class="pulse-sub-meta">Stopped: ${formatDate(sub.last_seen)} | Duration: ${sub.duration_months} months</div>
+            </div>
+            <div class="pulse-sub-stats">
+                <div class="pulse-sub-amount">${formatCurrency(sub.last_amount)}</div>
+                <div class="pulse-sub-lifetime">Total Spent: ${formatCurrency(sub.lifetime_spend)}</div>
+            </div>
+            <span class="pulse-sub-status stopped">Stopped</span>
+        </div>
+    `).join('');
+}
+
+/**
+ * Display price alerts
+ */
+function displayPriceAlerts(alerts) {
+    const container = document.getElementById('priceAlertsList');
+    if (!container) return;
+    
+    if (alerts.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">💰</div>
+                <div class="pulse-empty-state-text">No price changes detected</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = alerts.map(alert => `
+        <div class="pulse-alert pulse-alert-price">
+            <div class="pulse-alert-icon">📈</div>
+            <div class="pulse-alert-content">
+                <div class="pulse-alert-title">${escapeHtml(alert.vendor_name)}</div>
+                <div class="pulse-alert-desc">
+                    Price changed from ${formatCurrency(alert.old_amount)} to ${formatCurrency(alert.new_amount)}
+                    (${alert.change_percent > 0 ? '+' : ''}${alert.change_percent.toFixed(1)}%)
+                </div>
+            </div>
+            <span class="badge ${alert.change_percent > 0 ? 'badge-danger' : 'badge-success'}">
+                ${alert.change_percent > 0 ? '↑' : '↓'} ${Math.abs(alert.change_percent).toFixed(1)}%
+            </span>
+        </div>
+    `).join('');
+}
+
+/**
+ * Display duplicate tools
+ */
+function displayDuplicates(duplicates) {
+    const container = document.getElementById('duplicatesList');
+    if (!container) return;
+    
+    if (duplicates.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">✨</div>
+                <div class="pulse-empty-state-text">No duplicate tools detected - your stack is clean!</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = duplicates.map(dup => `
+        <div class="pulse-duplicate-card">
+            <div class="pulse-duplicate-header">
+                <span class="pulse-duplicate-category">🔄 ${escapeHtml(dup.category)}</span>
+                <span class="pulse-duplicate-savings">Save ${formatCurrency(dup.potential_savings)}/year</span>
+            </div>
+            <div class="pulse-duplicate-items">
+                ${dup.vendors.map(v => `
+                    <div class="pulse-duplicate-item">
+                        ${getVendorIcon(v.name)} ${escapeHtml(v.name)} - ${formatCurrency(v.monthly_cost)}/mo
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+/**
+ * Display Shadow IT discoveries
+ */
+function displayShadowIT(items) {
+    const container = document.getElementById('shadowItList');
+    if (!container) return;
+    
+    if (items.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">🔒</div>
+                <div class="pulse-empty-state-text">No shadow IT detected - all subscriptions are properly managed!</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = items.map(item => `
+        <div class="pulse-subscription-item">
+            <div class="pulse-sub-icon" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);">👤</div>
+            <div class="pulse-sub-info">
+                <div class="pulse-sub-name">${escapeHtml(item.vendor_name)}</div>
+                <div class="pulse-sub-meta">Paid by: ${escapeHtml(item.paid_by_email || 'Unknown')}</div>
+            </div>
+            <div class="pulse-sub-stats">
+                <div class="pulse-sub-amount">${formatCurrency(item.amount)}</div>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="claimSubscription('${item.id}')">Claim</button>
+        </div>
+    `).join('');
+}
+
+/**
+ * Display full timeline
+ */
+function displayTimeline(events) {
+    const container = document.getElementById('fullTimeline');
+    if (!container) return;
+    
+    if (events.length === 0) {
+        container.innerHTML = `
+            <div class="pulse-empty-state">
+                <div class="pulse-empty-state-icon">📅</div>
+                <div class="pulse-empty-state-text">No timeline events to display</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = events.map(event => `
+        <div class="pulse-timeline-item">
+            <div class="pulse-timeline-dot ${event.type}"></div>
+            <div class="pulse-timeline-content">
+                <div class="pulse-timeline-date">${formatDateTime(event.timestamp)}</div>
+                <div class="pulse-timeline-title">${escapeHtml(event.vendor_name)}</div>
+                <div class="pulse-timeline-amount">${event.event_type}: ${formatCurrency(event.amount)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+/**
+ * Switch between pulse tabs
+ */
+function switchPulseTab(tabId) {
+    // Update tab buttons
+    pulseTabs.forEach(tab => {
+        if (tab.getAttribute('data-pulse-tab') === tabId) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Update tab panes
+    pulseTabPanes.forEach(pane => {
+        if (pane.id === `pulse-pane-${tabId}`) {
+            pane.classList.add('active');
+        } else {
+            pane.classList.remove('active');
+        }
+    });
+}
+
+/**
+ * Load cached subscription data if available
+ */
+async function loadCachedSubscriptionData() {
+    try {
+        const response = await fetch('/api/subscriptions/cached');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.has_data) {
+                displaySubscriptionDashboard(data.results);
+            }
+        }
+    } catch (error) {
+        console.log('No cached subscription data available');
+    }
+}
+
+/**
+ * Get vendor icon (first letter)
+ */
+function getVendorIcon(vendorName) {
+    if (!vendorName) return '?';
+    return vendorName.charAt(0).toUpperCase();
+}
+
+/**
+ * Render sparkline bars
+ */
+function renderSparkline(history) {
+    if (!history || history.length === 0) return '';
+    
+    const max = Math.max(...history);
+    return history.slice(-8).map((val, i) => {
+        const height = max > 0 ? (val / max * 100) : 0;
+        return `<div class="pulse-sparkline-bar" style="height: ${height}%; left: ${i * 12}px;"></div>`;
+    }).join('');
+}
+
+/**
+ * Format currency
+ */
+function formatCurrency(amount) {
+    if (typeof amount !== 'number') return '$0';
+    return '$' + amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+/**
+ * Format date
+ */
+function formatDate(dateStr) {
+    if (!dateStr) return 'N/A';
+    try {
+        return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+        return dateStr;
+    }
+}
+
+/**
+ * Format date time
+ */
+function formatDateTime(dateStr) {
+    if (!dateStr) return 'N/A';
+    try {
+        return new Date(dateStr).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: 'numeric', minute: '2-digit'
+        });
+    } catch {
+        return dateStr;
+    }
+}
+
+/**
+ * Escape HTML
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Claim a shadow IT subscription
+ */
+async function claimSubscription(id) {
+    if (confirm('Claim this subscription for corporate management?')) {
+        try {
+            const response = await fetch(`/api/subscriptions/${id}/claim`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                alert('Subscription claimed successfully!');
+                // Reload data
+                startSubscriptionScan();
+            } else {
+                alert('Failed to claim: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error claiming subscription: ' + error.message);
+        }
+    }
+}

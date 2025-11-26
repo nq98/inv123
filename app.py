@@ -8207,6 +8207,309 @@ def get_netsuite_bill_status(external_id):
             'error': str(e)
         }), 500
 
+# ===============================================
+# SUBSCRIPTION PULSE - SAAS SPEND ANALYTICS
+# ===============================================
+
+from services.subscription_pulse_service import SubscriptionPulseService
+
+# Singleton for subscription pulse service
+_subscription_pulse_service = None
+
+def get_subscription_pulse_service():
+    """Get or create subscription pulse service singleton"""
+    global _subscription_pulse_service
+    if _subscription_pulse_service is None:
+        _subscription_pulse_service = SubscriptionPulseService()
+    return _subscription_pulse_service
+
+@app.route('/api/subscriptions/scan/stream', methods=['GET'])
+def subscription_scan_stream():
+    """
+    SSE endpoint for Fast Lane subscription scanning
+    Analyzes email text (not attachments) for rapid results
+    """
+    days = int(request.args.get('days', 365))
+    session_token = request.cookies.get('gmail_session')
+    
+    if not session_token:
+        def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail not connected'})}\n\n"
+        return Response(error_stream(), mimetype='text/event-stream')
+    
+    def generate():
+        try:
+            # Initialize services
+            token_storage = SecureTokenStorage()
+            credentials = token_storage.get_credentials(session_token)
+            
+            if not credentials:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Gmail session expired. Please reconnect.'})}\n\n"
+                return
+                
+            gmail_service = GmailService()
+            pulse_service = get_subscription_pulse_service()
+            
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 5, 'message': 'Connecting to Gmail...'})}\n\n"
+            
+            # Build Gmail service
+            from google.oauth2.credentials import Credentials as OAuthCredentials
+            from googleapiclient.discovery import build
+            
+            creds = OAuthCredentials(
+                token=credentials.get('token'),
+                refresh_token=credentials.get('refresh_token'),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=os.getenv('GMAIL_CLIENT_ID'),
+                client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+            )
+            
+            service = build('gmail', 'v1', credentials=creds)
+            
+            # Search for transaction emails using Fast Lane keywords
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 10, 'message': 'Searching for subscription emails...'})}\n\n"
+            
+            # Multi-language subscription/payment query
+            query_parts = [
+                'receipt OR invoice OR payment OR subscription OR billing OR charged',
+                f'newer_than:{days}d'
+            ]
+            query = ' '.join(query_parts)
+            
+            # Get email IDs
+            all_message_ids = []
+            page_token = None
+            
+            while True:
+                results = service.users().messages().list(
+                    userId='me',
+                    q=query,
+                    pageToken=page_token,
+                    maxResults=500
+                ).execute()
+                
+                messages = results.get('messages', [])
+                all_message_ids.extend([m['id'] for m in messages])
+                
+                page_token = results.get('nextPageToken')
+                if not page_token or len(all_message_ids) >= 1000:  # Cap at 1000 emails
+                    break
+                    
+            total_emails = len(all_message_ids)
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 20, 'message': f'Found {total_emails} potential subscription emails'})}\n\n"
+            
+            if total_emails == 0:
+                yield f"data: {json.dumps({'type': 'complete', 'results': {'active_subscriptions': [], 'stopped_subscriptions': [], 'active_count': 0, 'stopped_count': 0, 'monthly_spend': 0, 'potential_savings': 0, 'alerts': [], 'duplicates': [], 'price_alerts': [], 'shadow_it': [], 'timeline': []}})}\n\n"
+                return
+                
+            # Process emails with Fast Lane (text only)
+            processed_events = []
+            for i, msg_id in enumerate(all_message_ids):
+                try:
+                    # Get email metadata and snippet (not full body for speed)
+                    msg = service.users().messages().get(
+                        userId='me',
+                        id=msg_id,
+                        format='metadata',
+                        metadataHeaders=['From', 'Subject', 'Date']
+                    ).execute()
+                    
+                    # Extract headers
+                    headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                    
+                    email_data = {
+                        'id': msg_id,
+                        'subject': headers.get('Subject', ''),
+                        'sender': headers.get('From', ''),
+                        'body': msg.get('snippet', ''),  # Use snippet for speed
+                        'date': None
+                    }
+                    
+                    # Parse date
+                    date_str = headers.get('Date', '')
+                    if date_str:
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            email_data['date'] = parsedate_to_datetime(date_str)
+                        except:
+                            pass
+                    
+                    # Fast Lane analysis
+                    result = pulse_service.analyze_email_fast(email_data)
+                    if result:
+                        processed_events.append(result)
+                        
+                except Exception as e:
+                    print(f"Error processing email {msg_id}: {e}")
+                    continue
+                    
+                # Progress update every 50 emails
+                if i > 0 and i % 50 == 0:
+                    percent = 20 + int((i / total_emails) * 60)
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments'})}\n\n"
+                    
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 85, 'message': f'Aggregating data from {len(processed_events)} payment events...'})}\n\n"
+            
+            # Aggregate results
+            results = pulse_service.aggregate_subscription_data(processed_events)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 95, 'message': 'Saving results...'})}\n\n"
+            
+            # Get client email for storage
+            try:
+                profile = service.users().getProfile(userId='me').execute()
+                client_email = profile.get('emailAddress', 'unknown')
+                pulse_service.store_subscription_results(client_email, results)
+            except:
+                pass
+                
+            yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
+            
+        except Exception as e:
+            print(f"Subscription scan error: {e}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
+    })
+
+@app.route('/api/subscriptions/cached', methods=['GET'])
+def get_cached_subscriptions():
+    """Get cached subscription data if available"""
+    session_token = request.cookies.get('gmail_session')
+    
+    if not session_token:
+        return jsonify({'has_data': False})
+        
+    try:
+        token_storage = SecureTokenStorage()
+        credentials = token_storage.get_credentials(session_token)
+        
+        if not credentials:
+            return jsonify({'has_data': False})
+            
+        pulse_service = get_subscription_pulse_service()
+        
+        # Get client email
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        from googleapiclient.discovery import build
+        
+        creds = OAuthCredentials(
+            token=credentials.get('token'),
+            refresh_token=credentials.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv('GMAIL_CLIENT_ID'),
+            client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+        )
+        
+        service = build('gmail', 'v1', credentials=creds)
+        profile = service.users().getProfile(userId='me').execute()
+        client_email = profile.get('emailAddress', 'unknown')
+        
+        cached = pulse_service.get_cached_results(client_email)
+        
+        if cached:
+            return jsonify(cached)
+        return jsonify({'has_data': False})
+        
+    except Exception as e:
+        print(f"Error getting cached subscriptions: {e}")
+        return jsonify({'has_data': False})
+
+@app.route('/api/subscriptions/<subscription_id>/claim', methods=['POST'])
+def claim_subscription(subscription_id):
+    """Claim a shadow IT subscription for corporate management"""
+    try:
+        pulse_service = get_subscription_pulse_service()
+        bigquery_service = get_bigquery_service()
+        
+        data = request.get_json() or {}
+        claimed_by = data.get('claimed_by', 'corporate')
+        
+        query = f"""
+        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.subscription_vendors`
+        SET 
+            claimed_by = @claimed_by,
+            claimed_at = CURRENT_TIMESTAMP(),
+            updated_at = CURRENT_TIMESTAMP()
+        WHERE vendor_id = @vendor_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("vendor_id", "STRING", subscription_id),
+                bigquery.ScalarQueryParameter("claimed_by", "STRING", claimed_by),
+            ]
+        )
+        
+        bigquery_service.client.query(query, job_config=job_config).result()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Subscription {subscription_id} claimed for corporate management',
+            'claimed_by': claimed_by
+        })
+    except Exception as e:
+        print(f"Error claiming subscription: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/subscriptions/analytics', methods=['GET'])
+def get_subscription_analytics():
+    """Get subscription analytics summary"""
+    try:
+        pulse_service = get_subscription_pulse_service()
+        bigquery_service = get_bigquery_service()
+        
+        # Query aggregated stats
+        query = f"""
+        SELECT 
+            COUNT(*) as total_vendors,
+            SUM(CASE WHEN status = 'active' AND is_subscription THEN 1 ELSE 0 END) as active_count,
+            SUM(CASE WHEN status = 'stopped' THEN 1 ELSE 0 END) as stopped_count,
+            SUM(CASE WHEN status = 'active' AND is_subscription THEN average_amount ELSE 0 END) as monthly_spend,
+            SUM(lifetime_spend) as total_lifetime_spend
+        FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.subscription_vendors`
+        """
+        
+        results = list(bigquery_service.client.query(query).result())
+        
+        if results:
+            row = results[0]
+            return jsonify({
+                'success': True,
+                'analytics': {
+                    'total_vendors': row['total_vendors'] or 0,
+                    'active_count': row['active_count'] or 0,
+                    'stopped_count': row['stopped_count'] or 0,
+                    'monthly_spend': row['monthly_spend'] or 0,
+                    'total_lifetime_spend': row['total_lifetime_spend'] or 0
+                }
+            })
+        
+        return jsonify({
+            'success': True,
+            'analytics': {
+                'total_vendors': 0,
+                'active_count': 0,
+                'stopped_count': 0,
+                'monthly_spend': 0,
+                'total_lifetime_spend': 0
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error getting subscription analytics: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
