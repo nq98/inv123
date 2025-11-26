@@ -6819,6 +6819,11 @@ const subscriptionDashboard = document.getElementById('subscriptionDashboard');
 const subscriptionPulseStatus = document.getElementById('subscriptionPulseStatus');
 const subscriptionScanProgress = document.getElementById('subscriptionScanProgress');
 
+// Subscription Terminal Elements
+const subscriptionTerminal = document.getElementById('subscriptionTerminal');
+const subscriptionTerminalOutput = document.getElementById('subscriptionTerminalOutput');
+const subscriptionMinimizeTerminal = document.getElementById('subscriptionMinimizeTerminal');
+
 // Pulse Tab Elements
 const pulseTabs = document.querySelectorAll('.pulse-tab');
 const pulseTabPanes = document.querySelectorAll('.pulse-tab-pane');
@@ -6862,6 +6867,19 @@ function initSubscriptionPulse() {
     // Scan button
     if (subscriptionScanBtn) {
         subscriptionScanBtn.addEventListener('click', startSubscriptionScan);
+    }
+    
+    // Terminal minimize button
+    if (subscriptionMinimizeTerminal) {
+        subscriptionMinimizeTerminal.addEventListener('click', () => {
+            if (subscriptionTerminal) {
+                const body = subscriptionTerminal.querySelector('.terminal-body');
+                if (body) {
+                    body.classList.toggle('hidden');
+                    subscriptionMinimizeTerminal.textContent = body.classList.contains('hidden') ? 'Expand' : 'Minimize';
+                }
+            }
+        });
     }
     
     // Pulse tabs
@@ -6919,7 +6937,17 @@ async function startSubscriptionScan() {
     subscriptionScanProgress.classList.remove('hidden');
     subscriptionScanBtn.disabled = true;
     
+    // Show and clear terminal
+    if (subscriptionTerminal) {
+        subscriptionTerminal.classList.remove('hidden');
+        if (subscriptionTerminalOutput) {
+            subscriptionTerminalOutput.innerHTML = '';
+        }
+    }
+    
     updateScanProgress(0, 'Connecting to Gmail...');
+    addTerminalLog('info', '🚀 Starting Fast Lane Subscription Scan...');
+    addTerminalLog('info', `📅 Scanning emails from the last ${days} days`);
     
     try {
         // Use SSE for real-time progress
@@ -6930,15 +6958,35 @@ async function startSubscriptionScan() {
             
             if (data.type === 'progress') {
                 updateScanProgress(data.percent, data.message);
+                addTerminalLog('progress', `[${data.percent}%] ${data.message}`);
+                
+                // Add details if available
+                if (data.details) {
+                    addTerminalLog('detail', `    └─ ${data.details}`);
+                }
+            } else if (data.type === 'subscription_found') {
+                addTerminalLog('success', `✅ Found: ${data.vendor} - ${data.amount || 'Unknown amount'}`);
             } else if (data.type === 'complete') {
                 eventSource.close();
                 subscriptionScanProgress.classList.add('hidden');
                 subscriptionScanBtn.disabled = false;
+                
+                addTerminalLog('success', '─────────────────────────────────────');
+                addTerminalLog('success', '🎉 Scan Complete!');
+                addTerminalLog('info', `📊 Active Subscriptions: ${data.results?.active_count || 0}`);
+                addTerminalLog('info', `💰 Monthly Spend: ${formatCurrency(data.results?.monthly_spend || 0)}`);
+                addTerminalLog('info', `🔴 Stopped This Year: ${data.results?.stopped_count || 0}`);
+                if (data.results?.shadow_it?.length > 0) {
+                    addTerminalLog('warning', `⚠️ Shadow IT Detected: ${data.results.shadow_it.length} subscriptions`);
+                }
+                addTerminalLog('success', '─────────────────────────────────────');
+                
                 displaySubscriptionDashboard(data.results);
             } else if (data.type === 'error') {
                 eventSource.close();
                 subscriptionScanProgress.classList.add('hidden');
                 subscriptionScanBtn.disabled = false;
+                addTerminalLog('error', `❌ Error: ${data.message}`);
                 showPulseStatus('error', data.message);
             }
         };
@@ -6947,14 +6995,41 @@ async function startSubscriptionScan() {
             eventSource.close();
             subscriptionScanProgress.classList.add('hidden');
             subscriptionScanBtn.disabled = false;
+            addTerminalLog('error', '❌ Connection lost. Please try again.');
             showPulseStatus('error', 'Scan connection lost. Please try again.');
         };
         
     } catch (error) {
         subscriptionScanProgress.classList.add('hidden');
         subscriptionScanBtn.disabled = false;
+        addTerminalLog('error', `❌ Failed to start scan: ${error.message}`);
         showPulseStatus('error', 'Failed to start scan: ' + error.message);
     }
+}
+
+/**
+ * Add a log entry to the subscription terminal
+ */
+function addTerminalLog(type, message) {
+    if (!subscriptionTerminalOutput) return;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    const colors = {
+        info: '#64b5f6',
+        success: '#81c784',
+        warning: '#ffb74d',
+        error: '#e57373',
+        progress: '#b39ddb',
+        detail: '#90a4ae'
+    };
+    
+    const color = colors[type] || '#d4d4d4';
+    const entry = document.createElement('div');
+    entry.className = 'terminal-line';
+    entry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> <span style="color: ${color};">${message}</span>`;
+    
+    subscriptionTerminalOutput.appendChild(entry);
+    subscriptionTerminalOutput.scrollTop = subscriptionTerminalOutput.scrollHeight;
 }
 
 /**
