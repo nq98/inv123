@@ -63,7 +63,13 @@ A standalone product for subscription analytics, featuring a "Subscription Pulse
 #### LangGraph Agent - Conversational Service Controller
 A new LangGraph-based AI agent (`agent/` directory) provides conversational control over all services:
 -   **Architecture**: StateGraph with tool-calling using Gemini 2.0 Flash via OpenRouter
+-   **Semantic AI First Protocol**: Agent ALWAYS checks BigQuery database before requesting external service connections:
+    1.  `search_database_first`: Queries vendors, invoices, subscriptions in BigQuery using parameterized queries (SQL injection safe)
+    2.  Only if no results found, agent offers to connect external services (Gmail, NetSuite)
+    3.  Returns clickable HTML buttons for OAuth flows (e.g., "Connect Gmail" button)
 -   **Available Tools**:
+    -   `search_database_first`: **Priority 1** - Search BigQuery before external services
+    -   `check_gmail_status`: Check if Gmail is connected, returns OAuth URL if not
     -   `search_gmail_invoices`: Search Gmail for invoice/receipt emails
     -   `search_netsuite_vendor`: Find vendors by name, email, or tax ID
     -   `create_netsuite_vendor`: Create new vendors in NetSuite
@@ -86,6 +92,7 @@ A self-contained, embeddable chat widget (`static/agent_widget.js`) that provide
     -   Tool call badges showing which services the agent used (e.g., "🔍 Checked NetSuite", "📧 Scanned Gmail")
     -   Quick action buttons for common queries
     -   Loading indicators during processing
+    -   **HTML Rendering**: Renders clickable action buttons (e.g., "Connect Gmail") returned by the agent
 -   **Self-Contained**: Can be embedded on any page with just `<script src="/static/agent_widget.js"></script>`
 -   **API Integration**: Communicates with `POST /api/agent/chat` and displays `tools_used` as visual badges
 -   **JavaScript API**: `window.PayoutsAgentWidget.open()`, `.close()`, `.toggle()`, `.sendMessage(msg)`
