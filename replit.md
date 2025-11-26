@@ -77,3 +77,15 @@ A new LangGraph-based AI agent (`agent/` directory) provides conversational cont
     -   `POST /api/agent/chat/stream`: SSE streaming chat
     -   `GET /api/agent/tools`: List available tools
 -   **Tracing**: LangSmith integration for monitoring (LANGCHAIN_API_KEY, LANGCHAIN_PROJECT=payouts-automation)
+
+#### Payouts AI Chat Widget
+A self-contained, embeddable chat widget (`static/agent_widget.js`) that provides conversational access to the LangGraph Agent:
+-   **Features**:
+    -   Floating chat button in bottom-right corner (like Intercom/ChatGPT)
+    -   Modern chat window with message history
+    -   Tool call badges showing which services the agent used (e.g., "🔍 Checked NetSuite", "📧 Scanned Gmail")
+    -   Quick action buttons for common queries
+    -   Loading indicators during processing
+-   **Self-Contained**: Can be embedded on any page with just `<script src="/static/agent_widget.js"></script>`
+-   **API Integration**: Communicates with `POST /api/agent/chat` and displays `tools_used` as visual badges
+-   **JavaScript API**: `window.PayoutsAgentWidget.open()`, `.close()`, `.toggle()`, `.sendMessage(msg)`
