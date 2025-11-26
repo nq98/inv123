@@ -129,9 +129,20 @@ A self-contained, embeddable chat widget (`static/agent_widget.js`) that provide
     -   `process_uploaded_invoice`: Document AI pipeline for PDF invoices with vendor matching
     -   `import_vendor_csv`: AI-powered CSV column mapping with BigQuery import
     -   `pull_netsuite_vendors`: Sync vendors from NetSuite to local database
-    -   `show_vendors_table`: Rich HTML table display for vendor listings
+-   **Display Tools** (Rich HTML table/card rendering):
+    -   `show_vendors_table`: Rich HTML table display for vendor listings with NetSuite sync status
+    -   `show_invoices_table`: Rich HTML table display for invoices with PDF links and NetSuite status
 
 ## Recent Changes
+
+### November 26, 2025 - Rich HTML Card Rendering & Agent Chat Improvements
+Enhanced agent chat widget to properly render rich HTML cards:
+- Fixed `formatContent` function to detect and preserve HTML content instead of escaping it
+- Added comprehensive CSS styles for vendor cards, invoice cards, match result cards, Gmail list items
+- Updated quick action buttons: "Import from NetSuite", "Show Vendors", "Scan Gmail", "My Invoices"
+- Enhanced system prompt with proper HTML card templates for vendor profiles, invoices, match results, Gmail lists
+- Added `show_invoices_table` tool for displaying invoices as rich HTML tables
+- Fixed invoices table SQL to use correct columns (invoice_id, vendor_name, netsuite_bill_id)
 
 ### November 26, 2025 - SQL Column Name Fixes
 Fixed critical SQL schema mismatches in agent tools (`agent/tools.py`):

@@ -23,7 +23,8 @@
         'deep_search': '🏊',
         'get_invoice_pdf_link': '📎',
         'check_netsuite_health': '🔍',
-        'show_vendors_table': '📊'
+        'show_vendors_table': '📊',
+        'show_invoices_table': '🧾'
     };
 
     const TOOL_LABELS = {
@@ -45,7 +46,8 @@
         'deep_search': 'Deep AI Search',
         'get_invoice_pdf_link': 'Got PDF Link',
         'check_netsuite_health': 'NetSuite Health',
-        'show_vendors_table': 'Vendor Table'
+        'show_vendors_table': 'Vendor Table',
+        'show_invoices_table': 'Invoice Table'
     };
 
     function getSessionId() {
@@ -889,6 +891,339 @@
                 color: #6b7280;
             }
 
+            /* Comprehensive Vendor Profile Card */
+            .payouts-vendor-card {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            }
+
+            .payouts-vendor-card .vendor-header {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+                border-bottom: 1px solid #f3f4f6;
+            }
+
+            .payouts-vendor-card .vendor-header h2,
+            .payouts-vendor-card .vendor-header h3 {
+                margin: 0;
+                font-size: 18px;
+                font-weight: 600;
+                color: #1f2937;
+            }
+
+            .payouts-vendor-card .vendor-details {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-bottom: 14px;
+            }
+
+            .payouts-vendor-card .vendor-details > div {
+                font-size: 13px;
+                color: #4b5563;
+            }
+
+            .payouts-vendor-card .vendor-details strong {
+                color: #6b7280;
+                font-weight: 500;
+            }
+
+            .payouts-vendor-card .vendor-financials {
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+                border-radius: 8px;
+                padding: 12px;
+                display: flex;
+                gap: 16px;
+                flex-wrap: wrap;
+            }
+
+            .payouts-vendor-card .vendor-financials > div {
+                font-size: 13px;
+                color: #4b5563;
+            }
+
+            .payouts-vendor-card .vendor-financials strong {
+                color: #1f2937;
+            }
+
+            .payouts-vendor-card .sync-status {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            .payouts-vendor-card .sync-status.synced {
+                background: #d1fae5;
+                color: #059669;
+            }
+
+            .payouts-vendor-card .sync-status.not-synced {
+                background: #fef3c7;
+                color: #d97706;
+            }
+
+            /* Invoice Profile Card */
+            .payouts-invoice-card {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            }
+
+            .payouts-invoice-card .invoice-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 12px;
+            }
+
+            .payouts-invoice-card .invoice-header h3 {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #1f2937;
+            }
+
+            .payouts-invoice-card .invoice-amount {
+                font-size: 20px;
+                font-weight: 700;
+                color: #059669;
+            }
+
+            .payouts-invoice-card .invoice-meta {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+                font-size: 13px;
+                color: #6b7280;
+                margin-bottom: 12px;
+            }
+
+            .payouts-invoice-card .invoice-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding-top: 12px;
+                border-top: 1px solid #f3f4f6;
+            }
+
+            /* Match Result Card */
+            .payouts-match-card {
+                background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.08) 100%);
+                border: 1px solid rgba(16, 185, 129, 0.2);
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+            }
+
+            .payouts-match-card .match-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 12px;
+                font-weight: 600;
+                color: #059669;
+            }
+
+            .payouts-match-card .match-confidence {
+                display: inline-flex;
+                align-items: center;
+                padding: 4px 12px;
+                background: #d1fae5;
+                color: #059669;
+                border-radius: 20px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .payouts-match-card .match-details {
+                font-size: 13px;
+                color: #4b5563;
+            }
+
+            /* Gmail Email List */
+            .payouts-gmail-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin: 12px 0;
+            }
+
+            .payouts-email-item {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 10px;
+                padding: 12px;
+                display: flex;
+                gap: 12px;
+                transition: all 0.2s ease;
+                cursor: pointer;
+            }
+
+            .payouts-email-item:hover {
+                border-color: #667eea;
+                box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+            }
+
+            .payouts-email-item .email-icon {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 16px;
+                flex-shrink: 0;
+            }
+
+            .payouts-email-item .email-content {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .payouts-email-item .email-subject {
+                font-weight: 600;
+                font-size: 14px;
+                color: #1f2937;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .payouts-email-item .email-from {
+                font-size: 12px;
+                color: #6b7280;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .payouts-email-item .email-date {
+                font-size: 11px;
+                color: #9ca3af;
+            }
+
+            .payouts-email-item .email-actions {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+            }
+
+            .payouts-email-item .email-actions button {
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: none;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .payouts-email-item .process-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+
+            .payouts-email-item .view-btn {
+                background: #f3f4f6;
+                color: #4b5563;
+            }
+
+            /* Quick Actions Bar */
+            .payouts-quick-actions-bar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                padding: 12px 16px;
+                background: #f8f9ff;
+                border-top: 1px solid #e5e7eb;
+            }
+
+            .payouts-quick-action-btn {
+                padding: 8px 14px;
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 20px;
+                font-size: 12px;
+                color: #4b5563;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s ease;
+            }
+
+            .payouts-quick-action-btn:hover {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-color: transparent;
+                transform: translateY(-1px);
+            }
+
+            .payouts-quick-action-btn .action-icon {
+                font-size: 14px;
+            }
+
+            /* Inline Action Buttons in Messages */
+            .payouts-inline-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 12px;
+            }
+
+            .payouts-action-btn {
+                padding: 8px 16px;
+                border-radius: 8px;
+                border: none;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s ease;
+            }
+
+            .payouts-action-btn.primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+
+            .payouts-action-btn.primary:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            }
+
+            .payouts-action-btn.success {
+                background: #d1fae5;
+                color: #059669;
+            }
+
+            .payouts-action-btn.danger {
+                background: #fee2e2;
+                color: #dc2626;
+            }
+
+            .payouts-action-btn.secondary {
+                background: #f3f4f6;
+                color: #4b5563;
+            }
+
             @media (max-width: 480px) {
                 #payouts-agent-widget {
                     bottom: 16px;
@@ -968,11 +1303,12 @@
             <div class="payouts-chat-messages" id="payouts-messages-container">
                 <div class="payouts-welcome-message">
                     <h3>Welcome to Payouts AI</h3>
-                    <p>I can help you search invoices, manage vendors, check NetSuite bills, and analyze subscriptions. You can also upload PDF invoices or CSV files.</p>
+                    <p>I'm your AP automation assistant. I can manage vendors, process invoices, scan Gmail, and sync with NetSuite.</p>
                     <div class="payouts-quick-actions">
-                        <button class="payouts-quick-action" data-message="Show me my SaaS subscription summary">📊 Subscription Summary</button>
-                        <button class="payouts-quick-action" data-message="Search for recent Gmail invoices">📧 Search Gmail</button>
-                        <button class="payouts-quick-action" data-message="Find vendors with overdue bills">💰 Overdue Bills</button>
+                        <button class="payouts-quick-action" data-message="Import vendors from NetSuite">🔄 Import from NetSuite</button>
+                        <button class="payouts-quick-action" data-message="Show me all my vendors">📋 Show Vendors</button>
+                        <button class="payouts-quick-action" data-message="Scan Gmail for invoices">📧 Scan Gmail</button>
+                        <button class="payouts-quick-action" data-message="Show my recent invoices">🧾 My Invoices</button>
                     </div>
                 </div>
             </div>
@@ -1213,92 +1549,49 @@
     }
 
     function formatContent(content) {
-        const actionButtonPattern = /<a\s+href="([^"]+)"[^>]*class="chat-action-btn"[^>]*>([^<]+)<\/a>/g;
-        const preservedButtons = [];
-        let buttonIndex = 0;
+        if (!content) return '';
         
-        let processed = content.replace(actionButtonPattern, (match, url, text) => {
-            const placeholder = `__ACTION_BTN_${buttonIndex}__`;
-            preservedButtons.push({ placeholder, url, text });
-            buttonIndex++;
-            return placeholder;
-        });
-
-        const tablePattern = /<table[^>]*>[\s\S]*?<\/table>/gi;
-        const preservedTables = [];
-        let tableIndex = 0;
-
-        processed = processed.replace(tablePattern, (match) => {
-            const placeholder = `__TABLE_${tableIndex}__`;
-            let styledTable = match
-                .replace(/<table[^>]*>/gi, '<div class="payouts-table-wrapper"><table class="payouts-data-table">')
-                .replace(/<\/table>/gi, '</table></div>');
-            preservedTables.push({ placeholder, html: styledTable });
-            tableIndex++;
-            return placeholder;
-        });
-
-        const invoiceCardPattern = /<div class="invoice-card"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi;
-        const preservedInvoiceCards = [];
-        let cardIndex = 0;
-
-        processed = processed.replace(invoiceCardPattern, (match) => {
-            const placeholder = `__INVOICE_CARD_${cardIndex}__`;
-            preservedInvoiceCards.push({ placeholder, html: match });
-            cardIndex++;
-            return placeholder;
-        });
-
-        const vendorCardPattern = /<div class="vendor-card"[\s\S]*?<\/div>\s*<\/div>/gi;
-        const preservedVendorCards = [];
-        let vendorCardIndex = 0;
-
-        processed = processed.replace(vendorCardPattern, (match) => {
-            const placeholder = `__VENDOR_CARD_${vendorCardIndex}__`;
-            preservedVendorCards.push({ placeholder, html: match });
-            vendorCardIndex++;
-            return placeholder;
-        });
-
-        const progressPattern = /<div class="scan-progress"[\s\S]*?<\/div>\s*<\/div>/gi;
-        const preservedProgress = [];
-        let progressIndex = 0;
-
-        processed = processed.replace(progressPattern, (match) => {
-            const placeholder = `__PROGRESS_${progressIndex}__`;
-            preservedProgress.push({ placeholder, html: match });
-            progressIndex++;
-            return placeholder;
-        });
+        const htmlPatterns = [
+            /<div\s+class="[^"]*"[\s\S]*?<\/div>/i,
+            /<table[\s\S]*?<\/table>/i,
+            /<a\s+[^>]*class="chat-action-btn"[^>]*>/i,
+            /<button[\s\S]*?<\/button>/i,
+            /<ul[\s\S]*?<\/ul>/i,
+            /<h[1-6][\s\S]*?<\/h[1-6]>/i
+        ];
         
-        let formatted = processed
+        const containsStructuredHtml = htmlPatterns.some(pattern => pattern.test(content));
+        
+        if (containsStructuredHtml) {
+            let processed = content;
+            
+            processed = processed.replace(/<table(?![^>]*class=)/gi, '<table class="payouts-data-table"');
+            
+            processed = processed.replace(/<div class="vendor-profile"/gi, '<div class="payouts-vendor-card"');
+            processed = processed.replace(/<div class="invoice-card"/gi, '<div class="payouts-invoice-card"');
+            processed = processed.replace(/<div class="match-result"/gi, '<div class="payouts-match-card"');
+            processed = processed.replace(/<div class="gmail-list"/gi, '<div class="payouts-gmail-list"');
+            processed = processed.replace(/<div class="email-item"/gi, '<div class="payouts-email-item"');
+            
+            const textParts = processed.split(/(<[^>]+>)/);
+            processed = textParts.map(part => {
+                if (part.startsWith('<')) {
+                    return part;
+                }
+                return part.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          .replace(/\n/g, '<br>');
+            }).join('');
+            
+            return processed;
+        }
+        
+        let formatted = content
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
         
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         formatted = formatted.replace(/\n/g, '<br>');
-        
-        preservedButtons.forEach(({ placeholder, url, text }) => {
-            const buttonHtml = `<a href="${url}" class="chat-action-btn" onclick="event.stopPropagation();">${text}</a>`;
-            formatted = formatted.replace(placeholder, buttonHtml);
-        });
-
-        preservedTables.forEach(({ placeholder, html }) => {
-            formatted = formatted.replace(placeholder, html);
-        });
-
-        preservedInvoiceCards.forEach(({ placeholder, html }) => {
-            formatted = formatted.replace(placeholder, html);
-        });
-
-        preservedVendorCards.forEach(({ placeholder, html }) => {
-            formatted = formatted.replace(placeholder, html);
-        });
-
-        preservedProgress.forEach(({ placeholder, html }) => {
-            formatted = formatted.replace(placeholder, html);
-        });
         
         return formatted;
     }

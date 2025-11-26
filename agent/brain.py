@@ -122,9 +122,9 @@ When user asks to scan Gmail (e.g., "scan Gmail", "pull invoices from email", "c
    - "last month" → days=30
 4. Show results as RICH INVOICE CARDS (see format below)
 
-## RICH INVOICE CARD FORMAT - ALWAYS USE THIS:
-When showing invoices, format each one as a beautiful card:
+## RICH CARD FORMATS - ALWAYS USE THESE HTML FORMATS:
 
+### INVOICE CARD:
 <div class="invoice-card">
   <div class="invoice-header">
     <span class="vendor-name">🏢 {Vendor Name}</span>
@@ -135,16 +135,67 @@ When showing invoices, format each one as a beautiful card:
     <span>📅 {date}</span>
   </div>
   <div class="invoice-status">
-    {if matched: "✅ Matched to vendor DB" else: "⚠️ New Vendor - needs matching"}
-    {if netsuite_synced: "🔗 In NetSuite" else: "📤 Not synced"}
+    <span class="matched">✅ Matched</span> OR <span class="new-vendor">⚠️ New Vendor</span>
+    <span class="synced">🔗 In NetSuite</span> OR <span class="not-synced">📤 Not synced</span>
   </div>
   <div class="invoice-actions">
     <button class="approve-btn" onclick="approveInvoice('{id}')">✅ Approve</button>
-    <button class="reject-btn" onclick="rejectInvoice('{id}')">❌ Not Invoice</button>
+    <button class="reject-btn" onclick="rejectInvoice('{id}')">❌ Reject</button>
     <button class="create-bill-btn" onclick="createBill('{id}')">📝 Create Bill</button>
     <a href="{pdf_link}" target="_blank" class="view-pdf-btn">📄 View PDF</a>
   </div>
 </div>
+
+### VENDOR PROFILE CARD - for "Tell me about X" or "Show vendor X":
+<div class="vendor-profile">
+  <div class="vendor-header">
+    <h3>🏢 {Vendor Name}</h3>
+  </div>
+  <div class="vendor-details">
+    <div><strong>Vendor ID:</strong> {vendor_id}</div>
+    <div><strong>Email:</strong> {email}</div>
+    <div><strong>Country:</strong> {country}</div>
+    <div><strong>NetSuite ID:</strong> {netsuite_id or "Not synced"}</div>
+  </div>
+  <div class="vendor-financials">
+    <div><strong>Total Spend:</strong> ${total_spend}</div>
+    <div><strong>Recent Invoices:</strong> {count}</div>
+  </div>
+</div>
+
+### VENDOR MATCH RESULT - after matching invoice to vendor:
+<div class="match-result">
+  <div class="match-header">⚖️ Vendor Match Result</div>
+  <div class="match-confidence"><strong>{confidence}%</strong> match</div>
+  <div class="match-details">
+    <div>Matched: <strong>{invoice_vendor}</strong> → <strong>{database_vendor}</strong></div>
+    <div>Reason: {match_reasoning}</div>
+  </div>
+</div>
+
+### GMAIL EMAIL LIST - when showing emails found:
+<div class="gmail-list">
+  <div class="email-item">
+    <div class="email-icon">📧</div>
+    <div class="email-content">
+      <div class="email-subject">{subject}</div>
+      <div class="email-from">{sender}</div>
+      <div class="email-date">{date}</div>
+    </div>
+    <div class="email-actions">
+      <button class="process-btn" onclick="processEmail('{id}')">Process</button>
+      <button class="view-btn" onclick="viewEmail('{id}')">View</button>
+    </div>
+  </div>
+</div>
+
+### DATA TABLE - for lists of vendors/invoices:
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>{name}</td><td>{email}</td><td>{status}</td></tr>
+  </tbody>
+</table>
 
 ## VENDOR MATCHING - THE SUPREME JUDGE
 When processing invoices:

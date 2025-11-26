@@ -1649,6 +1649,105 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         return json.dumps({"error": str(e)})
 
 
+@tool
+def show_invoices_table(user_email: str, limit: int = 20, vendor_name: str = None) -> str:
+    """
+    Show invoices in a rich HTML table format with action buttons.
+    Use this when user asks to "show invoices", "my invoices", or "recent invoices".
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
+        limit: Maximum number of invoices to show (default 20)
+        vendor_name: Optional filter by vendor name
+    
+    Returns:
+        HTML table with invoice data and action buttons
+    """
+    try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
+        where_clause = "WHERE owner_email = @user_email"
+        params = {"user_email": user_email}
+        
+        if vendor_name:
+            where_clause += " AND LOWER(vendor_name) LIKE @vendor_pattern"
+            params["vendor_pattern"] = f"%{vendor_name.lower()}%"
+        
+        query = f"""
+        SELECT 
+            invoice_id, vendor_name, amount, currency, 
+            invoice_date, status, gcs_uri, created_at, netsuite_bill_id
+        FROM `invoicereader-477008.vendors_ai.invoices`
+        {where_clause}
+        ORDER BY invoice_date DESC
+        LIMIT {limit}
+        """
+        
+        invoices = bigquery_service.query(query, params)
+        
+        if not invoices:
+            filter_msg = f" from {vendor_name}" if vendor_name else ""
+            return json.dumps({
+                "success": True,
+                "message": f"No invoices found{filter_msg}.",
+                "html_table": f"<p>No invoices in database{filter_msg}. Upload PDFs or scan Gmail to add invoices.</p>",
+                "html_action": '<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Scan Gmail for invoices\'); return false;">📧 Scan Gmail</a>'
+            })
+        
+        html_table = '<table class="payouts-data-table"><thead><tr><th>Invoice ID</th><th>Vendor</th><th>Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>'
+        
+        total_amount = 0
+        for inv in invoices:
+            inv_id = inv.get('invoice_id', 'N/A')
+            short_id = inv_id[:8] + '...' if len(inv_id) > 12 else inv_id
+            vendor = inv.get('vendor_name', 'Unknown')
+            amount = float(inv.get('amount', 0)) if inv.get('amount') else 0
+            currency = inv.get('currency', 'USD')
+            inv_date = str(inv.get('invoice_date', ''))[:10]
+            status = inv.get('status', 'pending')
+            gcs_uri = inv.get('gcs_uri', '')
+            ns_bill_id = inv.get('netsuite_bill_id', '')
+            
+            total_amount += amount
+            
+            if ns_bill_id:
+                status_badge = '🔗 In NetSuite'
+            elif status == 'processed':
+                status_badge = '✅ Processed'
+            else:
+                status_badge = '⏳ Pending'
+            
+            pdf_btn = ''
+            if gcs_uri:
+                pdf_btn = f'<a href="#" onclick="window.PayoutsAgentWidget.sendMessage(\'Get PDF for invoice {inv_id}\'); return false;" style="color:#667eea;">📄</a>'
+            
+            html_table += f'<tr><td><strong>{short_id}</strong></td><td>{vendor}</td><td>{currency} {amount:,.2f}</td><td>{inv_date}</td><td>{status_badge}</td><td>{pdf_btn}</td></tr>'
+        
+        html_table += '</tbody></table>'
+        
+        total_query = f"SELECT COUNT(*) as count, SUM(amount) as total FROM `invoicereader-477008.vendors_ai.invoices` {where_clause}"
+        total_result = bigquery_service.query(total_query, params)
+        total_count = total_result[0]['count'] if total_result else len(invoices)
+        grand_total = float(total_result[0]['total'] or 0) if total_result else total_amount
+        
+        response = {
+            "success": True,
+            "user_email": user_email,
+            "total_invoices": total_count,
+            "showing": len(invoices),
+            "total_amount": grand_total,
+            "message": f"Showing {len(invoices)} of {total_count} invoices. Total spend: ${grand_total:,.2f}",
+            "html_table": html_table,
+            "html_action": '<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Scan Gmail for new invoices\'); return false;">📧 Scan Gmail</a>'
+        }
+        
+        return json.dumps(response, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def get_all_tools():
     """
     Return list of all available tools for the agent - OMNISCIENT SEMANTIC AI FIRST ORDER
@@ -1660,11 +1759,13 @@ def get_all_tools():
         deep_search,
         get_invoice_pdf_link,
         check_netsuite_health,
+        # Display Tools (for rich HTML tables and cards)
+        show_vendors_table,
+        show_invoices_table,
         # Ingestion Tools (for file uploads)
         process_uploaded_invoice,
         import_vendor_csv,
         pull_netsuite_vendors,
-        show_vendors_table,
         # Database First
         search_database_first,
         get_top_vendors_by_spend,
