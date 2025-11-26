@@ -8792,10 +8792,19 @@ def get_agent_status():
         gmail_email = None
         netsuite_connected = False
         
-        gmail_token = session.get('gmail_token')
-        if gmail_token and gmail_token.get('token'):
-            gmail_connected = True
-            gmail_email = session.get('gmail_email', 'Connected')
+        session_token = session.get('gmail_session_token')
+        if session_token:
+            token_storage = get_token_storage()
+            credentials = token_storage.get_credentials(session_token)
+            if credentials:
+                gmail_connected = True
+                gmail_email = session.get('gmail_email', 'Connected')
+        
+        if not gmail_connected:
+            gmail_token = session.get('gmail_token')
+            if gmail_token and gmail_token.get('token'):
+                gmail_connected = True
+                gmail_email = session.get('gmail_email', 'Connected')
         
         try:
             if all([
