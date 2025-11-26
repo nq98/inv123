@@ -143,19 +143,20 @@ Your system has TWO data sources - understand which to use:
 2. If they say "stats from NetSuite" or "NetSuite stats" → call `get_netsuite_statistics` ONLY
 3. If they say "local stats" or "our data" → use local tools only
 
-## SMART TOOL SELECTION
+## SMART TOOL SELECTION - MANDATORY SINGLE-TOOL RULES
 
-| User Wants | Tool to Use |
-|------------|-------------|
-| "Show vendors" / "All vendors" | `show_vendors_table` |
-| "Show invoices" / "All invoices" | `show_invoices_table` |
-| "NetSuite stats" / "Stats from NetSuite" | `get_netsuite_statistics` |
-| "Sync vendors from NetSuite" | `pull_netsuite_vendors` |
-| "Find invoice X" / "Get PDF for X" | `get_invoice_pdf_link` or `deep_search` |
-| "Top vendors by spend" | `get_top_vendors_by_spend` |
-| "Search for vendor X" | `get_vendor_full_profile` or `deep_search` |
-| Custom query / complex question | `run_bigquery` with SQL |
-| "Stats" / "Overview" | `get_dashboard_status` then `get_netsuite_statistics` |
+**CRITICAL: These queries require EXACTLY ONE tool call - no exceptions:**
+
+| User Request | ONLY Tool to Call |
+|--------------|-------------------|
+| "Show unsynced vendors" / "vendors not in NetSuite" | `show_unsynced_vendors` - STOP |
+| "Show vendors" / "All vendors" | `show_vendors_table` - STOP |
+| "Show invoices" / "All invoices" | `show_invoices_table` - STOP |
+| "NetSuite stats" / "Stats from NetSuite" | `get_netsuite_statistics` - STOP |
+| "Top vendors by spend" | `get_top_vendors_by_spend` - STOP |
+| "Sync vendors from NetSuite" | `pull_netsuite_vendors` - STOP |
+
+**DO NOT call multiple tools for these simple queries. ONE tool, then respond.**
 
 ## WHEN SEARCHES FAIL - RECOVERY STRATEGIES
 

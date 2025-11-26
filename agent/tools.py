@@ -2085,9 +2085,9 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         
         where_clause = "WHERE owner_email = @user_email"
         if filter_type == "synced":
-            where_clause += " AND netsuite_internal_id IS NOT NULL"
+            where_clause += " AND netsuite_internal_id IS NOT NULL AND LENGTH(TRIM(netsuite_internal_id)) > 0"
         elif filter_type == "unsynced":
-            where_clause += " AND netsuite_internal_id IS NULL"
+            where_clause += " AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)"
         
         query = f"""
         SELECT 
@@ -2145,6 +2145,22 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+@tool
+def show_unsynced_vendors(user_email: str, limit: int = 50) -> str:
+    """
+    Show vendors NOT in NetSuite - dedicated tool for unsynced vendor queries.
+    Use this when user asks "show unsynced vendors", "vendors not in NetSuite", "local only vendors".
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
+        limit: Maximum number of vendors to show (default 50)
+    
+    Returns:
+        HTML table with unsynced vendors
+    """
+    return show_vendors_table.invoke({"user_email": user_email, "limit": limit, "filter_type": "unsynced"})
 
 
 @tool
@@ -2261,6 +2277,7 @@ def get_all_tools():
         check_netsuite_health,
         # Display Tools (for rich HTML tables and cards)
         show_vendors_table,
+        show_unsynced_vendors,
         show_invoices_table,
         # Ingestion Tools (for file uploads)
         process_uploaded_invoice,
