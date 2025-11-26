@@ -8615,6 +8615,131 @@ def get_subscription_analytics():
             'error': str(e)
         }), 500
 
+# ========== LANGGRAPH AGENT CHAT ENDPOINT ==========
+
+@app.route('/api/agent/chat', methods=['POST'])
+def agent_chat():
+    """
+    Chat with the LangGraph AI Agent that controls Gmail, NetSuite, and BigQuery services.
+    
+    Request body:
+        {
+            "message": "Your question or command",
+            "user_id": "optional user identifier"
+        }
+    
+    Response:
+        {
+            "success": true,
+            "response": "Agent's response text",
+            "user_id": "user identifier used"
+        }
+    """
+    try:
+        from agent.brain import run_agent
+        
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing "message" field in request body'
+            }), 400
+        
+        message = data['message']
+        user_id = data.get('user_id', session.get('user_id', 'anonymous'))
+        
+        print(f"🤖 Agent chat from {user_id}: {message[:100]}...")
+        
+        response = run_agent(message, user_id)
+        
+        return jsonify({
+            'success': True,
+            'response': response,
+            'user_id': user_id
+        })
+        
+    except Exception as e:
+        print(f"❌ Agent chat error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/agent/chat/stream', methods=['POST'])
+def agent_chat_stream():
+    """
+    Stream chat with the LangGraph AI Agent for real-time responses.
+    Uses Server-Sent Events (SSE) for streaming.
+    """
+    try:
+        from agent.brain import stream_agent
+        
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing "message" field in request body'
+            }), 400
+        
+        message = data['message']
+        user_id = data.get('user_id', session.get('user_id', 'anonymous'))
+        
+        def generate():
+            try:
+                for event in stream_agent(message, user_id):
+                    yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive'
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Agent stream error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/agent/tools', methods=['GET'])
+def get_agent_tools():
+    """List all available agent tools and their descriptions"""
+    try:
+        from agent.tools import get_all_tools
+        
+        tools = get_all_tools()
+        tool_info = []
+        
+        for tool in tools:
+            tool_info.append({
+                'name': tool.name,
+                'description': tool.description
+            })
+        
+        return jsonify({
+            'success': True,
+            'tools': tool_info
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
