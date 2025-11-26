@@ -3708,30 +3708,39 @@ button {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    border-bottom: 2px solid var(--gray-200);
-    padding-bottom: 0;
+    background: white;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    padding: 1rem 1rem 0;
     margin: 1.5rem 0 0;
+    border-bottom: 2px solid var(--gray-200);
 }
 
 .pulse-tab {
     padding: 0.75rem 1.25rem;
     border: none;
-    background: transparent;
-    color: var(--gray-600);
-    font-weight: 500;
+    background: var(--gray-100);
+    color: var(--gray-700);
+    font-weight: 600;
+    font-size: 0.875rem;
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    border-radius: var(--radius) var(--radius) 0 0;
     margin-bottom: -2px;
-    transition: color 0.2s, border-color 0.2s;
+    transition: all 0.2s;
+    border: 1px solid var(--gray-200);
+    border-bottom: none;
 }
 
 .pulse-tab:hover {
-    color: var(--purple-600);
+    background: var(--purple-50);
+    color: var(--purple-700);
 }
 
 .pulse-tab.active {
+    background: white;
     color: var(--purple-600);
-    border-bottom-color: var(--purple-600);
+    border-color: var(--gray-200);
+    border-bottom: 2px solid white;
+    margin-bottom: -2px;
 }
 
 /* Pulse Tab Content */
