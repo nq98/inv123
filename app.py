@@ -8230,7 +8230,7 @@ def subscription_scan_stream():
     Analyzes email text (not attachments) for rapid results
     """
     days = int(request.args.get('days', 365))
-    session_token = request.cookies.get('gmail_session')
+    session_token = session.get('gmail_session_token')
     
     if not session_token:
         def error_stream():
@@ -8379,7 +8379,7 @@ def subscription_scan_stream():
 @app.route('/api/subscriptions/cached', methods=['GET'])
 def get_cached_subscriptions():
     """Get cached subscription data if available"""
-    session_token = request.cookies.get('gmail_session')
+    session_token = session.get('gmail_session_token')
     
     if not session_token:
         return jsonify({'has_data': False})
