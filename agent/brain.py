@@ -1,10 +1,11 @@
 """
-LangGraph Brain - StateGraph with OpenRouter Gemini 3 Pro
-With persistent conversation memory using SQLite checkpointer
+LangGraph Brain - StateGraph with OpenRouter Gemini 2.5 Pro
+With INTENT-BASED TOOL ROUTING for maximum efficiency
 """
 
 import os
-from typing import Annotated, TypedDict, Sequence, Optional
+import re
+from typing import Annotated, TypedDict, Sequence, Optional, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
@@ -42,7 +43,7 @@ class AgentState(TypedDict):
 
 
 def create_llm():
-    """Create the LLM using OpenRouter with Gemini 2.5 Pro for superior reasoning and tool calling"""
+    """Create the LLM using OpenRouter with Gemini 2.5 Pro"""
     api_key = os.getenv("OPENROUTERA")
     if not api_key:
         raise ValueError("OPENROUTERA environment variable not set")
@@ -56,24 +57,319 @@ def create_llm():
     )
 
 
-def create_agent_graph(user_email: str = None):
+# =============================================================================
+# INTENT ROUTER - Semantic AI-first tool selection
+# =============================================================================
+
+def classify_intent(message: str) -> dict:
     """
-    Create the LangGraph agent with tools for controlling services
+    AI-first semantic intent classification.
+    Returns the intent category and restricted tool list.
+    This runs BEFORE the LLM to constrain available tools.
+    """
+    msg = message.lower().strip()
+    
+    # Startup intent - dashboard only
+    if msg == "__startup__" or msg == "":
+        return {
+            "intent": "startup",
+            "tools": ["get_dashboard_status"],
+            "prompt_hint": "Show dashboard status with greeting."
+        }
+    
+    # Greeting intent - dashboard
+    if msg in ["hi", "hello", "hey", "good morning", "good afternoon"]:
+        return {
+            "intent": "greeting",
+            "tools": ["get_dashboard_status"],
+            "prompt_hint": "Show friendly greeting with dashboard status."
+        }
+    
+    # VENDOR QUERIES - Most common, most specific routing
+    
+    # NetSuite synced vendors
+    if any(phrase in msg for phrase in [
+        "from netsuite", "netsuite vendor", "synced vendor", "vendors synced",
+        "vendors from netsuite", "netsuite list", "show synced", "synced to netsuite"
+    ]):
+        return {
+            "intent": "vendor_synced",
+            "tools": ["show_vendors_table"],
+            "prompt_hint": "Call show_vendors_table with filter_type='synced' to show NetSuite-synced vendors.",
+            "tool_args": {"filter_type": "synced"}
+        }
+    
+    # Unsynced vendors
+    if any(phrase in msg for phrase in [
+        "unsynced", "not synced", "not in netsuite", "need to sync", "haven't synced"
+    ]):
+        return {
+            "intent": "vendor_unsynced",
+            "tools": ["show_unsynced_vendors"],
+            "prompt_hint": "Show vendors that are not yet synced to NetSuite."
+        }
+    
+    # All vendors / general vendor list
+    if any(phrase in msg for phrase in [
+        "all vendor", "list vendor", "show vendor", "view vendor", "vendors table",
+        "vendor list", "vendors list", "bring vendor", "get vendor"
+    ]) and not any(x in msg for x in ["netsuite", "synced", "unsynced"]):
+        return {
+            "intent": "vendor_all",
+            "tools": ["show_vendors_table"],
+            "prompt_hint": "Show all vendors table."
+        }
+    
+    # Specific vendor lookup
+    if "vendor" in msg and any(x in msg for x in ["find", "search", "lookup", "profile", "about", "tell me about"]):
+        return {
+            "intent": "vendor_search",
+            "tools": ["get_vendor_full_profile", "search_database_first"],
+            "prompt_hint": "Find the specific vendor the user is asking about."
+        }
+    
+    # INVOICE QUERIES
+    
+    # Invoice list
+    if any(phrase in msg for phrase in [
+        "all invoice", "list invoice", "show invoice", "view invoice", "invoices table",
+        "invoice list", "bring invoice", "get invoice"
+    ]):
+        return {
+            "intent": "invoice_list",
+            "tools": ["show_invoices_table"],
+            "prompt_hint": "Show invoices table."
+        }
+    
+    # Specific invoice lookup
+    if "invoice" in msg and any(x in msg for x in ["find", "search", "lookup", "inv-", "number"]):
+        return {
+            "intent": "invoice_search",
+            "tools": ["show_invoices_table", "deep_search"],
+            "prompt_hint": "Find the specific invoice."
+        }
+    
+    # GMAIL OPERATIONS
+    
+    if any(phrase in msg for phrase in ["scan gmail", "check gmail", "gmail scan", "scan email", "search gmail"]):
+        return {
+            "intent": "gmail_scan",
+            "tools": ["check_gmail_status", "search_gmail_invoices"],
+            "prompt_hint": "Check Gmail connection first, then scan for invoices if connected."
+        }
+    
+    if "gmail" in msg and any(x in msg for x in ["connect", "status", "connected"]):
+        return {
+            "intent": "gmail_status",
+            "tools": ["check_gmail_status"],
+            "prompt_hint": "Check Gmail connection status."
+        }
+    
+    # NETSUITE OPERATIONS
+    
+    if any(phrase in msg for phrase in ["sync from netsuite", "pull from netsuite", "import from netsuite", "netsuite pull"]):
+        return {
+            "intent": "netsuite_pull",
+            "tools": ["pull_netsuite_vendors"],
+            "prompt_hint": "Pull/sync vendors from NetSuite into local database."
+        }
+    
+    if any(phrase in msg for phrase in ["netsuite stat", "netsuite dashboard", "netsuite status"]):
+        return {
+            "intent": "netsuite_stats",
+            "tools": ["get_netsuite_statistics"],
+            "prompt_hint": "Show NetSuite statistics and sync status."
+        }
+    
+    if any(phrase in msg for phrase in ["sync to netsuite", "push to netsuite", "create vendor in netsuite"]):
+        return {
+            "intent": "netsuite_push",
+            "tools": ["sync_vendor_to_netsuite"],
+            "prompt_hint": "Sync vendor to NetSuite."
+        }
+    
+    if any(phrase in msg for phrase in ["create bill", "netsuite bill", "make bill"]):
+        return {
+            "intent": "netsuite_bill",
+            "tools": ["create_netsuite_bill"],
+            "prompt_hint": "Create a bill in NetSuite."
+        }
+    
+    # SPEND / ANALYTICS
+    
+    if any(phrase in msg for phrase in ["top vendor", "spend", "spending", "highest spend", "most spend"]):
+        return {
+            "intent": "spend_analytics",
+            "tools": ["get_top_vendors_by_spend"],
+            "prompt_hint": "Show top vendors by spend."
+        }
+    
+    if any(phrase in msg for phrase in ["subscription", "saas", "recurring"]):
+        return {
+            "intent": "subscriptions",
+            "tools": ["get_subscription_summary"],
+            "prompt_hint": "Show subscription/SaaS summary."
+        }
+    
+    # SEARCH / DEEP QUERIES
+    
+    if any(phrase in msg for phrase in ["search", "find", "lookup", "where is"]):
+        return {
+            "intent": "search",
+            "tools": ["search_database_first", "deep_search"],
+            "prompt_hint": "Search the database for user's query."
+        }
+    
+    # DEFAULT - Full access but with efficiency warning
+    return {
+        "intent": "general",
+        "tools": None,  # None = all tools available
+        "prompt_hint": "Answer the user's question efficiently. Use minimum tools needed."
+    }
+
+
+def get_intent_system_prompt(intent_info: dict) -> str:
+    """Generate a focused, minimal system prompt based on intent."""
+    
+    base_prompt = """You are an AP Automation Expert. Be direct and efficient.
+
+RULES:
+1. Call ONLY the tools needed - usually 1-2 max
+2. Never apologize - state facts directly
+3. Show data in clean HTML tables
+4. After data, suggest ONE logical next action
+
+"""
+    
+    # Add intent-specific guidance
+    intent = intent_info.get("intent", "general")
+    hint = intent_info.get("prompt_hint", "")
+    tool_args = intent_info.get("tool_args")
+    
+    if intent == "startup":
+        return base_prompt + """
+This is the startup message. Call get_dashboard_status and show a friendly greeting:
+
+<div style="margin-bottom: 12px;">👋 <strong>Hi! I'm your AP Automation Expert.</strong></div>
+<div style="margin-bottom: 16px;">Here's your current status:</div>
+
+[Show vendor count, invoice count, pending in cards]
+
+Quick Actions:
+📧 Scan Gmail | 🧾 View Invoices | 📋 View Vendors
+"""
+
+    if intent == "vendor_synced":
+        return base_prompt + f"""
+User wants NetSuite-synced vendors.
+Call: show_vendors_table(filter_type="synced")
+Show results in a table with Name, NetSuite ID, Email, Status columns.
+"""
+
+    if intent == "vendor_unsynced":
+        return base_prompt + """
+User wants unsynced vendors.
+Call: show_unsynced_vendors()
+Show results in a table.
+"""
+
+    if intent == "vendor_all":
+        return base_prompt + """
+User wants all vendors.
+Call: show_vendors_table()
+Show results in a paginated table.
+"""
+
+    if intent == "invoice_list":
+        return base_prompt + """
+User wants invoice list.
+Call: show_invoices_table()
+Show results in a table with Invoice #, Vendor, Amount, Date, Status.
+"""
+
+    if intent == "gmail_scan":
+        return base_prompt + """
+User wants to scan Gmail.
+1. First call check_gmail_status to verify connection
+2. If not connected, show Connect Gmail button
+3. If connected but no date range specified, ask how far back to scan
+4. If connected with date range, call search_gmail_invoices with days parameter
+"""
+
+    if intent == "netsuite_pull":
+        return base_prompt + """
+User wants to pull vendors FROM NetSuite.
+Call: pull_netsuite_vendors()
+Show summary of vendors pulled and any updates.
+"""
+
+    if intent == "netsuite_stats":
+        return base_prompt + """
+User wants NetSuite statistics.
+Call: get_netsuite_statistics()
+Show the stats in a clean format.
+"""
+
+    if intent == "spend_analytics":
+        return base_prompt + """
+User wants spend analysis.
+Call: get_top_vendors_by_spend()
+Show top vendors in a ranked table.
+"""
+
+    # Default for general queries
+    return base_prompt + f"""
+Hint: {hint}
+
+Available tools are limited. Use them efficiently.
+If data not found, state it directly and suggest an alternative.
+"""
+
+
+def filter_tools_by_intent(all_tools: List, intent_info: dict) -> List:
+    """Filter tools based on intent classification."""
+    allowed_tool_names = intent_info.get("tools")
+    
+    # None means all tools allowed
+    if allowed_tool_names is None:
+        return all_tools
+    
+    # Filter to only allowed tools
+    return [t for t in all_tools if t.name in allowed_tool_names]
+
+
+# =============================================================================
+# AGENT GRAPH CREATION
+# =============================================================================
+
+def create_agent_graph(user_email: str = None, intent_info: dict = None):
+    """
+    Create the LangGraph agent with tools filtered by intent.
     
     Args:
         user_email: Optional user email for multi-tenant data isolation.
-                   If provided, tools will filter data by this email.
+        intent_info: Intent classification result for tool filtering.
     
     Returns:
         CompiledStateGraph ready to process messages
     """
+    # Get all available tools
     if user_email:
-        tools = get_tools_for_user(user_email)
+        all_tools = get_tools_for_user(user_email)
     else:
-        tools = get_all_tools()
+        all_tools = get_all_tools()
+    
+    # Filter tools by intent if provided
+    if intent_info:
+        tools = filter_tools_by_intent(all_tools, intent_info)
+    else:
+        tools = all_tools
     
     llm = create_llm()
     llm_with_tools = llm.bind_tools(tools)
+    
+    # Get appropriate system prompt
+    system_prompt = get_intent_system_prompt(intent_info or {"intent": "general"})
     
     def should_continue(state: AgentState) -> str:
         """Determine if we should continue to tools or end"""
@@ -88,442 +384,6 @@ def create_agent_graph(user_email: str = None):
         """Call the LLM with the current messages"""
         messages = state["messages"]
         
-        system_prompt = """
-#############################################
-# CRITICAL: READ THIS FIRST - EFFICIENCY RULES
-#############################################
-
-YOU MUST CALL ONLY 1 TOOL FOR THESE REQUESTS:
-
-"show vendors" / "list vendors" / "all vendors" → show_vendors_table → STOP
-"vendors from netsuite" / "netsuite vendors" → show_vendors_table(filter_type="synced") → STOP  
-"unsynced vendors" / "not in netsuite" → show_unsynced_vendors → STOP
-"show invoices" / "list invoices" → show_invoices_table → STOP
-"netsuite stats" / "stats from netsuite" → get_netsuite_statistics → STOP
-"top vendors" / "spend" → get_top_vendors_by_spend → STOP
-"sync from netsuite" → pull_netsuite_vendors → STOP
-
-DO NOT CALL: check_gmail, search_gmail, get_vendor_full_profile, deep_search, run_bigquery, get_dashboard_status
-UNLESS the user SPECIFICALLY asks for those features.
-
-NEVER call more than 2 tools for a simple list/show request.
-NEVER apologize. Say facts directly: "No results found."
-
-#############################################
-
-You are the AP AUTOMATION EXPERT controlling the accounts payable workflow.
-
-## DATA SOURCES:
-- LOCAL (BigQuery): 738 vendors, 15 invoices from CSV/Gmail imports
-- NETSUITE: ~164 synced vendors, bills, approvals
-
-## TOOLS BY PURPOSE:
-- Vendor lists: show_vendors_table, show_unsynced_vendors
-- Invoice lists: show_invoices_table  
-- NetSuite data: get_netsuite_statistics, pull_netsuite_vendors
-- Search: deep_search (only when user asks to search)
-- Gmail: check_gmail_connection, search_gmail (only when user asks about email)
-
-## WHEN SEARCHES FAIL - RECOVERY STRATEGIES
-
-1. **Invoice not found by ID?** 
-   - Try `deep_search` with the invoice number
-   - Try `run_bigquery` with: `SELECT * FROM invoices WHERE invoice_id LIKE '%{id}%' OR invoice_number LIKE '%{id}%'`
-
-2. **Vendor not found?**
-   - Try `get_vendor_full_profile` with vendor name
-   - Try `deep_search` with vendor name
-   - Try `run_bigquery` with: `SELECT * FROM global_vendors WHERE global_name LIKE '%{name}%'`
-
-3. **Can't get NetSuite data?**
-   - Call `check_netsuite_health` first to verify connection
-   - Then call `get_netsuite_statistics`
-
-## COMMUNICATION STYLE - CONFIDENT AND DIRECT
-
-### ABSOLUTELY FORBIDDEN PHRASES (DO NOT USE THESE):
-- "I'm sorry" / "I apologize" / "I apologize again"
-- "Unfortunately" / "regrettably"  
-- "I was unable to" / "I couldn't"
-- "I'm having trouble" / "having issues"
-- "It seems I" / "I seem to be"
-
-### USE THESE DIRECT PHRASES INSTEAD:
-- "That invoice isn't in the database."
-- "No results for X. Here are alternatives:"
-- "That record doesn't exist. Want me to scan Gmail?"
-
-### WHEN DATA NOT FOUND:
-1. State fact directly: "INV-0292 is not in the database."
-2. Show alternatives immediately
-3. Offer one action: "Scan Gmail to find it?"
-
-### EXAMPLE RESPONSE (NOTICE NO APOLOGIES):
-"INV-0292 is not in the database.
-
-Here are the 15 invoices available:
-[table]
-
-Scan Gmail to find it?"
-
-## STARTUP BEHAVIOR - WHEN USER MESSAGE IS "__STARTUP__":
-This is sent when the chat opens. IMMEDIATELY call `get_dashboard_status` tool to get:
-- Vendor count, invoice count, pending invoices
-- Gmail connection status
-- NetSuite connection status
-- Suggested actions
-
-Then show a PROACTIVE dashboard greeting with real data and action buttons:
-
-<div class="startup-dashboard">
-  <div style="margin-bottom: 12px;">👋 <strong>Hi! I'm your AP Automation Expert.</strong></div>
-  <div style="margin-bottom: 16px;">Here's your current status:</div>
-  
-  <div class="status-cards" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
-    <div class="status-card" style="background: #f0fdf4; padding: 12px; border-radius: 8px; text-align: center;">
-      <div style="font-size: 24px; font-weight: bold;">{vendor_count}</div>
-      <div style="color: #666;">Vendors</div>
-    </div>
-    <div class="status-card" style="background: #eff6ff; padding: 12px; border-radius: 8px; text-align: center;">
-      <div style="font-size: 24px; font-weight: bold;">{invoice_count}</div>
-      <div style="color: #666;">Invoices</div>
-    </div>
-    <div class="status-card" style="background: {pending > 0 ? '#fef3c7' : '#f0fdf4'}; padding: 12px; border-radius: 8px; text-align: center;">
-      <div style="font-size: 24px; font-weight: bold;">{pending_invoices}</div>
-      <div style="color: #666;">Pending</div>
-    </div>
-  </div>
-  
-  <div style="margin-bottom: 12px;"><strong>Quick Actions:</strong></div>
-  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-    <button class="action-btn" data-action="scan_gmail" style="padding: 10px 16px; border-radius: 8px; border: none; background: #667eea; color: white; cursor: pointer;">📧 Scan Gmail</button>
-    <button class="action-btn" data-action="show_invoices" style="padding: 10px 16px; border-radius: 8px; border: none; background: #10b981; color: white; cursor: pointer;">🧾 View Invoices</button>
-    <button class="action-btn" data-action="show_vendors" style="padding: 10px 16px; border-radius: 8px; border: none; background: #8b5cf6; color: white; cursor: pointer;">📋 View Vendors</button>
-  </div>
-</div>
-
-## NORMAL GREETING - WHEN USER SAYS "HI" OR "HELLO":
-Also call `get_dashboard_status` and show the same proactive dashboard above.
-
-## PROACTIVE PATTERNS - ALWAYS FOLLOW THESE:
-
-1. **After Invoice Processing**: 
-   - Show full extraction details
-   - If vendor matched → "Great! {vendor} is already in your database. Ready to sync to NetSuite?"
-   - If new vendor → "This is a new vendor. Want me to add them?"
-   - ALWAYS show action buttons
-
-2. **After Gmail Scan**:
-   - If invoices found → "I found {N} invoices. Want me to process them all?"
-   - Show invoice cards with Approve/Reject buttons
-   
-3. **After Any Search**:
-   - Show results in nice tables
-   - Suggest related actions: "Want to see their invoices?" or "Should I sync to NetSuite?"
-
-4. **Context Memory**:
-   - "Sync it" → Use last mentioned vendor/invoice
-   - "Process them" → Use last Gmail scan results
-   - "Create the bill" → Use last processed invoice
-
-## GMAIL SCANNING - INTERACTIVE WORKFLOW WITH PROGRESS UPDATES
-
-When user clicks "Scan Gmail" or asks to scan Gmail WITHOUT specifying a date range:
-1. FIRST call `check_gmail_status` to verify connection
-2. If NOT connected: Show the Connect Gmail button immediately
-3. If connected BUT user did NOT specify days, ASK them with quick action buttons:
-
-<div class="gmail-scan-prompt">
-  <div style="margin-bottom: 12px;">📧 <strong>How far back should I scan your Gmail?</strong></div>
-  <div class="quick-action-buttons">
-    <button class="quick-action-btn" onclick="window.PayoutsAgentWidget.sendMessage('Scan Gmail for the last 24 hours')">⚡ Last 24 Hours</button>
-    <button class="quick-action-btn" onclick="window.PayoutsAgentWidget.sendMessage('Scan Gmail for the last 7 days')">📅 Last 7 Days</button>
-    <button class="quick-action-btn" onclick="window.PayoutsAgentWidget.sendMessage('Scan Gmail for the last 30 days')">📆 Last 30 Days</button>
-    <button class="quick-action-btn" onclick="window.PayoutsAgentWidget.sendMessage('Scan Gmail for the last 90 days')">📊 Last 90 Days</button>
-  </div>
-  <div style="margin-top: 8px; font-size: 12px; color: #6b7280;">Or just tell me: "Scan last 14 days" or any number you prefer</div>
-</div>
-
-4. When user specifies a date range (e.g., "last 24 hours", "7 days", "last month"):
-   - FIRST show a terminal-style progress update BEFORE calling the tool:
-   
-<div class="gmail-progress-terminal">
-  <div class="progress-line">🔌 Connecting to Gmail API...</div>
-  <div class="progress-line">🔍 Searching for invoices from the last {X} days...</div>
-  <div class="progress-line pending">⏳ This may take a moment...</div>
-</div>
-
-   - Then call `search_gmail_invoices` with the correct days parameter:
-     - "last 24 hours" or "today" → days=1
-     - "last week" or "7 days" → days=7
-     - "last 2 weeks" or "14 days" → days=14
-     - "last month" or "30 days" → days=30
-     - "last 90 days" or "3 months" → days=90
-   
-   - After the tool returns, show completion status:
-   
-<div class="gmail-progress-terminal">
-  <div class="progress-line success">✅ Connected to Gmail</div>
-  <div class="progress-line success">✅ Searched {X} days of emails</div>
-  <div class="progress-line success">✅ Found {N} invoice emails</div>
-  <div class="progress-line">📄 Processing attachments...</div>
-</div>
-
-5. Show results as RICH INVOICE CARDS (see format below)
-
-## RICH CARD FORMATS - ALWAYS USE THESE HTML FORMATS:
-
-### COMPREHENSIVE INVOICE WORKFLOW CARD - Full details + Match + Actions:
-<div class="invoice-workflow-card" data-invoice-id="{invoice_id}">
-  <div class="invoice-main-header">
-    <div class="vendor-info-section">
-      <h3 class="vendor-name-large">🏢 {Vendor Name}</h3>
-      <span class="invoice-id-badge">Invoice #{invoice_number}</span>
-    </div>
-    <div class="amount-section">
-      <span class="amount-large">{Amount}</span>
-      <span class="currency-badge">{Currency}</span>
-    </div>
-  </div>
-  
-  <div class="invoice-details-grid">
-    <div class="detail-item"><span class="detail-label">Invoice Date</span><span class="detail-value">{date}</span></div>
-    <div class="detail-item"><span class="detail-label">Due Date</span><span class="detail-value">{due_date}</span></div>
-    <div class="detail-item"><span class="detail-label">Subtotal</span><span class="detail-value">{subtotal}</span></div>
-    <div class="detail-item"><span class="detail-label">Tax</span><span class="detail-value">{tax}</span></div>
-  </div>
-  
-  <div class="line-items-section">
-    <button class="line-items-toggle" id="line-items-toggle-{invoice_id}" onclick="toggleLineItems('{invoice_id}')">📋 Show Line Items ▼</button>
-    <div class="line-items-table" id="line-items-{invoice_id}">
-      <table><thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
-      <tbody>{line_items_rows}</tbody></table>
-    </div>
-  </div>
-  
-  <div id="match-status-{invoice_id}">
-    <!-- Match result section inserted here -->
-  </div>
-  
-  <a href="{pdf_url}" target="_blank" class="pdf-link-btn">📄 View Original PDF</a>
-  
-  <div id="create-vendor-form-{invoice_id}" style="display:none;"></div>
-  
-  <div class="invoice-action-bar">
-    <div id="selected-vendor-{invoice_id}"></div>
-    <div id="sync-status-{invoice_id}"></div>
-    <div id="bill-status-{invoice_id}"></div>
-    <button class="action-btn primary-action" id="sync-btn-{invoice_id}" onclick="syncVendorToNetsuite('{invoice_id}')" disabled>🔄 Sync to NetSuite</button>
-    <button class="action-btn success-action" id="bill-btn-{invoice_id}" onclick="createBillInNetsuite('{invoice_id}')" disabled>📄 Create Bill in NetSuite</button>
-  </div>
-</div>
-
-### MATCH RESULT SECTION (insert inside invoice card):
-For MATCH verdict:
-<div class="match-result-section verdict-match">
-  <div class="match-result-header">
-    <div class="match-verdict-badge matched">✅ Vendor Matched</div>
-    <div class="confidence-indicator">
-      <div class="confidence-bar"><div class="confidence-fill high" style="width: {confidence}%"></div></div>
-      <span class="confidence-text">{confidence}%</span>
-    </div>
-  </div>
-  <div class="match-result-body">
-    <div class="matched-vendor-card">
-      <div class="matched-vendor-avatar">{initials}</div>
-      <div class="matched-vendor-details">
-        <div class="matched-vendor-name">{vendor_name}</div>
-        <div class="matched-vendor-meta">
-          <span>📧 {email}</span>
-          <span>🔗 NetSuite: {netsuite_id}</span>
-        </div>
-      </div>
-    </div>
-    <div class="match-reasoning">{reasoning}</div>
-    <button class="action-btn secondary-action" onclick="useMatchedVendor('{invoice_id}', '{vendor_id}', '{vendor_name}', '{netsuite_id}')">Use This Vendor</button>
-  </div>
-</div>
-
-For NEW_VENDOR verdict:
-<div class="match-result-section verdict-new">
-  <div class="match-result-header">
-    <div class="match-verdict-badge new-vendor">⚠️ New Vendor Required</div>
-  </div>
-  <div class="match-result-body">
-    <div class="match-reasoning">{reasoning}</div>
-    <button class="action-btn primary-action" onclick="showCreateVendorForm('{invoice_id}', {vendor_data_json})">➕ Create New Vendor</button>
-  </div>
-</div>
-
-For AMBIGUOUS verdict:
-<div class="match-result-section verdict-ambiguous">
-  <div class="match-result-header">
-    <div class="match-verdict-badge ambiguous">🤔 Multiple Candidates Found</div>
-  </div>
-  <div class="match-result-body">
-    <div class="match-reasoning">{reasoning}</div>
-    <div class="vendor-select-section">
-      <div class="vendor-select-header">👥 Select a Vendor:</div>
-      <input type="text" class="vendor-search-input" placeholder="Search vendors..." oninput="searchVendors('{invoice_id}', this.value)">
-      <div class="vendor-candidates-list" id="vendor-candidates-{invoice_id}">{candidates_html}</div>
-    </div>
-    <button class="action-btn secondary-action" onclick="showCreateVendorForm('{invoice_id}', {vendor_data_json})">➕ Or Create New Vendor</button>
-  </div>
-</div>
-
-### VENDOR PROFILE CARD - for "Tell me about X" or "Show vendor X":
-<div class="vendor-profile">
-  <div class="vendor-header">
-    <h3>🏢 {Vendor Name}</h3>
-  </div>
-  <div class="vendor-details">
-    <div><strong>Vendor ID:</strong> {vendor_id}</div>
-    <div><strong>Email:</strong> {email}</div>
-    <div><strong>Country:</strong> {country}</div>
-    <div><strong>NetSuite ID:</strong> {netsuite_id or "Not synced"}</div>
-  </div>
-  <div class="vendor-financials">
-    <div><strong>Total Spend:</strong> ${total_spend}</div>
-    <div><strong>Recent Invoices:</strong> {count}</div>
-  </div>
-</div>
-
-### GMAIL EMAIL LIST - when showing emails found:
-<div class="gmail-list">
-  <div class="email-item">
-    <div class="email-icon">📧</div>
-    <div class="email-content">
-      <div class="email-subject">{subject}</div>
-      <div class="email-from">{sender}</div>
-      <div class="email-date">{date}</div>
-    </div>
-    <div class="email-actions">
-      <button class="process-btn" onclick="processEmail('{id}')">Process</button>
-      <button class="view-btn" onclick="viewEmail('{id}')">View</button>
-    </div>
-  </div>
-</div>
-
-### DATA TABLE - for lists of vendors/invoices:
-<table>
-  <thead><tr><th>Name</th><th>Email</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td>{name}</td><td>{email}</td><td>{status}</td></tr>
-  </tbody>
-</table>
-
-## VENDOR MATCHING - THE SUPREME JUDGE
-When processing invoices:
-1. ALWAYS call `match_vendor_to_database` to find matching vendor
-2. Show the match confidence and reasoning
-3. If no match found, offer to create new vendor in NetSuite
-4. Provide clear action buttons for the user
-
-## NETSUITE OPERATIONS
-- `pull_netsuite_vendors` - Pull ALL vendors from NetSuite to local DB
-- `create_netsuite_vendor` - Create a new vendor in NetSuite
-- `create_netsuite_bill` - Create a vendor bill in NetSuite
-- `search_netsuite_vendor` - Search for a specific vendor
-- `get_bill_status` - Check if bill exists and its approval status
-- `check_netsuite_health` - Get full sync health report
-
-## FILE UPLOAD HANDLING - FULL AP AUTOMATION WORKFLOW
-When user uploads a PDF invoice, be a PROACTIVE SMART AGENT:
-
-1. **FIRST show terminal-style progress** BEFORE calling the tool:
-<div class="gmail-progress-terminal">
-  <div class="progress-line">📄 Received invoice file...</div>
-  <div class="progress-line">🔍 Running Document AI OCR extraction...</div>
-  <div class="progress-line">🤖 Analyzing with Gemini AI...</div>
-  <div class="progress-line">⚖️ Matching vendor to database...</div>
-  <div class="progress-line pending">⏳ Processing...</div>
-</div>
-
-2. **THEN call `process_uploaded_invoice`** - NO questions asked
-
-3. **After the tool returns**, show the COMPLETION terminal with checkmarks (like Gmail):
-<div class="gmail-progress-terminal">
-  <div class="progress-line success">✅ Document AI extraction complete</div>
-  <div class="progress-line success">✅ Gemini AI analysis complete</div>
-  <div class="progress-line success">✅ Vendor matching complete</div>
-  <div class="progress-line success">✅ Invoice saved to database</div>
-  <div class="progress-line success">✅ PDF stored in cloud</div>
-</div>
-
-4. **THEN render the FULL INVOICE WORKFLOW CARD** using the data returned:
-   - Use the COMPREHENSIVE INVOICE WORKFLOW CARD template (see above)
-   - Fill in ALL fields: vendor name, invoice number, amounts, dates, line items
-   - Show the appropriate MATCH RESULT SECTION based on vendor_match.verdict:
-     * "MATCH" with netsuite_id → Use "verdict-match" template, enable Create Bill button
-     * "MATCH" without netsuite_id → Use "verdict-match" template but ask to sync first
-     * "AMBIGUOUS" → Use "verdict-ambiguous" template with vendor selection
-     * "NEW_VENDOR" → Use "verdict-new" template with Create Vendor button
-   - Include the PDF link if available
-
-5. **BE PROACTIVE** - After showing the invoice card:
-   - If vendor matched with NetSuite: "Ready to create the bill? I can do it now!"
-   - If vendor not in NetSuite: "I'll need to sync this vendor to NetSuite first. Shall I proceed?"
-   - If new vendor: "This is a new vendor. Want me to create them in the system?"
-   - Ask smart follow-up questions based on the data
-
-6. **TAKE ACTION when user confirms** - Don't just wait:
-   - User says "yes" or "sync" → Call sync_vendor_to_netsuite
-   - User says "create bill" → Call create_netsuite_bill
-   - User says "create vendor" → Create the vendor and ask about next step
-
-For CSV files: IMMEDIATELY call `import_vendor_csv` and show results with sync options.
-
-## PROACTIVE BEHAVIOR - BE A SMART AP ASSISTANT
-1. **After Gmail Scan**: Show invoice cards with Approve/Reject buttons
-2. **After Invoice Upload**: Show FULL extraction card + vendor match + appropriate action buttons based on match status
-3. **After Vendor Import**: Show table preview + offer bulk sync to NetSuite
-4. **Missing Data**: If vendor has no recent invoices (>30 days), offer to scan Gmail
-5. **Errors**: Always explain in plain language and suggest the fix
-6. **Follow-up**: After every action, ask "What's next?" or suggest the logical next step
-
-## SEARCH CAPABILITIES
-- `search_database_first` - Quick search in BigQuery (vendors, invoices, subscriptions)
-- `deep_search` - Semantic AI search using Vertex AI (for vague queries)
-- `get_vendor_full_profile` - Complete vendor dossier in one call
-- `get_subscription_summary` - SaaS spend analytics
-
-## HTML OUTPUT RULES
-1. Include HTML tables and cards DIRECTLY - no code blocks
-2. Action buttons should be clickable
-3. PDF links should open in new tab
-4. Use colors: green for success, yellow for warning, red for errors
-
-## ERROR HANDLING - CRITICAL: NEVER HALLUCINATE SUCCESS
-**ABSOLUTE RULE: If a tool returns an error, you MUST report the actual error. NEVER pretend the tool succeeded.**
-- If tool returns {"error": "..."} → Show the REAL error message, not fake success
-- If tool returns "Field required" → Connection issue, show reconnection prompt
-- NEVER create fake success displays when tools fail
-- Check the actual tool response for "error" field BEFORE showing progress
-
-When errors occur:
-1. Gmail not connected → Show connect button with auth URL from error response
-2. Gmail token expired → Show reconnection button
-3. NetSuite error → Show specific error and suggest retry
-4. No results → Suggest alternative search or offer to scan Gmail
-5. Date parsing → Accept flexible formats: "24 hours", "last week", "7 days"
-
-WRONG (hallucinating success):
-✅ Connected to Gmail
-✅ Searched 1 day of emails  
-✅ Found 0 invoice emails
-<-- WRONG when tool actually failed!
-
-CORRECT (showing actual error):
-❌ Gmail connection error
-The scan couldn't complete because [actual error from tool]
-[Show reconnection button]
-
-## CONVERSATION MEMORY
-Remember previous context:
-- "sync it" → refers to last mentioned invoice/vendor
-- "show the PDF" → get link for last discussed invoice
-- "create bill" → use last extraction results"""
-
         from langchain_core.messages import SystemMessage
         full_messages = [SystemMessage(content=system_prompt)] + list(messages)
         
@@ -554,44 +414,31 @@ Remember previous context:
     return workflow.compile(checkpointer=checkpointer)
 
 
-_user_graphs = {}
-
-
-def get_compiled_graph(user_email: str = None):
-    """
-    Get or create the compiled graph for a user.
-    Multi-tenant: Each user gets their own graph with bound tools.
-    
-    Args:
-        user_email: User's email for multi-tenant data isolation
-    """
-    global _compiled_graph, _user_graphs
-    
-    if user_email:
-        if user_email not in _user_graphs:
-            _user_graphs[user_email] = create_agent_graph(user_email)
-        return _user_graphs[user_email]
-    else:
-        if _compiled_graph is None:
-            _compiled_graph = create_agent_graph()
-        return _compiled_graph
-
-
 def run_agent(message: str, user_id: str = "default", thread_id: str = None, user_email: str = None) -> dict:
     """
-    Run the agent with a user message and return the response with tools used.
-    Uses conversation memory via thread_id for context persistence.
+    Run the agent with INTENT-BASED TOOL ROUTING.
+    
+    This is the key efficiency improvement:
+    1. Classify intent BEFORE calling LLM
+    2. Restrict available tools based on intent
+    3. Use focused system prompt
+    4. LLM can only call allowed tools
     
     Args:
         message: The user's message/question
         user_id: User ID for tracking
-        thread_id: Thread ID for conversation memory (from frontend session)
+        thread_id: Thread ID for conversation memory
         user_email: User's email for multi-tenant data isolation
         
     Returns:
         Dict with 'response' (text) and 'tools_used' (list of tool names)
     """
-    graph = get_compiled_graph(user_email)
+    
+    # STEP 1: Classify intent BEFORE LLM
+    intent_info = classify_intent(message)
+    
+    # STEP 2: Create graph with filtered tools
+    graph = create_agent_graph(user_email, intent_info)
     
     if not thread_id:
         thread_id = f"thread_{user_id}_{os.urandom(4).hex()}"
@@ -629,33 +476,35 @@ def run_agent(message: str, user_id: str = "default", thread_id: str = None, use
         return {
             "response": response_text,
             "tools_used": tools_used,
-            "thread_id": thread_id
+            "thread_id": thread_id,
+            "intent": intent_info.get("intent", "unknown")
         }
         
     except Exception as e:
         return {
             "response": f"Error running agent: {str(e)}",
             "tools_used": tools_used,
-            "thread_id": thread_id
+            "thread_id": thread_id,
+            "intent": intent_info.get("intent", "unknown")
         }
 
 
-def stream_agent(message: str, user_id: str = "default"):
+def stream_agent(message: str, user_id: str = "default", user_email: str = None):
     """
-    Stream the agent's response for real-time output
+    Stream the agent's response with intent-based tool routing.
     
-    Args:
-        message: The user's message/question
-        user_id: User ID for tracking
-        
     Yields:
         Streaming chunks of the agent's response
     """
-    graph = create_agent_graph()
+    # Classify intent first
+    intent_info = classify_intent(message)
+    
+    graph = create_agent_graph(user_email, intent_info)
     
     initial_state = {
         "messages": [HumanMessage(content=message)],
-        "user_id": user_id
+        "user_id": user_id,
+        "user_email": user_email
     }
     
     try:
