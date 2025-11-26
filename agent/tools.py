@@ -962,33 +962,33 @@ def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vend
         
         sync_log_query = """
         SELECT 
-            sync_type, status, started_at, completed_at, error_message,
-            records_processed, records_failed
+            action, status, timestamp, error_message, entity_type, entity_id, netsuite_id
         FROM `invoicereader-477008.vendors_ai.netsuite_sync_log`
         WHERE owner_email = @user_email
-          AND (vendor_id = @vendor_id OR vendor_name LIKE @vendor_pattern)
-        ORDER BY started_at DESC
+          AND (entity_id = @vendor_id 
+           OR LOWER(TO_JSON_STRING(request_data)) LIKE @vendor_pattern
+           OR LOWER(TO_JSON_STRING(response_data)) LIKE @vendor_pattern)
+        ORDER BY timestamp DESC
         LIMIT 5
         """
         try:
             sync_logs = bigquery_service.query(sync_log_query, {
                 "vendor_id": vendor_id,
-                "vendor_pattern": f"%{vendor_name or ''}%",
+                "vendor_pattern": f"%{(vendor_name or '').lower()}%",
                 "user_email": user_email
             })
             
             if sync_logs:
                 last_sync = sync_logs[0]
                 report["last_sync"] = {
-                    "type": last_sync.get("sync_type"),
+                    "action": last_sync.get("action"),
                     "status": last_sync.get("status"),
-                    "started": str(last_sync.get("started_at")),
-                    "completed": str(last_sync.get("completed_at")),
-                    "records_processed": last_sync.get("records_processed"),
-                    "records_failed": last_sync.get("records_failed")
+                    "timestamp": str(last_sync.get("timestamp")),
+                    "entity_type": last_sync.get("entity_type"),
+                    "netsuite_id": last_sync.get("netsuite_id")
                 }
                 
-                if last_sync.get("status") == "FAILED":
+                if last_sync.get("status") == "ERROR":
                     report["alerts"].append({
                         "type": "SYNC_FAILED",
                         "message": f"Last sync failed: {last_sync.get('error_message', 'Unknown error')}",
@@ -1000,17 +1000,19 @@ def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vend
         
         events_query = """
         SELECT 
-            event_type, record_type, netsuite_id, status, 
-            created_at, error_message, request_data, response_data
+            event_type, entity_type, netsuite_id, status, 
+            timestamp, error_message
         FROM `invoicereader-477008.vendors_ai.netsuite_events`
         WHERE owner_email = @user_email
-          AND (LOWER(CAST(request_data AS STRING)) LIKE @vendor_pattern
-           OR LOWER(CAST(response_data AS STRING)) LIKE @vendor_pattern)
-        ORDER BY created_at DESC
+          AND (entity_id = @vendor_id
+           OR LOWER(TO_JSON_STRING(request_data)) LIKE @vendor_pattern
+           OR LOWER(TO_JSON_STRING(response_data)) LIKE @vendor_pattern)
+        ORDER BY timestamp DESC
         LIMIT 10
         """
         try:
             events = bigquery_service.query(events_query, {
+                "vendor_id": vendor_id,
                 "vendor_pattern": f"%{(vendor_name or vendor_id).lower()}%",
                 "user_email": user_email
             })
@@ -1018,16 +1020,16 @@ def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vend
             for event in events:
                 event_summary = {
                     "type": event.get("event_type"),
-                    "record_type": event.get("record_type"),
+                    "entity_type": event.get("entity_type"),
                     "status": event.get("status"),
-                    "timestamp": str(event.get("created_at")),
+                    "timestamp": str(event.get("timestamp")),
                     "netsuite_id": event.get("netsuite_id")
                 }
                 report["recent_events"].append(event_summary)
                 
                 if not report["last_activity"] and events:
                     first_event = events[0]
-                    report["last_activity"] = f"{first_event.get('event_type')} ({first_event.get('record_type')}) on {str(first_event.get('created_at'))[:10]}"
+                    report["last_activity"] = f"{first_event.get('event_type')} ({first_event.get('entity_type')}) on {str(first_event.get('timestamp'))[:10]}"
             
             failed_events = [e for e in events if e.get("status") == "ERROR"]
             if failed_events:

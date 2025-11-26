@@ -130,3 +130,24 @@ A self-contained, embeddable chat widget (`static/agent_widget.js`) that provide
     -   `import_vendor_csv`: AI-powered CSV column mapping with BigQuery import
     -   `pull_netsuite_vendors`: Sync vendors from NetSuite to local database
     -   `show_vendors_table`: Rich HTML table display for vendor listings
+
+## Recent Changes
+
+### November 26, 2025 - SQL Column Name Fixes
+Fixed critical SQL schema mismatches in agent tools (`agent/tools.py`):
+- Changed `payment_date` → `timestamp` in subscription_events queries
+- Changed `subscription_type` → `event_type` in subscription_events queries
+- Changed `netsuite_id` → `netsuite_internal_id` in global_vendors queries
+- Fixed `check_netsuite_health` to use correct columns from netsuite_sync_log and netsuite_events tables:
+  - Uses `TO_JSON_STRING()` for proper JSON column text search
+  - Uses `timestamp` instead of `created_at` or `started_at`
+  - Uses `entity_type` instead of `record_type`
+- Added `sync_status` logic based on `netsuite_internal_id` presence
+- All agent tools now correctly query data with multi-tenant isolation using `owner_email`
+
+### BigQuery Table Schemas Reference
+- **global_vendors**: vendor_id, global_name, netsuite_internal_id, emails (ARRAY), domains (ARRAY), countries (ARRAY), custom_attributes (JSON), source_system, owner_email
+- **subscription_events**: event_id, vendor_id, event_type, timestamp, amount, currency, owner_email
+- **invoices**: invoice_id, vendor_id, vendor_name, amount, currency, invoice_date, gcs_uri, owner_email
+- **netsuite_events**: event_id, timestamp, event_type, entity_type, entity_id, netsuite_id, status, owner_email
+- **netsuite_sync_log**: id, timestamp, entity_type, entity_id, action, status, netsuite_id, owner_email
