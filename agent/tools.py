@@ -1688,25 +1688,40 @@ def get_tools_for_user(user_email: str):
     Returns:
         List of tools with user_email bound as the first parameter
     """
-    from functools import partial
     from langchain_core.tools import StructuredTool
+    import inspect
     
     all_tools = get_all_tools()
     bound_tools = []
     
     for tool_func in all_tools:
         original_func = tool_func.func
+        tool_name = tool_func.name
+        tool_description = tool_func.description
         
-        bound_func = partial(original_func, user_email)
+        sig = inspect.signature(original_func)
+        params = list(sig.parameters.keys())
         
-        new_tool = StructuredTool(
-            name=tool_func.name,
-            description=tool_func.description,
-            func=bound_func,
-            args_schema=_remove_user_email_from_schema(tool_func.args_schema) if hasattr(tool_func, 'args_schema') else None,
-            return_direct=getattr(tool_func, 'return_direct', False),
-        )
-        bound_tools.append(new_tool)
+        if 'user_email' in params:
+            def make_wrapper(orig_fn, email):
+                def wrapper(**kwargs):
+                    return orig_fn(user_email=email, **kwargs)
+                return wrapper
+            
+            wrapped_func = make_wrapper(original_func, user_email)
+            
+            new_schema = _remove_user_email_from_schema(tool_func.args_schema) if hasattr(tool_func, 'args_schema') else None
+            
+            new_tool = StructuredTool.from_function(
+                func=wrapped_func,
+                name=tool_name,
+                description=tool_description,
+                args_schema=new_schema,
+                return_direct=getattr(tool_func, 'return_direct', False),
+            )
+            bound_tools.append(new_tool)
+        else:
+            bound_tools.append(tool_func)
     
     return bound_tools
 
