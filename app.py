@@ -8424,14 +8424,19 @@ def subscription_scan_stream():
                     print(f"Error processing email {msg_id}: {e}")
                     continue
                     
-                # Progress update every 50 emails
+                # Progress update every 50 emails AND keep-alive heartbeat
                 if i > 0 and i % 50 == 0:
                     percent = 22 + int((i / total_emails) * 58)
                     yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments (skipped {skipped_count} non-financial)'})}\n\n"
                 
+                # Keep-alive heartbeat every 10 emails to prevent connection timeout
+                elif i > 0 and i % 10 == 0:
+                    yield f": heartbeat\n\n"  # SSE comment for keep-alive
+                
                 # INCREMENTAL SAVE: Save progress every 5 new subscriptions found
                 if len(processed_events) >= last_save_count + 5:
                     try:
+                        percent = 22 + int((i / total_emails) * 58)
                         interim_results = pulse_service.aggregate_subscription_data(processed_events)
                         pulse_service.store_subscription_results(client_email, interim_results)
                         last_save_count = len(processed_events)
@@ -8458,7 +8463,18 @@ def subscription_scan_stream():
             print(f"Subscription scan error: {e}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            
+            # Try to return partial results if we found any subscriptions
+            if processed_events and len(processed_events) > 0:
+                try:
+                    partial_results = pulse_service.aggregate_subscription_data(processed_events)
+                    pulse_service.store_subscription_results(client_email, partial_results)
+                    yield f"data: {json.dumps({'type': 'partial', 'message': f'Scan interrupted but saved {len(processed_events)} subscriptions found', 'results': partial_results})}\n\n"
+                except Exception as save_err:
+                    print(f"Failed to save partial results: {save_err}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
             
     return Response(generate(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',

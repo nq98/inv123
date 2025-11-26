@@ -6982,6 +6982,22 @@ async function startSubscriptionScan() {
                 addTerminalLog('success', '─────────────────────────────────────');
                 
                 displaySubscriptionDashboard(data.results);
+            } else if (data.type === 'partial') {
+                // Scan was interrupted but we have partial results
+                eventSource.close();
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                
+                addTerminalLog('warning', '─────────────────────────────────────');
+                addTerminalLog('warning', '⚠️ Scan Interrupted - Partial Results Saved');
+                addTerminalLog('info', data.message);
+                addTerminalLog('info', `📊 Active Subscriptions: ${data.results?.active_count || 0}`);
+                addTerminalLog('info', `💰 Monthly Spend: ${formatCurrency(data.results?.monthly_spend || 0)}`);
+                addTerminalLog('info', `🔴 Stopped This Year: ${data.results?.stopped_count || 0}`);
+                addTerminalLog('warning', '─────────────────────────────────────');
+                
+                // Still display what we found
+                displaySubscriptionDashboard(data.results);
             } else if (data.type === 'error') {
                 eventSource.close();
                 subscriptionScanProgress.classList.add('hidden');

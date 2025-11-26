@@ -500,7 +500,6 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
         }
         
         now = datetime.utcnow()
-        three_months_ago = now - timedelta(days=90)
         
         for vendor_key, data in vendors.items():
             if not data['payments']:
@@ -512,30 +511,53 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             avg_amount = lifetime_spend / len(amounts) if amounts else 0
             last_amount = amounts[-1] if amounts else 0
             
-            # Determine frequency
+            # Determine frequency and calculate average days between payments
+            avg_days_between_payments = 30  # Default to monthly
             if len(data['payments']) >= 2:
                 dates = sorted([p['date'] for p in data['payments'] if p['date']])
                 if len(dates) >= 2:
-                    avg_days = (dates[-1] - dates[0]).days / (len(dates) - 1) if len(dates) > 1 else 30
-                    frequency = 'annual' if avg_days > 180 else 'monthly'
+                    avg_days_between_payments = (dates[-1] - dates[0]).days / (len(dates) - 1) if len(dates) > 1 else 30
+                    frequency = 'annual' if avg_days_between_payments > 180 else 'monthly'
                 else:
                     frequency = 'monthly'
             else:
                 frequency = 'one-time' if not data['is_subscription'] else 'monthly'
                 
-            # Determine status
-            last_seen = data['last_seen']
-            if last_seen and last_seen.replace(tzinfo=None) if hasattr(last_seen, 'replace') else last_seen:
-                last_seen_dt = last_seen if isinstance(last_seen, datetime) else datetime.fromisoformat(str(last_seen).replace('Z', '+00:00'))
-                if hasattr(last_seen_dt, 'tzinfo') and last_seen_dt.tzinfo:
-                    last_seen_dt = last_seen_dt.replace(tzinfo=None)
-                    
-                if last_seen_dt < three_months_ago:
-                    status = 'stopped'
-                else:
-                    status = 'active'
+            # SMART CHURN DETECTION: Based on subscription frequency
+            # - Monthly subscriptions: If no payment in last 45 days, likely stopped
+            # - Annual subscriptions: If no payment in last 13 months, likely stopped
+            # - One-time: Never "stopped" (they aren't recurring)
+            if frequency == 'monthly':
+                churn_threshold = timedelta(days=45)  # 1.5x monthly cycle
+            elif frequency == 'annual':
+                churn_threshold = timedelta(days=400)  # 13 months
             else:
-                status = 'active'
+                churn_threshold = timedelta(days=9999)  # One-time never churns
+                
+            churn_cutoff = now - churn_threshold
+            
+            # Determine status based on last payment date
+            last_seen = data['last_seen']
+            status = 'active'  # Default
+            
+            if last_seen:
+                try:
+                    last_seen_dt = last_seen if isinstance(last_seen, datetime) else datetime.fromisoformat(str(last_seen).replace('Z', '+00:00'))
+                    if hasattr(last_seen_dt, 'tzinfo') and last_seen_dt.tzinfo:
+                        last_seen_dt = last_seen_dt.replace(tzinfo=None)
+                    
+                    # Check if subscription has churned
+                    if last_seen_dt < churn_cutoff:
+                        status = 'stopped'
+                        # Add churn alert
+                        days_since_payment = (now - last_seen_dt).days
+                        results['alerts'].append({
+                            'type': 'zombie',
+                            'title': f'{data["vendor_name"]} may have stopped',
+                            'description': f'No payment in {days_since_payment} days (last: {last_seen_dt.strftime("%b %d, %Y")})'
+                        })
+                except Exception as e:
+                    print(f"Error parsing last_seen for {data['vendor_name']}: {e}")
                 
             # Get category
             category = self._get_vendor_category(data['vendor_name'])
