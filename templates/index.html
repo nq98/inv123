@@ -393,6 +393,109 @@
                 </div>
             </section>
             
+            <!-- Gmail Import Section -->
+            <section class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">📧 Import from Gmail</h2>
+                    <p class="card-desc">Automatically scan your inbox for invoices and receipts</p>
+                </div>
+                
+                <div id="gmailImportSection" style="padding: 20px;">
+                    <!-- Gmail Connection Status -->
+                    <div id="gmailStatusContainer" style="margin-bottom: 20px;">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Checking Gmail connection...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Gmail Connected State -->
+                    <div id="gmailConnectedState" class="hidden">
+                        <div style="display: flex; align-items: center; gap: 12px; padding: 15px; background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; margin-bottom: 20px;">
+                            <span style="font-size: 24px;">✅</span>
+                            <div>
+                                <strong style="color: #2e7d32;">Gmail Connected</strong>
+                                <p id="gmailAccountEmail" style="margin: 0; color: #388e3c; font-size: 14px;"></p>
+                            </div>
+                            <button onclick="disconnectGmail()" class="btn btn-outline" style="margin-left: auto; font-size: 12px; padding: 6px 12px;">
+                                Disconnect
+                            </button>
+                        </div>
+                        
+                        <!-- Scan Controls -->
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <label style="display: block; margin-bottom: 6px; font-weight: 500; color: #374151;">Date Range</label>
+                                <select id="gmailDateRange" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                                    <option value="7">Last 7 days</option>
+                                    <option value="14">Last 14 days</option>
+                                    <option value="30" selected>Last 30 days</option>
+                                    <option value="60">Last 60 days</option>
+                                    <option value="90">Last 90 days</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <label style="display: block; margin-bottom: 6px; font-weight: 500; color: #374151;">Max Emails</label>
+                                <select id="gmailMaxEmails" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                                    <option value="10">10 emails</option>
+                                    <option value="25" selected>25 emails</option>
+                                    <option value="50">50 emails</option>
+                                    <option value="100">100 emails</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button id="scanGmailBtn" onclick="startGmailScan()" class="btn btn-primary btn-full" style="background: linear-gradient(135deg, #ea4335 0%, #fbbc04 100%);">
+                            <span style="margin-right: 8px;">📨</span> Scan Gmail for Invoices
+                        </button>
+                    </div>
+                    
+                    <!-- Gmail Disconnected State -->
+                    <div id="gmailDisconnectedState" class="hidden">
+                        <div style="text-align: center; padding: 30px;">
+                            <div style="width: 80px; height: 80px; margin: 0 auto 20px; background: linear-gradient(135deg, #ea4335 0%, #fbbc04 50%, #34a853 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center;">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                    <polyline points="22,6 12,13 2,6"></polyline>
+                                </svg>
+                            </div>
+                            <h3 style="margin: 0 0 10px 0; color: #1f2937;">Connect Your Gmail</h3>
+                            <p style="margin: 0 0 20px 0; color: #6b7280;">Automatically find and import invoices from your email inbox</p>
+                            <button onclick="connectGmail()" class="btn btn-primary" style="background: linear-gradient(135deg, #ea4335 0%, #fbbc04 100%); padding: 12px 30px; font-size: 16px;">
+                                <span style="margin-right: 8px;">🔗</span> Connect Gmail Account
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Gmail Scan Progress -->
+                    <div id="gmailScanProgress" class="hidden" style="margin-top: 20px;">
+                        <div style="padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+                                <div class="spinner" style="width: 24px; height: 24px;"></div>
+                                <span id="gmailScanStatus" style="font-weight: 500;">Scanning emails...</span>
+                            </div>
+                            <div style="background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden;">
+                                <div id="gmailScanProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #ea4335, #fbbc04, #34a853); transition: width 0.3s ease;"></div>
+                            </div>
+                            <p id="gmailScanDetails" style="margin: 10px 0 0 0; font-size: 13px; color: #6b7280;"></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Gmail Scan Results -->
+                    <div id="gmailScanResults" class="hidden" style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4 style="margin: 0; color: #1f2937;">Found Invoices</h4>
+                            <button id="importAllGmailBtn" onclick="importAllGmailInvoices()" class="btn btn-primary" style="font-size: 13px; padding: 8px 16px;">
+                                Import All Selected
+                            </button>
+                        </div>
+                        <div id="gmailEmailsList" style="max-height: 400px; overflow-y: auto;">
+                            <!-- Email items will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
             <!-- Invoice List Section -->
             <section class="card" style="margin-top: 20px;">
                 <div class="card-header">
@@ -2036,6 +2139,371 @@ curl -X POST "https://your-app.repl.co/api/agent/actions/ACT-XYZ789/approve" \
             }, 3000);
         }
     };
+    
+    // ==================== GMAIL IMPORT FUNCTIONS ====================
+    
+    // Store scanned emails for import
+    let scannedGmailEmails = [];
+    
+    // Check Gmail connection status on page load
+    async function checkGmailStatus() {
+        const statusContainer = document.getElementById('gmailStatusContainer');
+        const connectedState = document.getElementById('gmailConnectedState');
+        const disconnectedState = document.getElementById('gmailDisconnectedState');
+        
+        try {
+            const response = await fetch('/api/ap-automation/gmail/status');
+            const data = await response.json();
+            
+            statusContainer.innerHTML = ''; // Clear loading state
+            
+            if (data.connected) {
+                connectedState.classList.remove('hidden');
+                disconnectedState.classList.add('hidden');
+                document.getElementById('gmailAccountEmail').textContent = data.email || 'Connected';
+                console.log('📧 Gmail connected:', data.email);
+            } else {
+                connectedState.classList.add('hidden');
+                disconnectedState.classList.remove('hidden');
+                console.log('📧 Gmail not connected');
+            }
+        } catch (error) {
+            console.error('Error checking Gmail status:', error);
+            statusContainer.innerHTML = '<p style="color: #ef4444;">Failed to check Gmail status</p>';
+        }
+    }
+    
+    // Connect Gmail
+    function connectGmail() {
+        window.location.href = '/api/ap-automation/gmail/auth';
+    }
+    
+    // Disconnect Gmail
+    async function disconnectGmail() {
+        if (!confirm('Are you sure you want to disconnect your Gmail account?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/ap-automation/gmail/disconnect', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                checkGmailStatus();
+            } else {
+                alert('Failed to disconnect Gmail');
+            }
+        } catch (error) {
+            console.error('Error disconnecting Gmail:', error);
+            alert('Error disconnecting Gmail');
+        }
+    }
+    
+    // Start Gmail scan
+    async function startGmailScan() {
+        const scanBtn = document.getElementById('scanGmailBtn');
+        const progressDiv = document.getElementById('gmailScanProgress');
+        const resultsDiv = document.getElementById('gmailScanResults');
+        const progressBar = document.getElementById('gmailScanProgressBar');
+        const scanStatus = document.getElementById('gmailScanStatus');
+        const scanDetails = document.getElementById('gmailScanDetails');
+        
+        const dateRange = document.getElementById('gmailDateRange').value;
+        const maxEmails = document.getElementById('gmailMaxEmails').value;
+        
+        // Reset state
+        scanBtn.disabled = true;
+        scanBtn.innerHTML = '<span style="margin-right: 8px;">⏳</span> Scanning...';
+        progressDiv.classList.remove('hidden');
+        resultsDiv.classList.add('hidden');
+        progressBar.style.width = '0%';
+        scannedGmailEmails = [];
+        
+        try {
+            // Use Server-Sent Events for streaming progress
+            const eventSource = new EventSource(`/api/ap-automation/gmail/import/stream?days=${dateRange}&limit=${maxEmails}`);
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('📧 Gmail scan progress:', data);
+                
+                if (data.type === 'progress') {
+                    progressBar.style.width = `${data.progress || 0}%`;
+                    scanStatus.textContent = data.step || 'Scanning...';
+                    scanDetails.textContent = data.detail || '';
+                }
+                
+                if (data.type === 'email_found') {
+                    scannedGmailEmails.push(data.email);
+                    scanDetails.textContent = `Found ${scannedGmailEmails.length} invoice emails...`;
+                }
+                
+                if (data.type === 'complete') {
+                    eventSource.close();
+                    progressBar.style.width = '100%';
+                    scanStatus.textContent = 'Scan complete!';
+                    
+                    // Display results
+                    displayGmailScanResults(data.emails || scannedGmailEmails);
+                    
+                    // Reset button
+                    scanBtn.disabled = false;
+                    scanBtn.innerHTML = '<span style="margin-right: 8px;">📨</span> Scan Gmail for Invoices';
+                    
+                    // Hide progress after a moment
+                    setTimeout(() => {
+                        progressDiv.classList.add('hidden');
+                    }, 1500);
+                }
+                
+                if (data.type === 'error') {
+                    eventSource.close();
+                    scanStatus.textContent = 'Error: ' + (data.error || 'Unknown error');
+                    progressBar.style.background = '#ef4444';
+                    
+                    scanBtn.disabled = false;
+                    scanBtn.innerHTML = '<span style="margin-right: 8px;">📨</span> Scan Gmail for Invoices';
+                }
+            };
+            
+            eventSource.onerror = function(event) {
+                console.error('Gmail scan SSE error:', event);
+                eventSource.close();
+                
+                // Fallback to regular POST if SSE fails
+                fallbackGmailScan(dateRange, maxEmails);
+            };
+            
+        } catch (error) {
+            console.error('Error starting Gmail scan:', error);
+            fallbackGmailScan(dateRange, maxEmails);
+        }
+    }
+    
+    // Fallback if SSE doesn't work
+    async function fallbackGmailScan(dateRange, maxEmails) {
+        const scanBtn = document.getElementById('scanGmailBtn');
+        const progressDiv = document.getElementById('gmailScanProgress');
+        const scanStatus = document.getElementById('gmailScanStatus');
+        const progressBar = document.getElementById('gmailScanProgressBar');
+        
+        scanStatus.textContent = 'Scanning emails (this may take a moment)...';
+        progressBar.style.width = '50%';
+        
+        try {
+            const response = await fetch('/api/ap-automation/gmail/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ days: parseInt(dateRange), limit: parseInt(maxEmails) })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                progressBar.style.width = '100%';
+                scanStatus.textContent = 'Scan complete!';
+                displayGmailScanResults(data.emails || []);
+            } else {
+                scanStatus.textContent = 'Error: ' + (data.error || 'Failed to scan emails');
+                progressBar.style.background = '#ef4444';
+            }
+        } catch (error) {
+            console.error('Error in fallback Gmail scan:', error);
+            scanStatus.textContent = 'Error scanning emails';
+        }
+        
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = '<span style="margin-right: 8px;">📨</span> Scan Gmail for Invoices';
+        
+        setTimeout(() => {
+            progressDiv.classList.add('hidden');
+        }, 2000);
+    }
+    
+    // Display Gmail scan results
+    function displayGmailScanResults(emails) {
+        const resultsDiv = document.getElementById('gmailScanResults');
+        const emailsList = document.getElementById('gmailEmailsList');
+        
+        if (!emails || emails.length === 0) {
+            emailsList.innerHTML = `
+                <div style="text-align: center; padding: 30px; color: #6b7280;">
+                    <p style="font-size: 40px; margin-bottom: 10px;">📭</p>
+                    <p>No invoice emails found in the selected date range</p>
+                </div>
+            `;
+            resultsDiv.classList.remove('hidden');
+            return;
+        }
+        
+        scannedGmailEmails = emails;
+        
+        emailsList.innerHTML = emails.map((email, index) => `
+            <div class="gmail-email-item" data-index="${index}" style="display: flex; align-items: center; gap: 12px; padding: 15px; background: white; border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 10px;">
+                <input type="checkbox" id="email-${index}" checked style="width: 18px; height: 18px; cursor: pointer;">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 500; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${escapeHtml(email.subject || 'No Subject')}
+                    </div>
+                    <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">
+                        From: ${escapeHtml(email.from || 'Unknown')} | ${email.date || ''}
+                    </div>
+                    ${email.attachments ? `<div style="font-size: 12px; color: #8b5cf6; margin-top: 4px;">📎 ${email.attachments.length} attachment(s)</div>` : ''}
+                </div>
+                <button onclick="importSingleGmailEmail(${index})" class="btn btn-outline" style="font-size: 12px; padding: 6px 12px;">
+                    Import
+                </button>
+            </div>
+        `).join('');
+        
+        resultsDiv.classList.remove('hidden');
+    }
+    
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Import a single email
+    async function importSingleGmailEmail(index) {
+        const email = scannedGmailEmails[index];
+        if (!email) return;
+        
+        const item = document.querySelector(`.gmail-email-item[data-index="${index}"]`);
+        const button = item.querySelector('button');
+        const originalText = button.innerHTML;
+        
+        button.innerHTML = '⏳';
+        button.disabled = true;
+        
+        try {
+            const response = await fetch('/api/ap-automation/gmail/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email_id: email.id,
+                    process_attachments: true 
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                button.innerHTML = '✅ Imported';
+                button.className = 'btn btn-success';
+                item.style.background = '#ecfdf5';
+                
+                // Reload invoices list
+                if (typeof loadInvoicesFromBigQuery === 'function') {
+                    loadInvoicesFromBigQuery();
+                }
+            } else {
+                button.innerHTML = '❌ Failed';
+                button.className = 'btn btn-danger';
+                item.style.background = '#fef2f2';
+            }
+        } catch (error) {
+            console.error('Error importing email:', error);
+            button.innerHTML = '❌ Error';
+            button.className = 'btn btn-danger';
+        }
+    }
+    
+    // Import all selected emails
+    async function importAllGmailInvoices() {
+        const importBtn = document.getElementById('importAllGmailBtn');
+        const checkboxes = document.querySelectorAll('#gmailEmailsList input[type="checkbox"]:checked');
+        
+        if (checkboxes.length === 0) {
+            alert('Please select at least one email to import');
+            return;
+        }
+        
+        importBtn.disabled = true;
+        importBtn.innerHTML = `⏳ Importing 0/${checkboxes.length}...`;
+        
+        let imported = 0;
+        let failed = 0;
+        
+        for (const checkbox of checkboxes) {
+            const index = parseInt(checkbox.id.replace('email-', ''));
+            const email = scannedGmailEmails[index];
+            
+            if (!email) continue;
+            
+            try {
+                const response = await fetch('/api/ap-automation/gmail/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        email_id: email.id,
+                        process_attachments: true 
+                    })
+                });
+                
+                const result = await response.json();
+                
+                const item = document.querySelector(`.gmail-email-item[data-index="${index}"]`);
+                const btn = item.querySelector('button');
+                
+                if (result.success) {
+                    imported++;
+                    btn.innerHTML = '✅';
+                    item.style.background = '#ecfdf5';
+                } else {
+                    failed++;
+                    btn.innerHTML = '❌';
+                    item.style.background = '#fef2f2';
+                }
+                
+                importBtn.innerHTML = `⏳ Importing ${imported + failed}/${checkboxes.length}...`;
+                
+            } catch (error) {
+                console.error('Error importing email:', error);
+                failed++;
+            }
+        }
+        
+        importBtn.disabled = false;
+        importBtn.innerHTML = `✅ Imported ${imported}/${checkboxes.length}`;
+        
+        // Show summary
+        if (failed > 0) {
+            alert(`Import complete!\n\n✅ Imported: ${imported}\n❌ Failed: ${failed}`);
+        }
+        
+        // Reload invoices list
+        if (typeof loadInvoicesFromBigQuery === 'function') {
+            setTimeout(() => loadInvoicesFromBigQuery(), 1000);
+        }
+        
+        // Reset button after a moment
+        setTimeout(() => {
+            importBtn.innerHTML = 'Import All Selected';
+        }, 3000);
+    }
+    
+    // Initialize Gmail status check when invoices tab is shown
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check Gmail status on page load if on invoices tab
+        const invoicesTab = document.getElementById('tab-invoices');
+        if (invoicesTab && !invoicesTab.classList.contains('hidden')) {
+            checkGmailStatus();
+        }
+        
+        // Also check when tab is clicked
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (this.dataset.tab === 'invoices') {
+                    checkGmailStatus();
+                }
+            });
+        });
+    });
     </script>
     
     <!-- Payouts AI Chat Widget - Self-contained, can be used on any page -->
