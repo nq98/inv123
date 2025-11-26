@@ -1925,6 +1925,118 @@
                     justify-content: center;
                 }
             }
+
+            /* Gmail Scan Prompt Styles */
+            .gmail-scan-prompt {
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                border: 1px solid #7dd3fc;
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+            }
+
+            .quick-action-buttons {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 8px;
+            }
+
+            .quick-action-btn {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #374151;
+            }
+
+            .quick-action-btn:hover {
+                background: #667eea;
+                color: white;
+                border-color: #667eea;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            }
+
+            /* Gmail Progress Terminal Styles */
+            .gmail-progress-terminal {
+                background: #1e1e2e;
+                border-radius: 10px;
+                padding: 14px 16px;
+                margin: 12px 0;
+                font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+                font-size: 12px;
+                border: 1px solid #313244;
+            }
+
+            .progress-line {
+                color: #cdd6f4;
+                padding: 4px 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .progress-line.success {
+                color: #a6e3a1;
+            }
+
+            .progress-line.error {
+                color: #f38ba8;
+            }
+
+            .progress-line.pending {
+                color: #f9e2af;
+                animation: pulse-text 1.5s infinite;
+            }
+
+            .progress-line.processing {
+                color: #89b4fa;
+            }
+
+            @keyframes pulse-text {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+
+            /* Gmail Results Summary */
+            .gmail-results-summary {
+                background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+                border: 1px solid #6ee7b7;
+                border-radius: 10px;
+                padding: 14px 16px;
+                margin: 12px 0;
+            }
+
+            .gmail-results-summary .summary-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-weight: 600;
+                color: #065f46;
+                margin-bottom: 8px;
+            }
+
+            .gmail-results-summary .summary-stats {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 16px;
+                font-size: 13px;
+                color: #047857;
+            }
+
+            .gmail-results-summary .stat-item {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
         `;
         document.head.appendChild(styles);
     }
