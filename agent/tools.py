@@ -1302,12 +1302,26 @@ def process_uploaded_invoice(user_email: str, file_path: str) -> str:
             if not isinstance(vendor_data, dict):
                 vendor_data = {}
             vendor_name = vendor_data.get('name', 'Unknown Vendor')
+            vendor_email = vendor_data.get('email', '')
+            vendor_address = vendor_data.get('address', '')
+            vendor_tax_id = vendor_data.get('taxId', '')
+            
             invoice_number = validated_data.get('invoiceNumber', 'N/A')
+            invoice_date = validated_data.get('documentDate', '')
+            due_date = validated_data.get('dueDate', '')
+            
             totals = validated_data.get('totals', {})
             if not isinstance(totals, dict):
                 totals = {}
             total = totals.get('total', 0)
+            subtotal = totals.get('subtotal', total)
+            tax = totals.get('tax', 0)
             currency = validated_data.get('currency', 'USD')
+            
+            line_items = validated_data.get('lineItems', [])
+            if not isinstance(line_items, list):
+                line_items = []
+            
             confidence_val = validated_data.get('extractionConfidence', 0)
             confidence = (confidence_val if isinstance(confidence_val, (int, float)) else 0) * 100
             
@@ -1315,36 +1329,72 @@ def process_uploaded_invoice(user_email: str, file_path: str) -> str:
             if not isinstance(vendor_match, dict):
                 vendor_match = {}
             matched_vendor_id = vendor_match.get('vendor_id')
+            matched_vendor_name = vendor_match.get('vendor_name', vendor_name)
             netsuite_id = vendor_match.get('netsuite_id')
+            match_confidence = vendor_match.get('confidence', 0)
+            match_reasoning = vendor_match.get('reasoning', '')
+            match_verdict = vendor_match.get('verdict', 'NEW_VENDOR')
+            
+            gcs_uri = result.get('gcs_uri', '')
+            pdf_url = result.get('pdf_url', '')
+            invoice_id = result.get('invoice_id', invoice_number)
             
             response = {
                 "success": True,
                 "user_email": user_email,
+                "invoice_id": invoice_id,
                 "extraction": {
                     "vendor_name": vendor_name,
+                    "vendor_email": vendor_email,
+                    "vendor_address": vendor_address,
+                    "vendor_tax_id": vendor_tax_id,
                     "invoice_number": invoice_number,
-                    "total": f"{currency} {total}",
-                    "date": validated_data.get('documentDate'),
-                    "confidence": f"{confidence:.0f}%"
+                    "invoice_date": invoice_date,
+                    "due_date": due_date,
+                    "subtotal": subtotal,
+                    "tax": tax,
+                    "total": total,
+                    "currency": currency,
+                    "confidence": round(confidence),
+                    "line_items": line_items[:10]
                 },
                 "vendor_match": {
+                    "verdict": match_verdict,
                     "matched": matched_vendor_id is not None,
                     "vendor_id": matched_vendor_id,
-                    "netsuite_id": netsuite_id
+                    "vendor_name": matched_vendor_name,
+                    "netsuite_id": netsuite_id,
+                    "confidence": match_confidence,
+                    "reasoning": match_reasoning
                 },
-                "gcs_uri": result.get('gcs_uri'),
-                "message": f"Successfully extracted Invoice #{invoice_number} from {vendor_name}. Total: {currency} {total}. Confidence: {confidence:.0f}%"
+                "pdf_url": pdf_url,
+                "gcs_uri": gcs_uri,
+                "next_steps": []
             }
             
-            if netsuite_id:
-                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Create a bill in NetSuite for invoice {invoice_number} from {vendor_name}\'); return false;">📝 Create Bill in NetSuite</a>'
-                response["message"] += f"\n\n✅ Vendor matched to NetSuite ID: {netsuite_id}"
-            elif matched_vendor_id:
-                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Sync vendor {vendor_name} to NetSuite\'); return false;">🔄 Sync Vendor to NetSuite</a>'
-                response["message"] += f"\n\n⚠️ Vendor found in database but not synced to NetSuite."
+            if match_verdict == 'MATCH' and netsuite_id:
+                response["next_steps"] = [
+                    {"action": "create_bill", "label": "Create Bill in NetSuite", "enabled": True},
+                    {"action": "view_vendor", "label": "View Vendor Profile", "enabled": True}
+                ]
+                response["proactive_message"] = f"I found a match! Vendor '{matched_vendor_name}' is already in NetSuite (ID: {netsuite_id}). Ready to create the bill?"
+            elif match_verdict == 'MATCH' and matched_vendor_id:
+                response["next_steps"] = [
+                    {"action": "sync_vendor", "label": "Sync Vendor to NetSuite", "enabled": True},
+                    {"action": "create_bill", "label": "Create Bill", "enabled": False, "reason": "Sync vendor first"}
+                ]
+                response["proactive_message"] = f"Matched to vendor '{matched_vendor_name}' in your database, but they're not synced to NetSuite yet. Want me to sync them first?"
+            elif match_verdict == 'AMBIGUOUS':
+                response["next_steps"] = [
+                    {"action": "select_vendor", "label": "Select from Candidates", "enabled": True},
+                    {"action": "create_vendor", "label": "Create New Vendor", "enabled": True}
+                ]
+                response["proactive_message"] = f"I found multiple potential matches. Please select the correct vendor or create a new one."
             else:
-                response["html_action"] = f'<a href="#" class="chat-action-btn" onclick="window.PayoutsAgentWidget.sendMessage(\'Create new vendor {vendor_name} and sync to NetSuite\'); return false;">➕ Create New Vendor</a>'
-                response["message"] += f"\n\n🆕 New vendor detected. Would you like to create it?"
+                response["next_steps"] = [
+                    {"action": "create_vendor", "label": "Create New Vendor", "enabled": True}
+                ]
+                response["proactive_message"] = f"'{vendor_name}' appears to be a new vendor. Would you like me to create them in your database and sync to NetSuite?"
             
             return json.dumps(response, indent=2, default=str)
         else:
