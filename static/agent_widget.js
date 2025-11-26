@@ -403,6 +403,30 @@
                 color: #667eea;
             }
 
+            /* Action buttons in chat messages (e.g., Connect Gmail) */
+            .chat-action-btn {
+                display: inline-block;
+                padding: 10px 20px;
+                margin: 8px 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white !important;
+                text-decoration: none;
+                border-radius: 20px;
+                font-size: 13px;
+                font-weight: 600;
+                transition: all 0.2s ease;
+                box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            }
+
+            .chat-action-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            }
+
+            .chat-action-btn:active {
+                transform: translateY(0);
+            }
+
             @media (max-width: 480px) {
                 #payouts-agent-widget {
                     bottom: 16px;
@@ -614,13 +638,29 @@
     }
 
     function formatContent(content) {
-        let formatted = content
+        const actionButtonPattern = /<a\s+href="([^"]+)"\s+target="_blank"\s+class="chat-action-btn">([^<]+)<\/a>/g;
+        const preservedButtons = [];
+        let buttonIndex = 0;
+        
+        let processed = content.replace(actionButtonPattern, (match, url, text) => {
+            const placeholder = `__ACTION_BTN_${buttonIndex}__`;
+            preservedButtons.push({ placeholder, url, text });
+            buttonIndex++;
+            return placeholder;
+        });
+        
+        let formatted = processed
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
         
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         formatted = formatted.replace(/\n/g, '<br>');
+        
+        preservedButtons.forEach(({ placeholder, url, text }) => {
+            const buttonHtml = `<a href="${url}" target="_blank" class="chat-action-btn" onclick="event.stopPropagation();">${text}</a>`;
+            formatted = formatted.replace(placeholder, buttonHtml);
+        });
         
         return formatted;
     }

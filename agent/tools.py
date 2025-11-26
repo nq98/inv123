@@ -1,5 +1,6 @@
 """
 LangGraph Tools - Wraps existing services for LLM control
+SEMANTIC AI FIRST: Always check database before external services
 """
 
 import os
@@ -23,10 +24,149 @@ vertex_search_service = VertexSearchService()
 vendor_matcher = VendorMatcher(bigquery_service, vertex_search_service, gemini_service)
 
 
+def _get_gmail_auth_url():
+    """Generate Gmail OAuth URL for use in chat"""
+    try:
+        domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+        if domain:
+            redirect_uri = f"https://{domain}/api/gmail/callback"
+        else:
+            redirect_uri = "http://localhost:5000/api/gmail/callback"
+        
+        auth_url, state = gmail_service.get_authorization_url(redirect_uri)
+        return auth_url, state
+    except Exception as e:
+        return None, str(e)
+
+
+def _check_gmail_connected():
+    """Check if Gmail is connected by looking at Flask session"""
+    try:
+        from flask import session
+        token = session.get('gmail_token')
+        return token is not None and 'token' in token
+    except:
+        return False
+
+
+@tool
+def check_gmail_status() -> str:
+    """
+    Check if Gmail is connected and get connection URL if needed.
+    Use this FIRST before trying to search Gmail.
+    
+    Returns:
+        JSON with connection status and auth URL if not connected
+    """
+    try:
+        is_connected = _check_gmail_connected()
+        
+        if is_connected:
+            return json.dumps({
+                "connected": True,
+                "message": "Gmail is connected and ready to use"
+            })
+        else:
+            auth_url, state = _get_gmail_auth_url()
+            if auth_url:
+                return json.dumps({
+                    "connected": False,
+                    "message": "Gmail is not connected",
+                    "action_required": True,
+                    "auth_url": auth_url,
+                    "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail</a>'
+                })
+            else:
+                return json.dumps({
+                    "connected": False,
+                    "error": "Could not generate Gmail authorization URL"
+                })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def search_database_first(query: str, search_type: str = "all") -> str:
+    """
+    SEMANTIC AI FIRST: Search the local database before using external services.
+    This tool searches BigQuery for existing invoices, vendors, and subscriptions.
+    
+    Use this BEFORE calling Gmail or other external services!
+    
+    Args:
+        query: Search term (vendor name, invoice number, email, etc.)
+        search_type: "vendors", "invoices", "subscriptions", or "all"
+    
+    Returns:
+        JSON with search results from database
+    """
+    try:
+        if not query or len(query.strip()) == 0:
+            return json.dumps({"error": "Invalid or empty search query"})
+        
+        search_pattern = f"%{query.strip().lower()}%"
+        
+        results = {
+            "searched_database": True,
+            "query": query,
+            "vendors": [],
+            "invoices": [],
+            "subscriptions": []
+        }
+        
+        if search_type in ["vendors", "all"]:
+            vendor_query = """
+            SELECT vendor_id, global_name, normalized_name, emails, domains, netsuite_internal_id, source_system
+            FROM `invoicereader-477008.vendors_ai.global_vendors`
+            WHERE LOWER(global_name) LIKE @search_pattern
+               OR LOWER(normalized_name) LIKE @search_pattern
+               OR LOWER(ARRAY_TO_STRING(emails, ',')) LIKE @search_pattern
+               OR LOWER(ARRAY_TO_STRING(domains, ',')) LIKE @search_pattern
+            LIMIT 10
+            """
+            try:
+                vendor_results = bigquery_service.query(vendor_query, {"search_pattern": search_pattern})
+                results["vendors"] = vendor_results
+            except Exception as e:
+                results["vendor_error"] = str(e)
+        
+        if search_type in ["subscriptions", "all"]:
+            sub_query = """
+            SELECT vendor_name, amount, currency, payment_date, subscription_type
+            FROM `invoicereader-477008.vendors_ai.subscription_events`
+            WHERE LOWER(vendor_name) LIKE @search_pattern
+            ORDER BY payment_date DESC
+            LIMIT 10
+            """
+            try:
+                sub_results = bigquery_service.query(sub_query, {"search_pattern": search_pattern})
+                results["subscriptions"] = sub_results
+            except Exception as e:
+                results["subscription_error"] = str(e)
+        
+        total_found = len(results["vendors"]) + len(results["invoices"]) + len(results["subscriptions"])
+        results["total_found"] = total_found
+        
+        if total_found > 0:
+            results["message"] = f"Found {total_found} results in the database. No external service needed."
+        else:
+            results["message"] = "No results found in database. You may need to search external services."
+            results["suggestions"] = [
+                "Use check_gmail_status to see if Gmail is connected",
+                "Use search_netsuite_vendor to search NetSuite directly"
+            ]
+        
+        return json.dumps(results, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 @tool
 def search_gmail_invoices(days: int = 30, max_results: int = 20, access_token: Optional[str] = None) -> str:
     """
     Search Gmail for invoice and receipt emails.
+    IMPORTANT: Check database first with search_database_first, then use check_gmail_status before this tool!
     
     Args:
         days: Number of days to look back (default: 30)
@@ -42,7 +182,16 @@ def search_gmail_invoices(days: int = 30, max_results: int = 20, access_token: O
         token_to_use = access_token or (stored_token.get('token') if stored_token else None)
         
         if not token_to_use:
-            return json.dumps({"error": "Gmail not connected. Please connect Gmail first via the web interface."})
+            auth_url, state = _get_gmail_auth_url()
+            if auth_url:
+                return json.dumps({
+                    "error": "Gmail not connected",
+                    "action_required": True,
+                    "message": "I need to connect to Gmail to search your emails.",
+                    "auth_url": auth_url,
+                    "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail Now</a>'
+                })
+            return json.dumps({"error": "Gmail not connected and could not generate auth URL"})
         
         service = gmail_service.build_service(stored_token or {'token': token_to_use})
         if not service:
@@ -342,8 +491,10 @@ def create_netsuite_vendor(
 
 
 def get_all_tools():
-    """Return list of all available tools for the agent"""
+    """Return list of all available tools for the agent - SEMANTIC AI FIRST ORDER"""
     return [
+        search_database_first,
+        check_gmail_status,
         search_gmail_invoices,
         create_netsuite_bill,
         search_netsuite_vendor,
