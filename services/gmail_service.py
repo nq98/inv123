@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import re
+import logging
 import requests
 from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
@@ -9,8 +10,16 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from config import config
 
+logger = logging.getLogger(__name__)
+
+
 class GmailService:
-    """Service for Gmail OAuth and invoice email extraction"""
+    """Service for Gmail OAuth and invoice email extraction
+    
+    Supports both single-tenant (session-based) and multi-tenant (per-user) modes:
+    - When owner_email is provided, loads credentials from user_integrations table
+    - When owner_email is None, uses session/environment-based credentials (backward compatible)
+    """
     
     SCOPES = [
         'https://www.googleapis.com/auth/gmail.readonly',
@@ -19,12 +28,88 @@ class GmailService:
         'openid'
     ]
     
-    def __init__(self):
+    def __init__(self, owner_email: str = None):
+        """
+        Initialize Gmail service
+        
+        Args:
+            owner_email: Optional user email for multi-tenant mode. 
+                        When provided, loads credentials from user_integrations table.
+                        When None, uses session-based credentials (backward compatible).
+        """
         self.client_id = os.getenv('GMAIL_CLIENT_ID')
         self.client_secret = os.getenv('GMAIL_CLIENT_SECRET')
+        self.owner_email = owner_email
+        self._cached_credentials = None
+        self._user_integrations_service = None
         
         if not self.client_id or not self.client_secret:
             raise ValueError("GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET are required")
+        
+        if self.owner_email:
+            logger.info(f"GmailService initialized in multi-tenant mode for: {owner_email}")
+    
+    def _get_user_integrations_service(self):
+        """Lazy load UserIntegrationsService to avoid circular imports"""
+        if self._user_integrations_service is None:
+            from services.user_integrations_service import UserIntegrationsService
+            self._user_integrations_service = UserIntegrationsService()
+        return self._user_integrations_service
+    
+    def get_credentials_for_user(self) -> dict:
+        """
+        Get Gmail credentials for the configured owner_email from BigQuery
+        
+        Returns:
+            Dict with credentials or None if not found
+        """
+        if not self.owner_email:
+            return None
+        
+        try:
+            service = self._get_user_integrations_service()
+            return service.get_gmail_credentials(self.owner_email)
+        except Exception as e:
+            logger.error(f"Error getting Gmail credentials for {self.owner_email}: {e}")
+            return None
+    
+    def build_service_for_user(self):
+        """
+        Build Gmail API service for the configured owner_email
+        
+        Returns:
+            Gmail API service or None if credentials not found
+        """
+        if not self.owner_email:
+            logger.warning("Cannot build service for user: owner_email not set")
+            return None
+        
+        credentials_dict = self.get_credentials_for_user()
+        if not credentials_dict:
+            logger.warning(f"No Gmail credentials found for {self.owner_email}")
+            return None
+        
+        try:
+            return self.build_service(credentials_dict)
+        except Exception as e:
+            logger.error(f"Error building Gmail service for {self.owner_email}: {e}")
+            service = self._get_user_integrations_service()
+            refreshed = service.refresh_gmail_token(self.owner_email)
+            if refreshed:
+                return self.build_service(refreshed)
+            return None
+    
+    def is_connected_for_user(self) -> bool:
+        """Check if Gmail is connected for the configured owner_email"""
+        if not self.owner_email:
+            return False
+        
+        try:
+            service = self._get_user_integrations_service()
+            return service.is_gmail_connected(self.owner_email)
+        except Exception as e:
+            logger.error(f"Error checking Gmail connection for {self.owner_email}: {e}")
+            return False
     
     def _get_redirect_uri(self):
         """Get dynamic redirect URI based on environment (dev vs production)"""

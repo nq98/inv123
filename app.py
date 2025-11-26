@@ -2772,12 +2772,53 @@ def gmail_callback():
         redirect_uri = session.get('oauth_redirect_uri') or (request.host_url.rstrip('/') + '/api/ap-automation/gmail/callback')
         credentials = gmail_service.exchange_code_for_token(code, redirect_uri=redirect_uri)
         
-        # Store credentials securely server-side
+        # Store credentials securely server-side (backward compatible session storage)
         token_storage = get_token_storage()
         session_token = token_storage.store_credentials(credentials)
         
         # Only store opaque session token in cookie (NOT the actual credentials)
         session['gmail_session_token'] = session_token
+        
+        # For multi-tenant: Also store in user_integrations table if user is logged in
+        owner_email = None
+        if current_user.is_authenticated:
+            owner_email = getattr(current_user, 'email', None)
+        
+        if owner_email:
+            try:
+                from services.user_integrations_service import UserIntegrationsService
+                user_integrations = UserIntegrationsService()
+                
+                # Get connected Gmail email address
+                from google.oauth2.credentials import Credentials as OAuthCredentials
+                from googleapiclient.discovery import build
+                
+                creds = OAuthCredentials(
+                    token=credentials.get('token'),
+                    refresh_token=credentials.get('refresh_token'),
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=os.getenv('GMAIL_CLIENT_ID'),
+                    client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+                )
+                
+                gmail_api = build('gmail', 'v1', credentials=creds)
+                profile = gmail_api.users().getProfile(userId='me').execute()
+                connected_email = profile.get('emailAddress')
+                
+                # Store in user_integrations table with additional metadata
+                user_integrations.store_gmail_credentials(owner_email, {
+                    'token': credentials.get('token'),
+                    'refresh_token': credentials.get('refresh_token'),
+                    'token_uri': credentials.get('token_uri', 'https://oauth2.googleapis.com/token'),
+                    'client_id': os.getenv('GMAIL_CLIENT_ID'),
+                    'client_secret': os.getenv('GMAIL_CLIENT_SECRET'),
+                    'scopes': credentials.get('scopes', []),
+                    'expiry': credentials.get('expiry'),
+                    'connected_email': connected_email
+                })
+                print(f"✓ Stored Gmail credentials for user {owner_email} (connected: {connected_email})")
+            except Exception as e:
+                print(f"⚠️ Could not store Gmail credentials in user_integrations: {e}")
         
         return redirect('/?gmail_connected=true')
     except Exception as e:
@@ -8724,15 +8765,16 @@ def get_subscription_analytics():
 # ========== LANGGRAPH AGENT CHAT ENDPOINT ==========
 
 @app.route('/api/agent/chat', methods=['POST'])
+@login_required
 def agent_chat():
     """
     Chat with the LangGraph AI Agent that controls Gmail, NetSuite, and BigQuery services.
     Supports both JSON and multipart/form-data (for file uploads).
+    Requires authentication - filters data by logged-in user's email.
     
     Request body (JSON):
         {
             "message": "Your question or command",
-            "user_id": "optional user identifier",
             "thread_id": "session thread ID"
         }
     
@@ -8747,6 +8789,7 @@ def agent_chat():
             "response": "Agent's response text",
             "tools_used": ["list", "of", "tools"],
             "user_id": "user identifier used",
+            "user_email": "logged in user email",
             "thread_id": "session thread ID"
         }
     """
@@ -8755,11 +8798,13 @@ def agent_chat():
         import uuid
         from werkzeug.utils import secure_filename
         
+        user_email = current_user.email
+        
         file_context = None
         
         if request.content_type and 'multipart/form-data' in request.content_type:
             message = request.form.get('message', '')
-            user_id = request.form.get('user_id', session.get('user_id', 'anonymous'))
+            user_id = current_user.id
             thread_id = request.form.get('thread_id')
             
             if 'file' in request.files:
@@ -8798,7 +8843,7 @@ def agent_chat():
                 }), 400
             
             message = data.get('message', '')
-            user_id = data.get('user_id', session.get('user_id', 'anonymous'))
+            user_id = current_user.id
             thread_id = data.get('thread_id')
         
         if not message and not file_context:
@@ -8819,15 +8864,16 @@ def agent_chat():
                 else:
                     message = f"I've uploaded a vendor CSV file: {file_context['original_filename']}. Please analyze and import the vendors.\n\nFile path: {file_context['file_path']}"
         
-        print(f"🤖 Agent chat from {user_id} (thread: {thread_id}): {message[:100]}...")
+        print(f"🤖 Agent chat from {user_email} (thread: {thread_id}): {message[:100]}...")
         
-        result = run_agent(message, user_id, thread_id=thread_id)
+        result = run_agent(message, user_id, thread_id=thread_id, user_email=user_email)
         
         return jsonify({
             'success': True,
             'response': result.get('response', ''),
             'tools_used': result.get('tools_used', []),
             'user_id': user_id,
+            'user_email': user_email,
             'thread_id': result.get('thread_id'),
             'file_processed': file_context is not None
         })

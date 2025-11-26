@@ -1,6 +1,10 @@
 """
 NetSuite REST API Service with OAuth 1.0a Authentication
 Handles vendor and invoice synchronization with NetSuite
+
+Supports multi-tenant mode:
+- When owner_email is provided, loads credentials from user_integrations table
+- When owner_email is None, uses environment variables (backward compatible)
 """
 
 import os
@@ -20,7 +24,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from services.bigquery_service import BigQueryService
 
-# Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -29,9 +32,13 @@ class NetSuiteService:
     """
     NetSuite REST API service with OAuth 1.0a authentication
     Handles vendor and vendor bill operations with retry logic
+    
+    Supports multi-tenant mode:
+    - When owner_email is provided to load_credentials_from_user(), 
+      credentials are loaded from the user_integrations table
+    - Default mode uses environment variables for backward compatibility
     """
     
-    # Currency code to NetSuite ID mapping
     CURRENCY_MAP = {
         'USD': '1',
         'EUR': '2',
@@ -45,26 +52,37 @@ class NetSuiteService:
         'SGD': '10'
     }
     
-    # Default subsidiary ID (configurable via environment)
     DEFAULT_SUBSIDIARY_ID = '2'
-    
-    # Default tax code ID (configurable via environment)
     DEFAULT_TAX_CODE_ID = '18'
-    
-    # Default expense account ID (configurable via environment)
     DEFAULT_EXPENSE_ACCOUNT_ID = '351'
     
-    def __init__(self):
-        """Initialize NetSuite service with OAuth 1.0a credentials from environment"""
+    def __init__(self, owner_email: str = None):
+        """
+        Initialize NetSuite service with OAuth 1.0a credentials
         
-        # Load credentials from environment
+        Args:
+            owner_email: Optional user email for multi-tenant mode.
+                        When provided, attempts to load credentials from user_integrations table.
+                        When None, uses environment variables (backward compatible).
+        """
+        self.owner_email = owner_email
+        self._user_integrations_service = None
+        
         self.account_id = os.getenv('NETSUITE_ACCOUNT_ID')
         self.consumer_key = os.getenv('NETSUITE_CONSUMER_KEY')
         self.consumer_secret = os.getenv('NETSUITE_CONSUMER_SECRET')
         self.token_id = os.getenv('NETSUITE_TOKEN_ID')
         self.token_secret = os.getenv('NETSUITE_TOKEN_SECRET')
         
-        # Validate credentials
+        self.subsidiary_id = os.getenv('NETSUITE_SUBSIDIARY_ID', self.DEFAULT_SUBSIDIARY_ID)
+        self.tax_code_id = os.getenv('NETSUITE_TAX_CODE_ID', self.DEFAULT_TAX_CODE_ID)
+        self.expense_account_id = os.getenv('NETSUITE_EXPENSE_ACCOUNT_ID', self.DEFAULT_EXPENSE_ACCOUNT_ID)
+        
+        if owner_email:
+            loaded = self.load_credentials_from_user(owner_email)
+            if loaded:
+                logger.info(f"NetSuite service initialized in multi-tenant mode for: {owner_email}")
+        
         if not all([self.account_id, self.consumer_key, self.consumer_secret, 
                    self.token_id, self.token_secret]):
             logger.warning("NetSuite credentials not fully configured. Service will be disabled.")
@@ -74,29 +92,119 @@ class NetSuiteService:
         
         self.enabled = True
         
-        # Replace underscores with hyphens and convert to lowercase for URL
         self.account_id_url = self.account_id.replace('_', '-').lower()
         
-        # Build base URL
         self.base_url = f"https://{self.account_id_url}.suitetalk.api.netsuite.com/services/rest"
         
-        # Store default headers for requests
         self.default_headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'prefer': 'transient'  # Don't persist failed requests
+            'prefer': 'transient'
         }
         
-        # Initialize BigQuery service for logging
         try:
             self.bigquery = BigQueryService()
-            # Ensure sync log table exists
             self.bigquery.ensure_netsuite_sync_log_table()
         except Exception as e:
             logger.error(f"Failed to initialize BigQuery logging: {e}")
             self.bigquery = None
         
         logger.info(f"NetSuite service initialized for account: {self.account_id}")
+    
+    def _get_user_integrations_service(self):
+        """Lazy load UserIntegrationsService to avoid circular imports"""
+        if self._user_integrations_service is None:
+            from services.user_integrations_service import UserIntegrationsService
+            self._user_integrations_service = UserIntegrationsService()
+        return self._user_integrations_service
+    
+    def load_credentials_from_user(self, owner_email: str) -> bool:
+        """
+        Load NetSuite credentials from user_integrations table
+        
+        Args:
+            owner_email: User's email address
+            
+        Returns:
+            True if credentials were loaded successfully, False otherwise
+        """
+        try:
+            service = self._get_user_integrations_service()
+            credentials = service.get_netsuite_credentials(owner_email)
+            
+            if not credentials:
+                logger.warning(f"No NetSuite credentials found for {owner_email}")
+                return False
+            
+            self.account_id = credentials.get('account_id')
+            self.consumer_key = credentials.get('consumer_key')
+            self.consumer_secret = credentials.get('consumer_secret')
+            self.token_id = credentials.get('token_id')
+            self.token_secret = credentials.get('token_secret')
+            
+            if credentials.get('subsidiary_id'):
+                self.subsidiary_id = credentials.get('subsidiary_id')
+            if credentials.get('tax_code_id'):
+                self.tax_code_id = credentials.get('tax_code_id')
+            if credentials.get('expense_account_id'):
+                self.expense_account_id = credentials.get('expense_account_id')
+            
+            self.owner_email = owner_email
+            
+            if all([self.account_id, self.consumer_key, self.consumer_secret,
+                   self.token_id, self.token_secret]):
+                self.account_id_url = self.account_id.replace('_', '-').lower()
+                self.base_url = f"https://{self.account_id_url}.suitetalk.api.netsuite.com/services/rest"
+                self.enabled = True
+                logger.info(f"✓ Loaded NetSuite credentials for {owner_email}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error loading NetSuite credentials for {owner_email}: {e}")
+            return False
+    
+    def is_connected_for_user(self, owner_email: str = None) -> bool:
+        """
+        Check if NetSuite is connected for a user
+        
+        Args:
+            owner_email: User's email address (defaults to self.owner_email)
+            
+        Returns:
+            True if connected, False otherwise
+        """
+        email = owner_email or self.owner_email
+        if not email:
+            return self.enabled
+        
+        try:
+            service = self._get_user_integrations_service()
+            return service.is_netsuite_connected(email)
+        except Exception as e:
+            logger.error(f"Error checking NetSuite connection for {email}: {e}")
+            return False
+    
+    def store_credentials_for_user(self, owner_email: str, credentials: Dict) -> bool:
+        """
+        Store NetSuite credentials for a user in user_integrations table
+        
+        Args:
+            owner_email: User's email address
+            credentials: Dict with account_id, consumer_key, consumer_secret,
+                        token_id, token_secret, and optional subsidiary_id,
+                        tax_code_id, expense_account_id
+            
+        Returns:
+            True if stored successfully
+        """
+        try:
+            service = self._get_user_integrations_service()
+            return service.store_netsuite_credentials(owner_email, credentials)
+        except Exception as e:
+            logger.error(f"Error storing NetSuite credentials for {owner_email}: {e}")
+            return False
     
     def track_event(self, entity_type: str, entity_id: str = None, netsuite_id: str = None,
                     action: str = None, request_data: Dict = None, response_data: Dict = None,

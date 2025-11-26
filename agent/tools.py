@@ -1,6 +1,7 @@
 """
 LangGraph Tools - Wraps existing services for LLM control
 SEMANTIC AI FIRST: Always check database before external services
+MULTI-TENANT: All tools filter by owner_email for data isolation
 """
 
 import os
@@ -43,10 +44,13 @@ def _check_gmail_connected():
 
 
 @tool
-def check_gmail_status() -> str:
+def check_gmail_status(user_email: str) -> str:
     """
     Check if Gmail is connected and get connection URL if needed.
     Use this FIRST before trying to search Gmail.
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
     
     Returns:
         JSON with connection status and auth URL if not connected
@@ -57,7 +61,8 @@ def check_gmail_status() -> str:
         if is_connected:
             return json.dumps({
                 "connected": True,
-                "message": "Gmail is connected and ready to use"
+                "message": "Gmail is connected and ready to use",
+                "user_email": user_email
             })
         else:
             connect_url = _get_gmail_connect_url()
@@ -73,7 +78,7 @@ def check_gmail_status() -> str:
 
 
 @tool
-def search_database_first(query: str, search_type: str = "all") -> str:
+def search_database_first(user_email: str, query: str, search_type: str = "all") -> str:
     """
     SEMANTIC AI FIRST: Search the local database before using external services.
     This tool searches BigQuery for existing invoices, vendors, and subscriptions.
@@ -81,6 +86,7 @@ def search_database_first(query: str, search_type: str = "all") -> str:
     Use this BEFORE calling Gmail or other external services!
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         query: Search term (vendor name, invoice number, email, etc.)
         search_type: "vendors", "invoices", "subscriptions", or "all"
     
@@ -91,11 +97,15 @@ def search_database_first(query: str, search_type: str = "all") -> str:
         if not query or len(query.strip()) == 0:
             return json.dumps({"error": "Invalid or empty search query"})
         
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         search_pattern = f"%{query.strip().lower()}%"
         
         results = {
             "searched_database": True,
             "query": query,
+            "user_email": user_email,
             "vendors": [],
             "invoices": [],
             "subscriptions": []
@@ -105,14 +115,18 @@ def search_database_first(query: str, search_type: str = "all") -> str:
             vendor_query = """
             SELECT vendor_id, global_name, normalized_name, emails, domains, netsuite_internal_id, source_system
             FROM `invoicereader-477008.vendors_ai.global_vendors`
-            WHERE LOWER(global_name) LIKE @search_pattern
+            WHERE owner_email = @user_email
+              AND (LOWER(global_name) LIKE @search_pattern
                OR LOWER(normalized_name) LIKE @search_pattern
                OR LOWER(ARRAY_TO_STRING(emails, ',')) LIKE @search_pattern
-               OR LOWER(ARRAY_TO_STRING(domains, ',')) LIKE @search_pattern
+               OR LOWER(ARRAY_TO_STRING(domains, ',')) LIKE @search_pattern)
             LIMIT 10
             """
             try:
-                vendor_results = bigquery_service.query(vendor_query, {"search_pattern": search_pattern})
+                vendor_results = bigquery_service.query(vendor_query, {
+                    "search_pattern": search_pattern,
+                    "user_email": user_email
+                })
                 results["vendors"] = vendor_results
             except Exception as e:
                 results["vendor_error"] = str(e)
@@ -121,12 +135,16 @@ def search_database_first(query: str, search_type: str = "all") -> str:
             sub_query = """
             SELECT vendor_name, amount, currency, payment_date, subscription_type
             FROM `invoicereader-477008.vendors_ai.subscription_events`
-            WHERE LOWER(vendor_name) LIKE @search_pattern
+            WHERE owner_email = @user_email
+              AND LOWER(vendor_name) LIKE @search_pattern
             ORDER BY payment_date DESC
             LIMIT 10
             """
             try:
-                sub_results = bigquery_service.query(sub_query, {"search_pattern": search_pattern})
+                sub_results = bigquery_service.query(sub_query, {
+                    "search_pattern": search_pattern,
+                    "user_email": user_email
+                })
                 results["subscriptions"] = sub_results
             except Exception as e:
                 results["subscription_error"] = str(e)
@@ -150,7 +168,7 @@ def search_database_first(query: str, search_type: str = "all") -> str:
 
 
 @tool
-def get_top_vendors_by_spend(limit: int = 10) -> str:
+def get_top_vendors_by_spend(user_email: str, limit: int = 10) -> str:
     """
     Get the top vendors by total payment amount from the INVOICES table.
     Use this for questions about "top vendors", "who did I pay most", "spending analysis".
@@ -159,12 +177,16 @@ def get_top_vendors_by_spend(limit: int = 10) -> str:
     NOT the netsuite_events table (which is just API logs).
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         limit: Number of top vendors to return (default: 10)
     
     Returns:
         JSON with top vendors ranked by total spend
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         query = """
         SELECT 
             vendor_name,
@@ -173,13 +195,15 @@ def get_top_vendors_by_spend(limit: int = 10) -> str:
             MAX(invoice_date) as last_invoice_date,
             STRING_AGG(DISTINCT currency, ', ') as currencies
         FROM `invoicereader-477008.vendors_ai.invoices`
-        WHERE vendor_name IS NOT NULL AND amount IS NOT NULL
+        WHERE owner_email = @user_email
+          AND vendor_name IS NOT NULL 
+          AND amount IS NOT NULL
         GROUP BY vendor_name
         ORDER BY total_spend DESC
         LIMIT @limit
         """
         
-        results = bigquery_service.query(query, {"limit": limit})
+        results = bigquery_service.query(query, {"limit": limit, "user_email": user_email})
         
         if not results:
             return json.dumps({
@@ -213,12 +237,13 @@ def get_top_vendors_by_spend(limit: int = 10) -> str:
 
 
 @tool
-def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Optional[str] = None) -> str:
+def search_gmail_invoices(user_email: str, days: int = 7, max_results: int = 20, access_token: Optional[str] = None) -> str:
     """
     Search Gmail for invoice and receipt emails with ROBUST date handling.
     IMPORTANT: Check database first with search_database_first, then use check_gmail_status before this tool!
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         days: Number of days to look back (default: 7 for better reliability)
         max_results: Maximum number of emails to return (default: 20)
         access_token: Optional Gmail access token (uses stored token if not provided)
@@ -228,25 +253,21 @@ def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Op
     """
     from datetime import datetime, timedelta
     
+    after_date = None
+    
     try:
         from flask import session
         stored_token = session.get('gmail_token') if not access_token else None
         token_to_use = access_token or (stored_token.get('token') if stored_token else None)
         
         if not token_to_use:
-            auth_url, state = _get_gmail_auth_url()
-            if auth_url:
-                return json.dumps({
-                    "error": "Gmail not connected",
-                    "action_required": True,
-                    "message": "I need to connect to Gmail to search your emails.",
-                    "auth_url": auth_url,
-                    "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail Now</a>'
-                })
+            auth_url = _get_gmail_connect_url()
             return json.dumps({
-                "error": "Gmail not connected and could not generate auth URL",
-                "error_type": "AUTH_URL_GENERATION_FAILED",
-                "suggestion": "Try refreshing the page and connecting again"
+                "error": "Gmail not connected",
+                "action_required": True,
+                "message": "I need to connect to Gmail to search your emails.",
+                "auth_url": auth_url,
+                "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail Now</a>'
             })
         
         try:
@@ -273,7 +294,7 @@ def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Op
                 days = 365
             
             after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
-            print(f"📧 Gmail search: Looking for invoices after {after_date} (last {days} days)")
+            print(f"📧 Gmail search for {user_email}: Looking for invoices after {after_date} (last {days} days)")
             
             messages = gmail_service.search_invoice_emails(service, max_results=max_results, days=days)
             
@@ -298,7 +319,7 @@ def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Op
                 return json.dumps({
                     "error": f"Gmail search failed: {error_str}",
                     "error_type": "SEARCH_FAILED",
-                    "query_info": f"Searched for invoices after {after_date}",
+                    "query_info": f"Searched for invoices after {after_date or 'unknown'}",
                     "suggestion": "Try again with a shorter time range (e.g., last 7 days)"
                 })
         
@@ -334,6 +355,7 @@ def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Op
             "success": True,
             "total_found": len(messages),
             "emails": results,
+            "user_email": user_email,
             "search_info": {
                 "days_searched": days,
                 "date_range": f"after:{after_date}",
@@ -353,6 +375,7 @@ def search_gmail_invoices(days: int = 7, max_results: int = 20, access_token: Op
 
 @tool
 def create_netsuite_bill(
+    user_email: str,
     vendor_netsuite_id: str,
     invoice_number: str,
     amount: float,
@@ -363,6 +386,7 @@ def create_netsuite_bill(
     Create a vendor bill in NetSuite.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         vendor_netsuite_id: The NetSuite internal ID of the vendor
         invoice_number: The invoice number from the invoice document
         amount: The total amount of the invoice
@@ -381,6 +405,7 @@ def create_netsuite_bill(
             'total_amount': amount,
             'currency': currency,
             'memo': memo or f"Created by AI Agent - Invoice {invoice_number}",
+            'owner_email': user_email,
             'line_items': [{
                 'description': f"Invoice {invoice_number}",
                 'amount': amount,
@@ -394,7 +419,8 @@ def create_netsuite_bill(
             return json.dumps({
                 "success": True,
                 "netsuite_bill_id": result.get('id'),
-                "message": f"Successfully created bill for ${amount} {currency}"
+                "message": f"Successfully created bill for ${amount} {currency}",
+                "user_email": user_email
             }, indent=2)
         else:
             return json.dumps({"success": False, "error": "Failed to create bill in NetSuite"})
@@ -405,6 +431,7 @@ def create_netsuite_bill(
 
 @tool
 def search_netsuite_vendor(
+    user_email: str,
     name: Optional[str] = None,
     email: Optional[str] = None,
     tax_id: Optional[str] = None
@@ -413,6 +440,7 @@ def search_netsuite_vendor(
     Search for a vendor in NetSuite by name, email, or tax ID.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         name: Vendor company name to search for
         email: Vendor email address to search for
         tax_id: Vendor tax/VAT ID to search for
@@ -422,9 +450,9 @@ def search_netsuite_vendor(
     """
     try:
         result = netsuite_service.lookup_vendor_integrated(
-            name=name,
-            email=email,
-            tax_id=tax_id
+            name=name or "",
+            email=email or "",
+            tax_id=tax_id or ""
         )
         
         if result:
@@ -435,7 +463,8 @@ def search_netsuite_vendor(
                     "name": result.get('companyName'),
                     "email": result.get('email'),
                     "tax_id": result.get('vatRegNumber')
-                }
+                },
+                "user_email": user_email
             }, indent=2)
         else:
             return json.dumps({
@@ -448,11 +477,12 @@ def search_netsuite_vendor(
 
 
 @tool
-def get_bill_status(invoice_id: str) -> str:
+def get_bill_status(user_email: str, invoice_id: str) -> str:
     """
     Get the status of a bill in NetSuite by invoice ID.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         invoice_id: The invoice ID to check status for
     
     Returns:
@@ -460,6 +490,7 @@ def get_bill_status(invoice_id: str) -> str:
     """
     try:
         result = netsuite_service.get_bill_status(invoice_id)
+        result['user_email'] = user_email
         return json.dumps(result, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -467,6 +498,7 @@ def get_bill_status(invoice_id: str) -> str:
 
 @tool
 def match_vendor_to_database(
+    user_email: str,
     vendor_name: str,
     tax_id: Optional[str] = None,
     email_domain: Optional[str] = None,
@@ -478,6 +510,7 @@ def match_vendor_to_database(
     This uses semantic matching with RAG and Gemini reasoning.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         vendor_name: The vendor name from an invoice
         tax_id: Optional tax/VAT registration number
         email_domain: Optional email domain (e.g., @aws.com)
@@ -493,7 +526,8 @@ def match_vendor_to_database(
             'tax_id': tax_id,
             'email_domain': email_domain,
             'address': address,
-            'country': country
+            'country': country,
+            'owner_email': user_email
         }
         
         result = vendor_matcher.match_vendor(invoice_data)
@@ -504,7 +538,8 @@ def match_vendor_to_database(
             "confidence": result.get('confidence'),
             "reasoning": result.get('reasoning'),
             "method": result.get('method'),
-            "risk_analysis": result.get('risk_analysis')
+            "risk_analysis": result.get('risk_analysis'),
+            "user_email": user_email
         }, indent=2)
         
     except Exception as e:
@@ -512,35 +547,83 @@ def match_vendor_to_database(
 
 
 @tool
-def run_bigquery(sql_query: str) -> str:
+def run_bigquery(user_email: str, sql_query: str) -> str:
     """
     Execute a SQL query on BigQuery to analyze vendor data, subscriptions, or invoices.
     
     IMPORTANT: Only SELECT queries are allowed. No INSERT, UPDATE, DELETE, or DROP.
+    NOTE: All queries are automatically filtered by owner_email for multi-tenant security.
     
     Available tables:
     - vendors_ai.global_vendors: Master vendor database
     - vendors_ai.subscription_vendors: SaaS subscription vendors
     - vendors_ai.subscription_events: Subscription payment events
     - vendors_ai.netsuite_events: NetSuite sync events
+    - vendors_ai.invoices: Invoice records
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         sql_query: The SQL SELECT query to execute
     
     Returns:
         JSON string with query results or error
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         sql_upper = sql_query.upper().strip()
         if any(keyword in sql_upper for keyword in ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER']):
             return json.dumps({"error": "Only SELECT queries are allowed for safety"})
         
-        results = bigquery_service.query(sql_query)
+        tables_to_filter = [
+            'global_vendors',
+            'subscription_vendors', 
+            'subscription_events',
+            'netsuite_events',
+            'invoices',
+            'netsuite_sync_log'
+        ]
+        
+        modified_query = sql_query
+        for table in tables_to_filter:
+            if table.lower() in sql_query.lower():
+                if 'WHERE' in sql_upper:
+                    modified_query = modified_query.replace(
+                        'WHERE', 
+                        f'WHERE owner_email = "{user_email}" AND ', 
+                        1
+                    )
+                else:
+                    if 'GROUP BY' in sql_upper:
+                        modified_query = modified_query.replace(
+                            'GROUP BY',
+                            f'WHERE owner_email = "{user_email}" GROUP BY',
+                            1
+                        )
+                    elif 'ORDER BY' in sql_upper:
+                        modified_query = modified_query.replace(
+                            'ORDER BY',
+                            f'WHERE owner_email = "{user_email}" ORDER BY',
+                            1
+                        )
+                    elif 'LIMIT' in sql_upper:
+                        modified_query = modified_query.replace(
+                            'LIMIT',
+                            f'WHERE owner_email = "{user_email}" LIMIT',
+                            1
+                        )
+                    else:
+                        modified_query = modified_query.rstrip(';') + f' WHERE owner_email = "{user_email}"'
+                break
+        
+        results = bigquery_service.query(modified_query)
         
         return json.dumps({
             "success": True,
             "row_count": len(results),
-            "results": results[:100]
+            "results": results[:100],
+            "user_email": user_email
         }, indent=2, default=str)
         
     except Exception as e:
@@ -548,14 +631,20 @@ def run_bigquery(sql_query: str) -> str:
 
 
 @tool
-def get_subscription_summary() -> str:
+def get_subscription_summary(user_email: str) -> str:
     """
     Get a summary of all active SaaS subscriptions from Subscription Pulse.
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant filtering
     
     Returns:
         JSON string with subscription summary including count, total spend, and top vendors
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         query = """
         SELECT 
             vendor_name,
@@ -564,12 +653,13 @@ def get_subscription_summary() -> str:
             MAX(payment_date) as last_payment,
             MIN(payment_date) as first_payment
         FROM `invoicereader-477008.vendors_ai.subscription_events`
+        WHERE owner_email = @user_email
         GROUP BY vendor_name
         ORDER BY total_spend DESC
         LIMIT 20
         """
         
-        results = bigquery_service.query(query)
+        results = bigquery_service.query(query, {"user_email": user_email})
         
         total_spend = sum(r.get('total_spend', 0) for r in results)
         
@@ -577,7 +667,8 @@ def get_subscription_summary() -> str:
             "success": True,
             "vendor_count": len(results),
             "total_annual_spend": total_spend,
-            "top_subscriptions": results
+            "top_subscriptions": results,
+            "user_email": user_email
         }, indent=2, default=str)
         
     except Exception as e:
@@ -586,6 +677,7 @@ def get_subscription_summary() -> str:
 
 @tool 
 def create_netsuite_vendor(
+    user_email: str,
     company_name: str,
     email: Optional[str] = None,
     tax_id: Optional[str] = None,
@@ -595,6 +687,7 @@ def create_netsuite_vendor(
     Create a new vendor in NetSuite.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         company_name: The vendor company name
         email: Vendor email address
         tax_id: Tax/VAT registration number
@@ -608,10 +701,12 @@ def create_netsuite_vendor(
             'name': company_name,
             'email': email,
             'tax_id': tax_id,
-            'phone': phone
+            'phone': phone,
+            'owner_email': user_email
         }
         
         result = netsuite_service.create_vendor(vendor_data)
+        result['user_email'] = user_email
         return json.dumps(result, indent=2, default=str)
         
     except Exception as e:
@@ -621,12 +716,13 @@ def create_netsuite_vendor(
 # ========== OMNISCIENT TOOLS - SEMANTIC AI FIRST ==========
 
 @tool
-def deep_search(query: str, search_type: str = "all") -> str:
+def deep_search(user_email: str, query: str, search_type: str = "all") -> str:
     """
     Deep semantic search using Vertex AI Search - the 'Deep Swimmer' that finds connections SQL cannot.
     Use this for vague queries like "that expensive software bill" or "invoices from last month".
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         query: Natural language search query (e.g., "expensive software invoice", "Replit bills")
         search_type: Type of search - "vendors", "invoices", or "all" (default: "all")
     
@@ -634,20 +730,23 @@ def deep_search(query: str, search_type: str = "all") -> str:
         JSON with semantic search results including vendor matches, invoice data, and GCS URIs for PDFs
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         results = {
             "query": query,
             "search_type": search_type,
+            "user_email": user_email,
             "vendors": [],
             "invoices": [],
             "total_found": 0
         }
         
-        # Search vendors using Vertex AI Search
         if search_type in ["vendors", "all"]:
             vendor_results = vertex_search_service.search_vendor(query, max_results=5)
             for r in vendor_results:
                 data = r.get('data', {})
-                if not data.get('is_rejected_entity'):
+                if not data.get('is_rejected_entity') and data.get('owner_email') == user_email:
                     results["vendors"].append({
                         "vendor_name": data.get('vendor_name'),
                         "vendor_id": data.get('vendor_id'),
@@ -657,38 +756,41 @@ def deep_search(query: str, search_type: str = "all") -> str:
                         "domains": data.get('domains')
                     })
         
-        # Search invoices using Vertex AI Search
         if search_type in ["invoices", "all"]:
             invoice_results = vertex_search_service.search_similar_invoices(query, limit=5)
             for r in invoice_results:
                 data = r.get('data', {})
-                extracted = data.get('extracted_data', {})
-                results["invoices"].append({
-                    "vendor_name": data.get('vendor_name'),
-                    "invoice_number": extracted.get('invoiceNumber'),
-                    "date": extracted.get('documentDate'),
-                    "total": extracted.get('totals', {}).get('total'),
-                    "currency": data.get('currency'),
-                    "document_type": data.get('document_type'),
-                    "gcs_uri": data.get('gcs_uri'),
-                    "confidence": data.get('confidence_score')
-                })
+                if data.get('owner_email') == user_email:
+                    extracted = data.get('extracted_data', {})
+                    results["invoices"].append({
+                        "vendor_name": data.get('vendor_name'),
+                        "invoice_number": extracted.get('invoiceNumber'),
+                        "date": extracted.get('documentDate'),
+                        "total": extracted.get('totals', {}).get('total'),
+                        "currency": data.get('currency'),
+                        "document_type": data.get('document_type'),
+                        "gcs_uri": data.get('gcs_uri'),
+                        "confidence": data.get('confidence_score')
+                    })
         
-        # Also search BigQuery for more structured results
         if search_type in ["invoices", "all"]:
             bq_query = """
             SELECT 
                 invoice_id, vendor_name, invoice_number, invoice_date, 
                 amount, currency, gcs_uri, status
             FROM `invoicereader-477008.vendors_ai.invoices`
-            WHERE LOWER(vendor_name) LIKE @search_pattern 
-               OR LOWER(invoice_number) LIKE @search_pattern
+            WHERE owner_email = @user_email
+              AND (LOWER(vendor_name) LIKE @search_pattern 
+               OR LOWER(invoice_number) LIKE @search_pattern)
             ORDER BY invoice_date DESC
             LIMIT 5
             """
             search_pattern = f"%{query.lower()}%"
             try:
-                bq_results = bigquery_service.query(bq_query, {"search_pattern": search_pattern})
+                bq_results = bigquery_service.query(bq_query, {
+                    "search_pattern": search_pattern,
+                    "user_email": user_email
+                })
                 for row in bq_results:
                     results["invoices"].append({
                         "source": "database",
@@ -718,12 +820,13 @@ def deep_search(query: str, search_type: str = "all") -> str:
 
 
 @tool
-def get_invoice_pdf_link(gcs_uri: str) -> str:
+def get_invoice_pdf_link(user_email: str, gcs_uri: str) -> str:
     """
     Convert a GCS URI (gs://bucket/path) to a clickable HTTPS signed URL valid for 1 hour.
     ALWAYS use this when showing invoices to provide the actual PDF link.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant validation
         gcs_uri: The Google Cloud Storage URI (e.g., gs://payouts-invoices/vendor/invoice.pdf)
     
     Returns:
@@ -736,8 +839,7 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
                 "provided": gcs_uri
             })
         
-        # Parse the GCS URI
-        uri_without_prefix = gcs_uri[5:]  # Remove 'gs://'
+        uri_without_prefix = gcs_uri[5:]
         parts = uri_without_prefix.split('/', 1)
         
         if len(parts) != 2:
@@ -746,12 +848,10 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
         bucket_name = parts[0]
         blob_name = parts[1]
         
-        # Get signed URL using Google Cloud Storage
         from google.cloud import storage
         from datetime import timedelta
         from google.oauth2 import service_account
         
-        # Load credentials
         sa_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON') or os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
         if sa_json:
             import json as json_lib
@@ -770,7 +870,6 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
                 "gcs_uri": gcs_uri
             })
         
-        # Determine content type
         file_extension = blob_name.split('.')[-1].lower() if '.' in blob_name else 'pdf'
         content_type_map = {
             'pdf': 'application/pdf',
@@ -780,7 +879,6 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
         }
         content_type = content_type_map.get(file_extension, 'application/octet-stream')
         
-        # Generate signed URL (1 hour validity)
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=timedelta(hours=1),
@@ -788,7 +886,6 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
             response_type=content_type
         )
         
-        # Extract filename for display
         filename = blob_name.split('/')[-1] if '/' in blob_name else blob_name
         
         return json.dumps({
@@ -797,7 +894,8 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
             "download_url": signed_url,
             "expires_in": "1 hour",
             "file_type": file_extension,
-            "html_link": f'<a href="{signed_url}" target="_blank" class="chat-action-btn">📄 View {filename}</a>'
+            "html_link": f'<a href="{signed_url}" target="_blank" class="chat-action-btn">📄 View {filename}</a>',
+            "user_email": user_email
         })
         
     except Exception as e:
@@ -805,12 +903,13 @@ def get_invoice_pdf_link(gcs_uri: str) -> str:
 
 
 @tool
-def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str:
+def check_netsuite_health(user_email: str, vendor_id: Optional[str] = None, vendor_name: Optional[str] = None) -> str:
     """
     The 'NetSuite Detective' - Get the FULL story of a vendor's NetSuite sync status.
     Don't just say "Synced" - tell the complete health story including last activity, balance, and any issues.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         vendor_id: Optional vendor ID to check (e.g., V2099)
         vendor_name: Optional vendor name to search for
     
@@ -818,9 +917,13 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
         Full health report: sync status, last activity, events history, outstanding balance, and alerts
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         report = {
             "vendor_id": vendor_id,
             "vendor_name": vendor_name,
+            "user_email": user_email,
             "sync_status": None,
             "netsuite_internal_id": None,
             "last_sync": None,
@@ -830,15 +933,18 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
             "recommendations": []
         }
         
-        # First, find the vendor in our database
         if vendor_name and not vendor_id:
             vendor_query = """
             SELECT vendor_id, global_name, netsuite_id, email, domains, sync_status
             FROM `invoicereader-477008.vendors_ai.global_vendors`
-            WHERE LOWER(global_name) LIKE @search_pattern
+            WHERE owner_email = @user_email
+              AND LOWER(global_name) LIKE @search_pattern
             LIMIT 1
             """
-            results = bigquery_service.query(vendor_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            results = bigquery_service.query(vendor_query, {
+                "search_pattern": f"%{vendor_name.lower()}%",
+                "user_email": user_email
+            })
             if results:
                 vendor = results[0]
                 vendor_id = vendor.get('vendor_id')
@@ -852,20 +958,21 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
                 "suggestion": "Use search_database_first to find the vendor first."
             })
         
-        # Check sync log for this vendor
         sync_log_query = """
         SELECT 
             sync_type, status, started_at, completed_at, error_message,
             records_processed, records_failed
         FROM `invoicereader-477008.vendors_ai.netsuite_sync_log`
-        WHERE vendor_id = @vendor_id OR vendor_name LIKE @vendor_pattern
+        WHERE owner_email = @user_email
+          AND (vendor_id = @vendor_id OR vendor_name LIKE @vendor_pattern)
         ORDER BY started_at DESC
         LIMIT 5
         """
         try:
             sync_logs = bigquery_service.query(sync_log_query, {
                 "vendor_id": vendor_id,
-                "vendor_pattern": f"%{vendor_name or ''}%"
+                "vendor_pattern": f"%{vendor_name or ''}%",
+                "user_email": user_email
             })
             
             if sync_logs:
@@ -889,20 +996,21 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
         except Exception as e:
             report["sync_log_error"] = str(e)
         
-        # Check NetSuite events for this vendor
         events_query = """
         SELECT 
             event_type, record_type, netsuite_id, status, 
             created_at, error_message, request_data, response_data
         FROM `invoicereader-477008.vendors_ai.netsuite_events`
-        WHERE LOWER(CAST(request_data AS STRING)) LIKE @vendor_pattern
-           OR LOWER(CAST(response_data AS STRING)) LIKE @vendor_pattern
+        WHERE owner_email = @user_email
+          AND (LOWER(CAST(request_data AS STRING)) LIKE @vendor_pattern
+           OR LOWER(CAST(response_data AS STRING)) LIKE @vendor_pattern)
         ORDER BY created_at DESC
         LIMIT 10
         """
         try:
             events = bigquery_service.query(events_query, {
-                "vendor_pattern": f"%{(vendor_name or vendor_id).lower()}%"
+                "vendor_pattern": f"%{(vendor_name or vendor_id).lower()}%",
+                "user_email": user_email
             })
             
             for event in events:
@@ -915,12 +1023,10 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
                 }
                 report["recent_events"].append(event_summary)
                 
-                # Set last activity from most recent event
                 if not report["last_activity"] and events:
                     first_event = events[0]
                     report["last_activity"] = f"{first_event.get('event_type')} ({first_event.get('record_type')}) on {str(first_event.get('created_at'))[:10]}"
             
-            # Check for failed events
             failed_events = [e for e in events if e.get("status") == "ERROR"]
             if failed_events:
                 report["alerts"].append({
@@ -932,7 +1038,6 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
         except Exception as e:
             report["events_error"] = str(e)
         
-        # Get invoice count and outstanding balance
         invoice_query = """
         SELECT 
             COUNT(*) as invoice_count,
@@ -940,11 +1045,13 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
             SUM(amount) as total_spend,
             MAX(invoice_date) as last_invoice_date
         FROM `invoicereader-477008.vendors_ai.invoices`
-        WHERE LOWER(vendor_name) LIKE @vendor_pattern
+        WHERE owner_email = @user_email
+          AND LOWER(vendor_name) LIKE @vendor_pattern
         """
         try:
             invoice_stats = bigquery_service.query(invoice_query, {
-                "vendor_pattern": f"%{(vendor_name or '').lower()}%"
+                "vendor_pattern": f"%{(vendor_name or '').lower()}%",
+                "user_email": user_email
             })
             if invoice_stats:
                 stats = invoice_stats[0]
@@ -955,7 +1062,6 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
                     "last_invoice": str(stats.get("last_invoice_date"))
                 }
                 
-                # Check for missing recent invoices
                 from datetime import datetime, timedelta
                 last_invoice = stats.get("last_invoice_date")
                 if last_invoice:
@@ -973,7 +1079,6 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
         except Exception as e:
             report["financials_error"] = str(e)
         
-        # Determine overall sync status
         if report["last_sync"]:
             report["sync_status"] = report["last_sync"]["status"]
         elif report["netsuite_internal_id"]:
@@ -989,7 +1094,7 @@ def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str
 
 
 @tool 
-def get_vendor_full_profile(vendor_name: str) -> str:
+def get_vendor_full_profile(user_email: str, vendor_name: str) -> str:
     """
     The OMNISCIENT tool - Get EVERYTHING about a vendor in ONE call.
     Combines: database search + NetSuite health + recent invoices with PDF links + proactive alerts.
@@ -997,14 +1102,19 @@ def get_vendor_full_profile(vendor_name: str) -> str:
     Use this when user asks "Tell me about [vendor]" or "Who is [vendor]?"
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         vendor_name: The vendor name to look up (e.g., "Replit", "AWS", "Google")
     
     Returns:
         Complete vendor dossier with profile, NetSuite status, invoices, PDF links, and alerts
     """
     try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
         dossier = {
             "vendor_name": vendor_name,
+            "user_email": user_email,
             "profile": None,
             "netsuite_status": None,
             "recent_invoices": [],
@@ -1014,17 +1124,20 @@ def get_vendor_full_profile(vendor_name: str) -> str:
             "recommendations": []
         }
         
-        # 1. Get vendor profile from database
         vendor_query = """
         SELECT 
             vendor_id, global_name, netsuite_id, email, phone, 
             tax_id, address, country, domains, sync_status, created_at
         FROM `invoicereader-477008.vendors_ai.global_vendors`
-        WHERE LOWER(global_name) LIKE @search_pattern
+        WHERE owner_email = @user_email
+          AND LOWER(global_name) LIKE @search_pattern
         LIMIT 1
         """
         try:
-            vendors = bigquery_service.query(vendor_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            vendors = bigquery_service.query(vendor_query, {
+                "search_pattern": f"%{vendor_name.lower()}%",
+                "user_email": user_email
+            })
             if vendors:
                 v = vendors[0]
                 dossier["profile"] = {
@@ -1041,9 +1154,8 @@ def get_vendor_full_profile(vendor_name: str) -> str:
         except Exception as e:
             dossier["profile_error"] = str(e)
         
-        # 2. Get NetSuite health status
         try:
-            health_result = check_netsuite_health.invoke({"vendor_name": vendor_name})
+            health_result = check_netsuite_health.invoke({"user_email": user_email, "vendor_name": vendor_name})
             health_data = json.loads(health_result)
             dossier["netsuite_status"] = {
                 "synced": health_data.get("sync_status") == "SYNCED" or health_data.get("netsuite_internal_id") is not None,
@@ -1053,7 +1165,6 @@ def get_vendor_full_profile(vendor_name: str) -> str:
                 "pending_balance": health_data.get("financials", {}).get("pending_amount", 0)
             }
             
-            # Add any alerts from NetSuite check
             for alert in health_data.get("alerts", []):
                 dossier["proactive_alerts"].append(alert)
             for rec in health_data.get("recommendations", []):
@@ -1062,18 +1173,21 @@ def get_vendor_full_profile(vendor_name: str) -> str:
         except Exception as e:
             dossier["netsuite_error"] = str(e)
         
-        # 3. Get recent invoices with GCS URIs
         invoice_query = """
         SELECT 
             invoice_id, invoice_number, invoice_date, amount, currency, 
             status, gcs_uri, created_at
         FROM `invoicereader-477008.vendors_ai.invoices`
-        WHERE LOWER(vendor_name) LIKE @search_pattern
+        WHERE owner_email = @user_email
+          AND LOWER(vendor_name) LIKE @search_pattern
         ORDER BY invoice_date DESC
         LIMIT 5
         """
         try:
-            invoices = bigquery_service.query(invoice_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            invoices = bigquery_service.query(invoice_query, {
+                "search_pattern": f"%{vendor_name.lower()}%",
+                "user_email": user_email
+            })
             total_spend = 0
             
             for inv in invoices:
@@ -1088,10 +1202,9 @@ def get_vendor_full_profile(vendor_name: str) -> str:
                 dossier["recent_invoices"].append(invoice_info)
                 total_spend += invoice_info["amount"]
                 
-                # Generate PDF link if GCS URI exists
                 if inv.get("gcs_uri"):
                     try:
-                        pdf_result = get_invoice_pdf_link.invoke({"gcs_uri": inv.get("gcs_uri")})
+                        pdf_result = get_invoice_pdf_link.invoke({"user_email": user_email, "gcs_uri": inv.get("gcs_uri")})
                         pdf_data = json.loads(pdf_result)
                         if pdf_data.get("success"):
                             dossier["pdf_links"].append({
@@ -1103,7 +1216,6 @@ def get_vendor_full_profile(vendor_name: str) -> str:
             
             dossier["total_spend"] = total_spend
             
-            # Check for missing recent invoices
             if invoices:
                 from datetime import datetime
                 last_date = invoices[0].get("invoice_date")
@@ -1123,7 +1235,6 @@ def get_vendor_full_profile(vendor_name: str) -> str:
         except Exception as e:
             dossier["invoices_error"] = str(e)
         
-        # 4. Format the complete response
         summary = {
             "vendor_profile": dossier["profile"],
             "netsuite_status": dossier["netsuite_status"],
@@ -1134,7 +1245,8 @@ def get_vendor_full_profile(vendor_name: str) -> str:
             },
             "documents": dossier["pdf_links"],
             "proactive_alerts": dossier["proactive_alerts"],
-            "recommendations": dossier["recommendations"]
+            "recommendations": dossier["recommendations"],
+            "user_email": user_email
         }
         
         return json.dumps(summary, indent=2, default=str)
@@ -1146,7 +1258,7 @@ def get_vendor_full_profile(vendor_name: str) -> str:
 # ========== INGESTION TOOLS - FILE PROCESSING ==========
 
 @tool
-def process_uploaded_invoice(file_path: str) -> str:
+def process_uploaded_invoice(user_email: str, file_path: str) -> str:
     """
     Process an uploaded invoice PDF through the full extraction pipeline.
     Uses Document AI for OCR, Gemini for semantic extraction, and Supreme Judge for vendor matching.
@@ -1154,6 +1266,7 @@ def process_uploaded_invoice(file_path: str) -> str:
     AUTOMATICALLY CALL THIS when user uploads a PDF file.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         file_path: Path to the uploaded PDF file (e.g., "uploads/abc123_invoice.pdf")
     
     Returns:
@@ -1172,32 +1285,41 @@ def process_uploaded_invoice(file_path: str) -> str:
         
         processor = InvoiceProcessor()
         
-        print(f"📄 Processing invoice: {file_path}")
+        print(f"📄 Processing invoice for {user_email}: {file_path}")
         
-        with open(file_path, 'rb') as f:
-            file_content = f.read()
+        result = processor.process_local_file(file_path)
         
-        result = processor.process_invoice(file_content, filename=os.path.basename(file_path))
-        
-        if result.get('success'):
-            extracted = result.get('extraction', {})
-            vendor_name = extracted.get('vendor', {}).get('name', 'Unknown Vendor')
-            invoice_number = extracted.get('invoiceNumber', 'N/A')
-            total = extracted.get('totals', {}).get('total', 0)
-            currency = extracted.get('currency', 'USD')
-            confidence = result.get('confidence', 0) * 100
+        if result.get('status') == 'completed':
+            validated_data = result.get('validated_data', {})
+            if not isinstance(validated_data, dict):
+                validated_data = {}
+            vendor_data = validated_data.get('vendor', {})
+            if not isinstance(vendor_data, dict):
+                vendor_data = {}
+            vendor_name = vendor_data.get('name', 'Unknown Vendor')
+            invoice_number = validated_data.get('invoiceNumber', 'N/A')
+            totals = validated_data.get('totals', {})
+            if not isinstance(totals, dict):
+                totals = {}
+            total = totals.get('total', 0)
+            currency = validated_data.get('currency', 'USD')
+            confidence_val = validated_data.get('extractionConfidence', 0)
+            confidence = (confidence_val if isinstance(confidence_val, (int, float)) else 0) * 100
             
-            vendor_match = result.get('vendor_match', {})
+            vendor_match = validated_data.get('vendorMatch', {})
+            if not isinstance(vendor_match, dict):
+                vendor_match = {}
             matched_vendor_id = vendor_match.get('vendor_id')
             netsuite_id = vendor_match.get('netsuite_id')
             
             response = {
                 "success": True,
+                "user_email": user_email,
                 "extraction": {
                     "vendor_name": vendor_name,
                     "invoice_number": invoice_number,
                     "total": f"{currency} {total}",
-                    "date": extracted.get('documentDate'),
+                    "date": validated_data.get('documentDate'),
                     "confidence": f"{confidence:.0f}%"
                 },
                 "vendor_match": {
@@ -1232,7 +1354,7 @@ def process_uploaded_invoice(file_path: str) -> str:
 
 
 @tool
-def import_vendor_csv(file_path: str) -> str:
+def import_vendor_csv(user_email: str, file_path: str) -> str:
     """
     Import vendors from an uploaded CSV file using AI-powered column mapping.
     Analyzes the CSV structure, maps columns to schema, and imports to BigQuery.
@@ -1240,6 +1362,7 @@ def import_vendor_csv(file_path: str) -> str:
     AUTOMATICALLY CALL THIS when user uploads a CSV file.
     
     Args:
+        user_email: The logged-in user's email for multi-tenant tracking
         file_path: Path to the uploaded CSV file (e.g., "uploads/abc123_vendors.csv")
     
     Returns:
@@ -1249,6 +1372,9 @@ def import_vendor_csv(file_path: str) -> str:
         import sys
         sys.path.insert(0, '.')
         from services.vendor_csv_mapper import VendorCSVMapper
+        
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
         
         if not os.path.exists(file_path):
             return json.dumps({
@@ -1261,7 +1387,7 @@ def import_vendor_csv(file_path: str) -> str:
         
         mapper = VendorCSVMapper()
         
-        print(f"📋 Analyzing CSV: {file_path}")
+        print(f"📋 Analyzing CSV for {user_email}: {file_path}")
         mapping_result = mapper.analyze_csv_headers(csv_content, os.path.basename(file_path))
         
         if not mapping_result.get('success'):
@@ -1279,12 +1405,15 @@ def import_vendor_csv(file_path: str) -> str:
         updated_count = 0
         errors = []
         
+        vendors_to_insert = []
         for vendor in vendors:
             try:
                 if vendor.get('global_name'):
+                    vendor['owner_email'] = user_email
+                    
                     existing = bigquery_service.query(
-                        "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE LOWER(global_name) = @name LIMIT 1",
-                        {"name": vendor['global_name'].lower()}
+                        "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND LOWER(global_name) = @name LIMIT 1",
+                        {"name": vendor['global_name'].lower(), "user_email": user_email}
                     )
                     
                     if existing:
@@ -1292,10 +1421,15 @@ def import_vendor_csv(file_path: str) -> str:
                     else:
                         import uuid
                         vendor['vendor_id'] = vendor.get('vendor_id') or f"V{uuid.uuid4().hex[:8].upper()}"
-                        bigquery_service.insert_vendor(vendor)
+                        vendors_to_insert.append(vendor)
                         new_count += 1
             except Exception as e:
                 errors.append(str(e))
+        
+        if vendors_to_insert:
+            merge_result = bigquery_service.merge_vendors(vendors_to_insert, source_system="csv_upload")
+            if merge_result.get('errors'):
+                errors.extend(merge_result['errors'])
         
         html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th></tr></thead><tbody>'
         for v in vendors[:10]:
@@ -1311,6 +1445,7 @@ def import_vendor_csv(file_path: str) -> str:
         
         response = {
             "success": True,
+            "user_email": user_email,
             "total_vendors": len(vendors),
             "new_vendors": new_count,
             "updated_vendors": updated_count,
@@ -1332,16 +1467,22 @@ def import_vendor_csv(file_path: str) -> str:
 
 
 @tool
-def pull_netsuite_vendors() -> str:
+def pull_netsuite_vendors(user_email: str) -> str:
     """
     Pull and sync all vendors from NetSuite to the local database.
     Fetches vendor records from NetSuite API and updates BigQuery.
+    
+    Args:
+        user_email: The logged-in user's email for multi-tenant tracking
     
     Returns:
         Sync results with count of vendors and HTML table preview
     """
     try:
-        print("🔄 Pulling vendors from NetSuite...")
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
+        print(f"🔄 Pulling vendors from NetSuite for {user_email}...")
         
         vendors = netsuite_service.search_vendors(limit=500)
         
@@ -1356,6 +1497,7 @@ def pull_netsuite_vendors() -> str:
         new_count = 0
         updated_count = 0
         
+        vendors_to_insert = []
         for vendor in vendors:
             try:
                 netsuite_id = vendor.get('id') or vendor.get('internalId')
@@ -1363,8 +1505,8 @@ def pull_netsuite_vendors() -> str:
                 email = vendor.get('email', '')
                 
                 existing = bigquery_service.query(
-                    "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE netsuite_id = @netsuite_id LIMIT 1",
-                    {"netsuite_id": str(netsuite_id)}
+                    "SELECT vendor_id FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_id = @netsuite_id LIMIT 1",
+                    {"netsuite_id": str(netsuite_id), "user_email": user_email}
                 )
                 
                 if existing:
@@ -1375,17 +1517,23 @@ def pull_netsuite_vendors() -> str:
                         'vendor_id': f"V{uuid.uuid4().hex[:8].upper()}",
                         'global_name': company_name,
                         'netsuite_id': str(netsuite_id),
-                        'email': email,
+                        'emails': [email] if email else [],
+                        'domains': [],
+                        'countries': [],
                         'sync_status': 'SYNCED',
-                        'source_system': 'netsuite'
+                        'source_system': 'netsuite',
+                        'owner_email': user_email
                     }
-                    bigquery_service.insert_vendor(new_vendor)
+                    vendors_to_insert.append(new_vendor)
                     new_count += 1
                 
                 synced_count += 1
                 
             except Exception as e:
                 print(f"Error syncing vendor: {e}")
+        
+        if vendors_to_insert:
+            bigquery_service.merge_vendors(vendors_to_insert, source_system="netsuite")
         
         html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>NetSuite ID</th><th>Email</th><th>Status</th></tr></thead><tbody>'
         for v in vendors[:10]:
@@ -1400,6 +1548,7 @@ def pull_netsuite_vendors() -> str:
         
         response = {
             "success": True,
+            "user_email": user_email,
             "total_vendors": len(vendors),
             "new_vendors": new_count,
             "updated_vendors": updated_count,
@@ -1415,12 +1564,13 @@ def pull_netsuite_vendors() -> str:
 
 
 @tool
-def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
+def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all") -> str:
     """
     Show vendors in a rich HTML table format.
     Use this when user asks to "show vendors", "list vendors", or "see all vendors".
     
     Args:
+        user_email: The logged-in user's email for multi-tenant filtering
         limit: Maximum number of vendors to show (default 20)
         filter_type: Filter by "all", "synced" (in NetSuite), or "unsynced"
     
@@ -1428,11 +1578,14 @@ def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
         HTML table with vendor data
     """
     try:
-        where_clause = ""
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
+        where_clause = "WHERE owner_email = @user_email"
         if filter_type == "synced":
-            where_clause = "WHERE netsuite_id IS NOT NULL"
+            where_clause += " AND netsuite_id IS NOT NULL"
         elif filter_type == "unsynced":
-            where_clause = "WHERE netsuite_id IS NULL"
+            where_clause += " AND netsuite_id IS NULL"
         
         query = f"""
         SELECT 
@@ -1444,7 +1597,7 @@ def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
         LIMIT {limit}
         """
         
-        vendors = bigquery_service.query(query, {})
+        vendors = bigquery_service.query(query, {"user_email": user_email})
         
         if not vendors:
             return json.dumps({
@@ -1467,15 +1620,16 @@ def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
         html_table += '</tbody></table>'
         
         total_query = f"SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` {where_clause}"
-        total_result = bigquery_service.query(total_query, {})
+        total_result = bigquery_service.query(total_query, {"user_email": user_email})
         total_count = total_result[0]['count'] if total_result else len(vendors)
         
-        synced_query = "SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE netsuite_id IS NOT NULL"
-        synced_result = bigquery_service.query(synced_query, {})
+        synced_query = "SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` WHERE owner_email = @user_email AND netsuite_id IS NOT NULL"
+        synced_result = bigquery_service.query(synced_query, {"user_email": user_email})
         synced_count = synced_result[0]['count'] if synced_result else 0
         
         response = {
             "success": True,
+            "user_email": user_email,
             "total_vendors": total_count,
             "synced_vendors": synced_count,
             "showing": len(vendors),
@@ -1490,7 +1644,10 @@ def show_vendors_table(limit: int = 20, filter_type: str = "all") -> str:
 
 
 def get_all_tools():
-    """Return list of all available tools for the agent - OMNISCIENT SEMANTIC AI FIRST ORDER"""
+    """
+    Return list of all available tools for the agent - OMNISCIENT SEMANTIC AI FIRST ORDER
+    Note: Use get_tools_for_user(user_email) for multi-tenant data isolation
+    """
     return [
         # Omniscient Tools (use these first for comprehensive answers)
         get_vendor_full_profile,
@@ -1518,3 +1675,67 @@ def get_all_tools():
         run_bigquery,
         get_subscription_summary
     ]
+
+
+def get_tools_for_user(user_email: str):
+    """
+    Return list of tools with user_email pre-bound for multi-tenant data isolation.
+    Each tool will automatically filter data by the user's email.
+    
+    Args:
+        user_email: The logged-in user's email address
+        
+    Returns:
+        List of tools with user_email bound as the first parameter
+    """
+    from functools import partial
+    from langchain_core.tools import StructuredTool
+    
+    all_tools = get_all_tools()
+    bound_tools = []
+    
+    for tool_func in all_tools:
+        original_func = tool_func.func
+        
+        bound_func = partial(original_func, user_email)
+        
+        new_tool = StructuredTool(
+            name=tool_func.name,
+            description=tool_func.description,
+            func=bound_func,
+            args_schema=_remove_user_email_from_schema(tool_func.args_schema) if hasattr(tool_func, 'args_schema') else None,
+            return_direct=getattr(tool_func, 'return_direct', False),
+        )
+        bound_tools.append(new_tool)
+    
+    return bound_tools
+
+
+def _remove_user_email_from_schema(schema_class):
+    """
+    Create a modified schema class that excludes user_email field.
+    This hides the user_email parameter from the LLM since it's injected by the system.
+    """
+    if schema_class is None:
+        return None
+    
+    from pydantic import create_model
+    from typing import get_type_hints, Optional
+    
+    try:
+        original_fields = {}
+        for name, field in schema_class.__fields__.items():
+            if name != 'user_email':
+                original_fields[name] = (field.annotation, field.default if field.default is not None else ...)
+        
+        if not original_fields:
+            return None
+            
+        new_schema = create_model(
+            f"{schema_class.__name__}NoUserEmail",
+            **original_fields
+        )
+        return new_schema
+    except Exception as e:
+        print(f"Warning: Could not modify schema: {e}")
+        return schema_class

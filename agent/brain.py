@@ -12,7 +12,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from .tools import get_all_tools
+from .tools import get_all_tools, get_tools_for_user
 
 
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -37,6 +37,7 @@ class AgentState(TypedDict):
     """State for the agent graph"""
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_id: str
+    user_email: Optional[str]
     last_entity: Optional[str]
 
 
@@ -54,14 +55,22 @@ def create_llm():
     )
 
 
-def create_agent_graph():
+def create_agent_graph(user_email: str = None):
     """
     Create the LangGraph agent with tools for controlling services
+    
+    Args:
+        user_email: Optional user email for multi-tenant data isolation.
+                   If provided, tools will filter data by this email.
     
     Returns:
         CompiledStateGraph ready to process messages
     """
-    tools = get_all_tools()
+    if user_email:
+        tools = get_tools_for_user(user_email)
+    else:
+        tools = get_all_tools()
+    
     llm = create_llm()
     llm_with_tools = llm.bind_tools(tools)
     
@@ -241,15 +250,30 @@ Your response includes the HTML table from the tool, not a text list."""
     return workflow.compile(checkpointer=checkpointer)
 
 
-def get_compiled_graph():
-    """Get or create the compiled graph singleton"""
-    global _compiled_graph
-    if _compiled_graph is None:
-        _compiled_graph = create_agent_graph()
-    return _compiled_graph
+_user_graphs = {}
 
 
-def run_agent(message: str, user_id: str = "default", thread_id: str = None) -> dict:
+def get_compiled_graph(user_email: str = None):
+    """
+    Get or create the compiled graph for a user.
+    Multi-tenant: Each user gets their own graph with bound tools.
+    
+    Args:
+        user_email: User's email for multi-tenant data isolation
+    """
+    global _compiled_graph, _user_graphs
+    
+    if user_email:
+        if user_email not in _user_graphs:
+            _user_graphs[user_email] = create_agent_graph(user_email)
+        return _user_graphs[user_email]
+    else:
+        if _compiled_graph is None:
+            _compiled_graph = create_agent_graph()
+        return _compiled_graph
+
+
+def run_agent(message: str, user_id: str = "default", thread_id: str = None, user_email: str = None) -> dict:
     """
     Run the agent with a user message and return the response with tools used.
     Uses conversation memory via thread_id for context persistence.
@@ -258,11 +282,12 @@ def run_agent(message: str, user_id: str = "default", thread_id: str = None) -> 
         message: The user's message/question
         user_id: User ID for tracking
         thread_id: Thread ID for conversation memory (from frontend session)
+        user_email: User's email for multi-tenant data isolation
         
     Returns:
         Dict with 'response' (text) and 'tools_used' (list of tool names)
     """
-    graph = get_compiled_graph()
+    graph = get_compiled_graph(user_email)
     
     if not thread_id:
         thread_id = f"thread_{user_id}_{os.urandom(4).hex()}"
@@ -272,6 +297,7 @@ def run_agent(message: str, user_id: str = "default", thread_id: str = None) -> 
     input_state = {
         "messages": [HumanMessage(content=message)],
         "user_id": user_id,
+        "user_email": user_email,
         "last_entity": None
     }
     
