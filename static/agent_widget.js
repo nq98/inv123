@@ -10,7 +10,7 @@
         'create_netsuite_vendor': '👤',
         'create_netsuite_bill': '📄',
         'get_bill_status': '📋',
-        'match_vendor_to_database': '🔗',
+        'match_vendor_to_database': '⚖️',
         'run_bigquery': '🗄️',
         'get_subscription_summary': '📊',
         'search_database_first': '🔍',
@@ -18,7 +18,12 @@
         'get_top_vendors_by_spend': '💰',
         'process_uploaded_invoice': '📄',
         'import_vendor_csv': '📋',
-        'pull_netsuite_vendors': '🔄'
+        'pull_netsuite_vendors': '🔄',
+        'get_vendor_full_profile': '🔮',
+        'deep_search': '🏊',
+        'get_invoice_pdf_link': '📎',
+        'check_netsuite_health': '🔍',
+        'show_vendors_table': '📊'
     };
 
     const TOOL_LABELS = {
@@ -35,7 +40,12 @@
         'get_top_vendors_by_spend': 'Top Vendors by Spend',
         'process_uploaded_invoice': 'Processed Invoice',
         'import_vendor_csv': 'Imported CSV',
-        'pull_netsuite_vendors': 'Synced NetSuite'
+        'pull_netsuite_vendors': 'Synced NetSuite',
+        'get_vendor_full_profile': 'Full Vendor Profile',
+        'deep_search': 'Deep AI Search',
+        'get_invoice_pdf_link': 'Got PDF Link',
+        'check_netsuite_health': 'NetSuite Health',
+        'show_vendors_table': 'Vendor Table'
     };
 
     function getSessionId() {
@@ -656,6 +666,229 @@
                 border-bottom: none;
             }
 
+            /* Invoice Card Styles - Rich visual cards for extracted invoices */
+            .invoice-card {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+                transition: all 0.2s ease;
+            }
+
+            .invoice-card:hover {
+                border-color: #667eea;
+                box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
+            }
+
+            .invoice-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 12px;
+            }
+
+            .vendor-name {
+                font-size: 16px;
+                font-weight: 600;
+                color: #1f2937;
+            }
+
+            .amount {
+                font-size: 18px;
+                font-weight: 700;
+                color: #059669;
+            }
+
+            .invoice-details {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-bottom: 12px;
+                font-size: 13px;
+                color: #6b7280;
+            }
+
+            .invoice-status {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 12px;
+                font-size: 12px;
+            }
+
+            .invoice-status .matched {
+                background: #d1fae5;
+                color: #059669;
+                padding: 4px 10px;
+                border-radius: 12px;
+            }
+
+            .invoice-status .new-vendor {
+                background: #fef3c7;
+                color: #d97706;
+                padding: 4px 10px;
+                border-radius: 12px;
+            }
+
+            .invoice-status .synced {
+                background: #dbeafe;
+                color: #2563eb;
+                padding: 4px 10px;
+                border-radius: 12px;
+            }
+
+            .invoice-status .not-synced {
+                background: #f3f4f6;
+                color: #6b7280;
+                padding: 4px 10px;
+                border-radius: 12px;
+            }
+
+            .invoice-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid #e5e7eb;
+            }
+
+            .invoice-actions button,
+            .invoice-actions a {
+                padding: 8px 14px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                transition: all 0.2s ease;
+                border: none;
+            }
+
+            .approve-btn {
+                background: #d1fae5;
+                color: #059669;
+            }
+
+            .approve-btn:hover {
+                background: #a7f3d0;
+            }
+
+            .reject-btn {
+                background: #fee2e2;
+                color: #dc2626;
+            }
+
+            .reject-btn:hover {
+                background: #fecaca;
+            }
+
+            .create-bill-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+
+            .create-bill-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            }
+
+            .view-pdf-btn {
+                background: #f3f4f6;
+                color: #4b5563;
+            }
+
+            .view-pdf-btn:hover {
+                background: #e5e7eb;
+            }
+
+            /* Progress indicator for scanning operations */
+            .scan-progress {
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                border-radius: 12px;
+                padding: 16px;
+                margin: 12px 0;
+            }
+
+            .scan-progress-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 12px;
+                font-weight: 600;
+                color: #667eea;
+            }
+
+            .scan-progress-bar {
+                height: 8px;
+                background: #e5e7eb;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-bottom: 8px;
+            }
+
+            .scan-progress-fill {
+                height: 100%;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 4px;
+                transition: width 0.3s ease;
+            }
+
+            .scan-progress-text {
+                font-size: 12px;
+                color: #6b7280;
+            }
+
+            /* Vendor card styles */
+            .vendor-card {
+                background: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                padding: 14px;
+                margin: 8px 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            .vendor-card:hover {
+                border-color: #667eea;
+            }
+
+            .vendor-avatar {
+                width: 40px;
+                height: 40px;
+                border-radius: 8px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 600;
+                font-size: 14px;
+            }
+
+            .vendor-info {
+                flex: 1;
+            }
+
+            .vendor-info .name {
+                font-weight: 600;
+                color: #1f2937;
+                font-size: 14px;
+            }
+
+            .vendor-info .details {
+                font-size: 12px;
+                color: #6b7280;
+            }
+
             @media (max-width: 480px) {
                 #payouts-agent-widget {
                     bottom: 16px;
@@ -682,6 +915,20 @@
                 .payouts-chat-send {
                     width: 40px;
                     height: 40px;
+                }
+
+                .invoice-card {
+                    padding: 12px;
+                }
+
+                .invoice-actions {
+                    flex-direction: column;
+                }
+
+                .invoice-actions button,
+                .invoice-actions a {
+                    width: 100%;
+                    justify-content: center;
                 }
             }
         `;
@@ -990,6 +1237,39 @@
             tableIndex++;
             return placeholder;
         });
+
+        const invoiceCardPattern = /<div class="invoice-card"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi;
+        const preservedInvoiceCards = [];
+        let cardIndex = 0;
+
+        processed = processed.replace(invoiceCardPattern, (match) => {
+            const placeholder = `__INVOICE_CARD_${cardIndex}__`;
+            preservedInvoiceCards.push({ placeholder, html: match });
+            cardIndex++;
+            return placeholder;
+        });
+
+        const vendorCardPattern = /<div class="vendor-card"[\s\S]*?<\/div>\s*<\/div>/gi;
+        const preservedVendorCards = [];
+        let vendorCardIndex = 0;
+
+        processed = processed.replace(vendorCardPattern, (match) => {
+            const placeholder = `__VENDOR_CARD_${vendorCardIndex}__`;
+            preservedVendorCards.push({ placeholder, html: match });
+            vendorCardIndex++;
+            return placeholder;
+        });
+
+        const progressPattern = /<div class="scan-progress"[\s\S]*?<\/div>\s*<\/div>/gi;
+        const preservedProgress = [];
+        let progressIndex = 0;
+
+        processed = processed.replace(progressPattern, (match) => {
+            const placeholder = `__PROGRESS_${progressIndex}__`;
+            preservedProgress.push({ placeholder, html: match });
+            progressIndex++;
+            return placeholder;
+        });
         
         let formatted = processed
             .replace(/&/g, '&amp;')
@@ -1005,6 +1285,18 @@
         });
 
         preservedTables.forEach(({ placeholder, html }) => {
+            formatted = formatted.replace(placeholder, html);
+        });
+
+        preservedInvoiceCards.forEach(({ placeholder, html }) => {
+            formatted = formatted.replace(placeholder, html);
+        });
+
+        preservedVendorCards.forEach(({ placeholder, html }) => {
+            formatted = formatted.replace(placeholder, html);
+        });
+
+        preservedProgress.forEach(({ placeholder, html }) => {
             formatted = formatted.replace(placeholder, html);
         });
         
@@ -1116,6 +1408,78 @@
             sendMessage();
         },
         clearSession: clearSession
+    };
+
+    window.approveInvoice = async function(invoiceId) {
+        try {
+            const response = await fetch('/api/agent/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    invoice_id: invoiceId, 
+                    action: 'approve',
+                    thread_id: getSessionId()
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                const btn = document.querySelector(`[onclick="approveInvoice('${invoiceId}')"]`);
+                if (btn) {
+                    btn.textContent = '✅ Approved';
+                    btn.disabled = true;
+                    btn.style.background = '#10b981';
+                    btn.style.color = 'white';
+                }
+                window.PayoutsAgentWidget.sendMessage(`Invoice ${invoiceId} has been approved. Please confirm.`);
+            }
+        } catch (error) {
+            console.error('Approve failed:', error);
+            alert('Failed to approve invoice. Please try again.');
+        }
+    };
+
+    window.rejectInvoice = async function(invoiceId) {
+        const reason = prompt('Why is this not an invoice? (optional)');
+        try {
+            const response = await fetch('/api/agent/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    invoice_id: invoiceId, 
+                    action: 'reject',
+                    reason: reason || 'Not an invoice',
+                    thread_id: getSessionId()
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                const btn = document.querySelector(`[onclick="rejectInvoice('${invoiceId}')"]`);
+                if (btn) {
+                    btn.textContent = '❌ Rejected';
+                    btn.disabled = true;
+                }
+                const card = btn?.closest('.invoice-card');
+                if (card) {
+                    card.style.opacity = '0.5';
+                }
+            }
+        } catch (error) {
+            console.error('Reject failed:', error);
+            alert('Failed to reject. Please try again.');
+        }
+    };
+
+    window.createBill = async function(invoiceId, vendorId, amount, currency) {
+        try {
+            window.PayoutsAgentWidget.open();
+            window.PayoutsAgentWidget.sendMessage(`Create a NetSuite bill for invoice ${invoiceId}`);
+        } catch (error) {
+            console.error('Create bill failed:', error);
+        }
+    };
+
+    window.viewInvoicePdf = function(url) {
+        window.open(url, '_blank');
     };
 
 })();

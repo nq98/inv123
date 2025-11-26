@@ -62,7 +62,7 @@ A standalone product for subscription analytics, featuring a "Subscription Pulse
 
 #### LangGraph Agent - Omniscient Auditor for AP Automation
 A LangGraph-based AI agent (`agent/` directory) provides conversational control with proactive auditor capabilities:
--   **Architecture**: StateGraph with tool-calling using Gemini 2.0 Flash via OpenRouter
+-   **Architecture**: StateGraph with tool-calling using Gemini 2.5 Pro via OpenRouter for superior reasoning and tool use
 -   **Conversation Memory**: Uses SQLiteSaver checkpointer for persistent conversation state
     -   Frontend generates UUID `session_id` stored in localStorage
     -   Backend receives `thread_id` parameter to maintain conversation context
@@ -95,6 +95,8 @@ A LangGraph-based AI agent (`agent/` directory) provides conversational control 
     -   `POST /api/agent/chat`: Synchronous chat with agent (accepts `thread_id` for memory)
     -   `POST /api/agent/chat/stream`: SSE streaming chat
     -   `GET /api/agent/tools`: List available tools
+    -   `POST /api/agent/feedback`: Submit invoice approval/rejection feedback for AI training
+-   **Feedback Loop**: User can approve/reject invoice extractions via chat widget buttons, feeding data back for continuous learning
 -   **Tracing**: LangSmith integration for monitoring (LANGCHAIN_API_KEY, LANGCHAIN_PROJECT=payouts-automation)
 
 #### Payouts AI Chat Widget - Full Interface Replacement
@@ -115,9 +117,14 @@ A self-contained, embeddable chat widget (`static/agent_widget.js`) that provide
     4.  API saves file to `uploads/` directory
     5.  Agent auto-detects file type and calls appropriate tool
     6.  Response includes extraction results + action buttons
+-   **Invoice Card Action Handlers**: Rich invoice cards with approve/reject/create bill buttons
+    -   `window.approveInvoice(invoiceId)`: Mark extraction as correct, updates BigQuery verified status
+    -   `window.rejectInvoice(invoiceId)`: Mark as not an invoice, prompts for reason, adds to Vertex negative training
+    -   `window.createBill(invoiceId, vendorId, amount, currency)`: Opens agent with create bill request
+    -   `window.viewInvoicePdf(url)`: Opens invoice PDF in new tab
 -   **Self-Contained**: Can be embedded on any page with just `<script src="/static/agent_widget.js"></script>`
 -   **API Integration**: Communicates with `POST /api/agent/chat` (supports both JSON and FormData)
--   **JavaScript API**: `window.PayoutsAgentWidget.open()`, `.close()`, `.toggle()`, `.sendMessage(msg)`
+-   **JavaScript API**: `window.PayoutsAgentWidget.open()`, `.close()`, `.toggle()`, `.sendMessage(msg)`, `.clearSession()`
 -   **Ingestion Tools** (New - for file processing):
     -   `process_uploaded_invoice`: Document AI pipeline for PDF invoices with vendor matching
     -   `import_vendor_csv`: AI-powered CSV column mapping with BigQuery import

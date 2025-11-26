@@ -8804,7 +8804,7 @@ def agent_chat():
         
         if request.content_type and 'multipart/form-data' in request.content_type:
             message = request.form.get('message', '')
-            user_id = current_user.id
+            user_id = current_user.email
             thread_id = request.form.get('thread_id')
             
             if 'file' in request.files:
@@ -8843,7 +8843,7 @@ def agent_chat():
                 }), 400
             
             message = data.get('message', '')
-            user_id = current_user.id
+            user_id = current_user.email
             thread_id = data.get('thread_id')
         
         if not message and not file_context:
@@ -9015,6 +9015,95 @@ def get_agent_tools():
         })
         
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/agent/feedback', methods=['POST'])
+@login_required
+def submit_invoice_feedback():
+    """
+    Submit feedback on invoice extraction - approve or reject.
+    This helps train the AI by marking correct/incorrect extractions.
+    
+    Request body:
+        invoice_id: The invoice ID to provide feedback on
+        action: 'approve' or 'reject'
+        reason: Optional reason for rejection
+        thread_id: The chat session thread ID
+    """
+    try:
+        data = request.json
+        invoice_id = data.get('invoice_id')
+        action = data.get('action')
+        reason = data.get('reason', '')
+        user_email = current_user.email
+        
+        if not invoice_id or action not in ['approve', 'reject']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid request. Need invoice_id and action (approve/reject)'
+            }), 400
+        
+        bq = get_bigquery_service()
+        
+        if action == 'approve':
+            update_query = """
+            UPDATE `invoicereader-477008.vendors_ai.invoices`
+            SET 
+                verified = TRUE,
+                verified_at = CURRENT_TIMESTAMP(),
+                verified_by = @user_email
+            WHERE invoice_id = @invoice_id AND owner_email = @user_email
+            """
+            bq.execute(update_query, {
+                'invoice_id': invoice_id,
+                'user_email': user_email
+            })
+            
+            return jsonify({
+                'success': True,
+                'message': f'Invoice {invoice_id} has been approved and marked as verified.',
+                'action': 'approve',
+                'invoice_id': invoice_id
+            })
+            
+        elif action == 'reject':
+            update_query = """
+            UPDATE `invoicereader-477008.vendors_ai.invoices`
+            SET 
+                rejected = TRUE,
+                rejected_at = CURRENT_TIMESTAMP(),
+                rejected_by = @user_email,
+                rejection_reason = @reason
+            WHERE invoice_id = @invoice_id AND owner_email = @user_email
+            """
+            bq.execute(update_query, {
+                'invoice_id': invoice_id,
+                'user_email': user_email,
+                'reason': reason
+            })
+            
+            try:
+                from services.vertex_search_service import VertexSearchService
+                vertex_service = VertexSearchService()
+                vertex_service.add_negative_example(invoice_id, reason)
+                print(f"📚 Added negative training example for invoice {invoice_id}")
+            except Exception as vertex_error:
+                print(f"⚠️ Could not add to Vertex training: {vertex_error}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Invoice {invoice_id} has been rejected and added to training data.',
+                'action': 'reject',
+                'invoice_id': invoice_id,
+                'reason': reason
+            })
+            
+    except Exception as e:
+        print(f"❌ Feedback error: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
