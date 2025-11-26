@@ -18,7 +18,7 @@ from .tools import get_all_tools, get_tools_for_user
 
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
 os.environ.setdefault("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-os.environ.setdefault("LANGCHAIN_PROJECT", "pr-fresh-headquarters-8")
+os.environ.setdefault("LANGCHAIN_PROJECT", "pr-majestic-someplace-1")
 
 _checkpointer = None
 _compiled_graph = None
