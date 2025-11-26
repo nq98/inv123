@@ -540,18 +540,552 @@ def create_netsuite_vendor(
         return json.dumps({"error": str(e)})
 
 
+# ========== OMNISCIENT TOOLS - SEMANTIC AI FIRST ==========
+
+@tool
+def deep_search(query: str, search_type: str = "all") -> str:
+    """
+    Deep semantic search using Vertex AI Search - the 'Deep Swimmer' that finds connections SQL cannot.
+    Use this for vague queries like "that expensive software bill" or "invoices from last month".
+    
+    Args:
+        query: Natural language search query (e.g., "expensive software invoice", "Replit bills")
+        search_type: Type of search - "vendors", "invoices", or "all" (default: "all")
+    
+    Returns:
+        JSON with semantic search results including vendor matches, invoice data, and GCS URIs for PDFs
+    """
+    try:
+        results = {
+            "query": query,
+            "search_type": search_type,
+            "vendors": [],
+            "invoices": [],
+            "total_found": 0
+        }
+        
+        # Search vendors using Vertex AI Search
+        if search_type in ["vendors", "all"]:
+            vendor_results = vertex_search_service.search_vendor(query, max_results=5)
+            for r in vendor_results:
+                data = r.get('data', {})
+                if not data.get('is_rejected_entity'):
+                    results["vendors"].append({
+                        "vendor_name": data.get('vendor_name'),
+                        "vendor_id": data.get('vendor_id'),
+                        "netsuite_id": data.get('netsuite_id'),
+                        "country": data.get('country'),
+                        "last_invoice_amount": data.get('last_invoice_amount'),
+                        "domains": data.get('domains')
+                    })
+        
+        # Search invoices using Vertex AI Search
+        if search_type in ["invoices", "all"]:
+            invoice_results = vertex_search_service.search_similar_invoices(query, limit=5)
+            for r in invoice_results:
+                data = r.get('data', {})
+                extracted = data.get('extracted_data', {})
+                results["invoices"].append({
+                    "vendor_name": data.get('vendor_name'),
+                    "invoice_number": extracted.get('invoiceNumber'),
+                    "date": extracted.get('documentDate'),
+                    "total": extracted.get('totals', {}).get('total'),
+                    "currency": data.get('currency'),
+                    "document_type": data.get('document_type'),
+                    "gcs_uri": data.get('gcs_uri'),
+                    "confidence": data.get('confidence_score')
+                })
+        
+        # Also search BigQuery for more structured results
+        if search_type in ["invoices", "all"]:
+            bq_query = """
+            SELECT 
+                invoice_id, vendor_name, invoice_number, invoice_date, 
+                amount, currency, gcs_uri, status
+            FROM `invoicereader-477008.vendors_ai.invoices`
+            WHERE LOWER(vendor_name) LIKE @search_pattern 
+               OR LOWER(invoice_number) LIKE @search_pattern
+            ORDER BY invoice_date DESC
+            LIMIT 5
+            """
+            search_pattern = f"%{query.lower()}%"
+            try:
+                bq_results = bigquery_service.query(bq_query, {"search_pattern": search_pattern})
+                for row in bq_results:
+                    results["invoices"].append({
+                        "source": "database",
+                        "invoice_id": row.get("invoice_id"),
+                        "vendor_name": row.get("vendor_name"),
+                        "invoice_number": row.get("invoice_number"),
+                        "date": str(row.get("invoice_date")),
+                        "amount": float(row.get("amount", 0)) if row.get("amount") else None,
+                        "currency": row.get("currency"),
+                        "gcs_uri": row.get("gcs_uri"),
+                        "status": row.get("status")
+                    })
+            except Exception as e:
+                results["database_error"] = str(e)
+        
+        results["total_found"] = len(results["vendors"]) + len(results["invoices"])
+        
+        if results["total_found"] > 0:
+            results["message"] = f"Found {results['total_found']} results using semantic search. Use get_invoice_pdf_link to get clickable PDF links."
+        else:
+            results["message"] = "No results found. Try a different search query or check Gmail for recent invoices."
+        
+        return json.dumps(results, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def get_invoice_pdf_link(gcs_uri: str) -> str:
+    """
+    Convert a GCS URI (gs://bucket/path) to a clickable HTTPS signed URL valid for 1 hour.
+    ALWAYS use this when showing invoices to provide the actual PDF link.
+    
+    Args:
+        gcs_uri: The Google Cloud Storage URI (e.g., gs://payouts-invoices/vendor/invoice.pdf)
+    
+    Returns:
+        HTML link to view the PDF, or error if URI is invalid
+    """
+    try:
+        if not gcs_uri or not gcs_uri.startswith('gs://'):
+            return json.dumps({
+                "error": "Invalid GCS URI. Must start with gs://",
+                "provided": gcs_uri
+            })
+        
+        # Parse the GCS URI
+        uri_without_prefix = gcs_uri[5:]  # Remove 'gs://'
+        parts = uri_without_prefix.split('/', 1)
+        
+        if len(parts) != 2:
+            return json.dumps({"error": "Invalid GCS URI format. Expected gs://bucket/path"})
+        
+        bucket_name = parts[0]
+        blob_name = parts[1]
+        
+        # Get signed URL using Google Cloud Storage
+        from google.cloud import storage
+        from datetime import timedelta
+        from google.oauth2 import service_account
+        
+        # Load credentials
+        sa_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON') or os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+        if sa_json:
+            import json as json_lib
+            sa_info = json_lib.loads(sa_json)
+            credentials = service_account.Credentials.from_service_account_info(sa_info)
+            storage_client = storage.Client(credentials=credentials, project=sa_info.get('project_id'))
+        else:
+            storage_client = storage.Client()
+        
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        if not blob.exists():
+            return json.dumps({
+                "error": "File not found in storage",
+                "gcs_uri": gcs_uri
+            })
+        
+        # Determine content type
+        file_extension = blob_name.split('.')[-1].lower() if '.' in blob_name else 'pdf'
+        content_type_map = {
+            'pdf': 'application/pdf',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg'
+        }
+        content_type = content_type_map.get(file_extension, 'application/octet-stream')
+        
+        # Generate signed URL (1 hour validity)
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=1),
+            method="GET",
+            response_type=content_type
+        )
+        
+        # Extract filename for display
+        filename = blob_name.split('/')[-1] if '/' in blob_name else blob_name
+        
+        return json.dumps({
+            "success": True,
+            "gcs_uri": gcs_uri,
+            "download_url": signed_url,
+            "expires_in": "1 hour",
+            "file_type": file_extension,
+            "html_link": f'<a href="{signed_url}" target="_blank" class="chat-action-btn">📄 View {filename}</a>'
+        })
+        
+    except Exception as e:
+        return json.dumps({"error": str(e), "gcs_uri": gcs_uri})
+
+
+@tool
+def check_netsuite_health(vendor_id: str = None, vendor_name: str = None) -> str:
+    """
+    The 'NetSuite Detective' - Get the FULL story of a vendor's NetSuite sync status.
+    Don't just say "Synced" - tell the complete health story including last activity, balance, and any issues.
+    
+    Args:
+        vendor_id: Optional vendor ID to check (e.g., V2099)
+        vendor_name: Optional vendor name to search for
+    
+    Returns:
+        Full health report: sync status, last activity, events history, outstanding balance, and alerts
+    """
+    try:
+        report = {
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "sync_status": None,
+            "netsuite_internal_id": None,
+            "last_sync": None,
+            "last_activity": None,
+            "recent_events": [],
+            "alerts": [],
+            "recommendations": []
+        }
+        
+        # First, find the vendor in our database
+        if vendor_name and not vendor_id:
+            vendor_query = """
+            SELECT vendor_id, global_name, netsuite_id, email, domains, sync_status
+            FROM `invoicereader-477008.vendors_ai.global_vendors`
+            WHERE LOWER(global_name) LIKE @search_pattern
+            LIMIT 1
+            """
+            results = bigquery_service.query(vendor_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            if results:
+                vendor = results[0]
+                vendor_id = vendor.get('vendor_id')
+                report["vendor_id"] = vendor_id
+                report["vendor_name"] = vendor.get('global_name')
+                report["netsuite_internal_id"] = vendor.get('netsuite_id')
+        
+        if not vendor_id:
+            return json.dumps({
+                "error": "Could not find vendor. Please provide vendor_id or a valid vendor_name.",
+                "suggestion": "Use search_database_first to find the vendor first."
+            })
+        
+        # Check sync log for this vendor
+        sync_log_query = """
+        SELECT 
+            sync_type, status, started_at, completed_at, error_message,
+            records_processed, records_failed
+        FROM `invoicereader-477008.vendors_ai.netsuite_sync_log`
+        WHERE vendor_id = @vendor_id OR vendor_name LIKE @vendor_pattern
+        ORDER BY started_at DESC
+        LIMIT 5
+        """
+        try:
+            sync_logs = bigquery_service.query(sync_log_query, {
+                "vendor_id": vendor_id,
+                "vendor_pattern": f"%{vendor_name or ''}%"
+            })
+            
+            if sync_logs:
+                last_sync = sync_logs[0]
+                report["last_sync"] = {
+                    "type": last_sync.get("sync_type"),
+                    "status": last_sync.get("status"),
+                    "started": str(last_sync.get("started_at")),
+                    "completed": str(last_sync.get("completed_at")),
+                    "records_processed": last_sync.get("records_processed"),
+                    "records_failed": last_sync.get("records_failed")
+                }
+                
+                if last_sync.get("status") == "FAILED":
+                    report["alerts"].append({
+                        "type": "SYNC_FAILED",
+                        "message": f"Last sync failed: {last_sync.get('error_message', 'Unknown error')}",
+                        "severity": "HIGH"
+                    })
+                    report["recommendations"].append("Shall I retry the sync?")
+        except Exception as e:
+            report["sync_log_error"] = str(e)
+        
+        # Check NetSuite events for this vendor
+        events_query = """
+        SELECT 
+            event_type, record_type, netsuite_id, status, 
+            created_at, error_message, request_data, response_data
+        FROM `invoicereader-477008.vendors_ai.netsuite_events`
+        WHERE LOWER(CAST(request_data AS STRING)) LIKE @vendor_pattern
+           OR LOWER(CAST(response_data AS STRING)) LIKE @vendor_pattern
+        ORDER BY created_at DESC
+        LIMIT 10
+        """
+        try:
+            events = bigquery_service.query(events_query, {
+                "vendor_pattern": f"%{(vendor_name or vendor_id).lower()}%"
+            })
+            
+            for event in events:
+                event_summary = {
+                    "type": event.get("event_type"),
+                    "record_type": event.get("record_type"),
+                    "status": event.get("status"),
+                    "timestamp": str(event.get("created_at")),
+                    "netsuite_id": event.get("netsuite_id")
+                }
+                report["recent_events"].append(event_summary)
+                
+                # Set last activity from most recent event
+                if not report["last_activity"] and events:
+                    first_event = events[0]
+                    report["last_activity"] = f"{first_event.get('event_type')} ({first_event.get('record_type')}) on {str(first_event.get('created_at'))[:10]}"
+            
+            # Check for failed events
+            failed_events = [e for e in events if e.get("status") == "ERROR"]
+            if failed_events:
+                report["alerts"].append({
+                    "type": "RECENT_ERRORS",
+                    "message": f"{len(failed_events)} recent NetSuite operations failed",
+                    "severity": "MEDIUM"
+                })
+                
+        except Exception as e:
+            report["events_error"] = str(e)
+        
+        # Get invoice count and outstanding balance
+        invoice_query = """
+        SELECT 
+            COUNT(*) as invoice_count,
+            SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END) as pending_amount,
+            SUM(amount) as total_spend,
+            MAX(invoice_date) as last_invoice_date
+        FROM `invoicereader-477008.vendors_ai.invoices`
+        WHERE LOWER(vendor_name) LIKE @vendor_pattern
+        """
+        try:
+            invoice_stats = bigquery_service.query(invoice_query, {
+                "vendor_pattern": f"%{(vendor_name or '').lower()}%"
+            })
+            if invoice_stats:
+                stats = invoice_stats[0]
+                report["financials"] = {
+                    "total_invoices": stats.get("invoice_count"),
+                    "total_spend": float(stats.get("total_spend", 0)) if stats.get("total_spend") else 0,
+                    "pending_amount": float(stats.get("pending_amount", 0)) if stats.get("pending_amount") else 0,
+                    "last_invoice": str(stats.get("last_invoice_date"))
+                }
+                
+                # Check for missing recent invoices
+                from datetime import datetime, timedelta
+                last_invoice = stats.get("last_invoice_date")
+                if last_invoice:
+                    try:
+                        days_since_invoice = (datetime.now() - datetime.fromisoformat(str(last_invoice)[:10])).days
+                        if days_since_invoice > 30:
+                            report["alerts"].append({
+                                "type": "NO_RECENT_INVOICE",
+                                "message": f"No invoice received in {days_since_invoice} days",
+                                "severity": "LOW"
+                            })
+                            report["recommendations"].append("Shall I scan Gmail for recent invoices from this vendor?")
+                    except:
+                        pass
+        except Exception as e:
+            report["financials_error"] = str(e)
+        
+        # Determine overall sync status
+        if report["last_sync"]:
+            report["sync_status"] = report["last_sync"]["status"]
+        elif report["netsuite_internal_id"]:
+            report["sync_status"] = "SYNCED"
+        else:
+            report["sync_status"] = "NOT_SYNCED"
+            report["recommendations"].append("This vendor is not synced to NetSuite. Shall I create a vendor record?")
+        
+        return json.dumps(report, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool 
+def get_vendor_full_profile(vendor_name: str) -> str:
+    """
+    The OMNISCIENT tool - Get EVERYTHING about a vendor in ONE call.
+    Combines: database search + NetSuite health + recent invoices with PDF links + proactive alerts.
+    
+    Use this when user asks "Tell me about [vendor]" or "Who is [vendor]?"
+    
+    Args:
+        vendor_name: The vendor name to look up (e.g., "Replit", "AWS", "Google")
+    
+    Returns:
+        Complete vendor dossier with profile, NetSuite status, invoices, PDF links, and alerts
+    """
+    try:
+        dossier = {
+            "vendor_name": vendor_name,
+            "profile": None,
+            "netsuite_status": None,
+            "recent_invoices": [],
+            "total_spend": 0,
+            "pdf_links": [],
+            "proactive_alerts": [],
+            "recommendations": []
+        }
+        
+        # 1. Get vendor profile from database
+        vendor_query = """
+        SELECT 
+            vendor_id, global_name, netsuite_id, email, phone, 
+            tax_id, address, country, domains, sync_status, created_at
+        FROM `invoicereader-477008.vendors_ai.global_vendors`
+        WHERE LOWER(global_name) LIKE @search_pattern
+        LIMIT 1
+        """
+        try:
+            vendors = bigquery_service.query(vendor_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            if vendors:
+                v = vendors[0]
+                dossier["profile"] = {
+                    "vendor_id": v.get("vendor_id"),
+                    "name": v.get("global_name"),
+                    "netsuite_id": v.get("netsuite_id"),
+                    "email": v.get("email"),
+                    "phone": v.get("phone"),
+                    "tax_id": v.get("tax_id"),
+                    "country": v.get("country"),
+                    "domains": v.get("domains"),
+                    "status": "Active ✅" if v.get("netsuite_id") else "Not Synced ⚠️"
+                }
+        except Exception as e:
+            dossier["profile_error"] = str(e)
+        
+        # 2. Get NetSuite health status
+        try:
+            health_result = check_netsuite_health.invoke({"vendor_name": vendor_name})
+            health_data = json.loads(health_result)
+            dossier["netsuite_status"] = {
+                "synced": health_data.get("sync_status") == "SYNCED" or health_data.get("netsuite_internal_id") is not None,
+                "internal_id": health_data.get("netsuite_internal_id"),
+                "last_activity": health_data.get("last_activity"),
+                "recent_events_count": len(health_data.get("recent_events", [])),
+                "pending_balance": health_data.get("financials", {}).get("pending_amount", 0)
+            }
+            
+            # Add any alerts from NetSuite check
+            for alert in health_data.get("alerts", []):
+                dossier["proactive_alerts"].append(alert)
+            for rec in health_data.get("recommendations", []):
+                dossier["recommendations"].append(rec)
+                
+        except Exception as e:
+            dossier["netsuite_error"] = str(e)
+        
+        # 3. Get recent invoices with GCS URIs
+        invoice_query = """
+        SELECT 
+            invoice_id, invoice_number, invoice_date, amount, currency, 
+            status, gcs_uri, created_at
+        FROM `invoicereader-477008.vendors_ai.invoices`
+        WHERE LOWER(vendor_name) LIKE @search_pattern
+        ORDER BY invoice_date DESC
+        LIMIT 5
+        """
+        try:
+            invoices = bigquery_service.query(invoice_query, {"search_pattern": f"%{vendor_name.lower()}%"})
+            total_spend = 0
+            
+            for inv in invoices:
+                invoice_info = {
+                    "invoice_number": inv.get("invoice_number"),
+                    "date": str(inv.get("invoice_date")),
+                    "amount": float(inv.get("amount", 0)) if inv.get("amount") else 0,
+                    "currency": inv.get("currency", "USD"),
+                    "status": inv.get("status"),
+                    "gcs_uri": inv.get("gcs_uri")
+                }
+                dossier["recent_invoices"].append(invoice_info)
+                total_spend += invoice_info["amount"]
+                
+                # Generate PDF link if GCS URI exists
+                if inv.get("gcs_uri"):
+                    try:
+                        pdf_result = get_invoice_pdf_link.invoke({"gcs_uri": inv.get("gcs_uri")})
+                        pdf_data = json.loads(pdf_result)
+                        if pdf_data.get("success"):
+                            dossier["pdf_links"].append({
+                                "invoice": inv.get("invoice_number"),
+                                "link": pdf_data.get("html_link")
+                            })
+                    except:
+                        pass
+            
+            dossier["total_spend"] = total_spend
+            
+            # Check for missing recent invoices
+            if invoices:
+                from datetime import datetime
+                last_date = invoices[0].get("invoice_date")
+                if last_date:
+                    try:
+                        days_ago = (datetime.now() - datetime.fromisoformat(str(last_date)[:10])).days
+                        if days_ago > 30:
+                            dossier["proactive_alerts"].append({
+                                "type": "MISSING_INVOICE",
+                                "message": f"No invoice received from {vendor_name} in {days_ago} days",
+                                "severity": "MEDIUM"
+                            })
+                            dossier["recommendations"].append(f"Shall I scan Gmail specifically for recent {vendor_name} invoices?")
+                    except:
+                        pass
+                        
+        except Exception as e:
+            dossier["invoices_error"] = str(e)
+        
+        # 4. Format the complete response
+        summary = {
+            "vendor_profile": dossier["profile"],
+            "netsuite_status": dossier["netsuite_status"],
+            "financials": {
+                "total_spend": dossier["total_spend"],
+                "recent_invoices_count": len(dossier["recent_invoices"]),
+                "invoices": dossier["recent_invoices"]
+            },
+            "documents": dossier["pdf_links"],
+            "proactive_alerts": dossier["proactive_alerts"],
+            "recommendations": dossier["recommendations"]
+        }
+        
+        return json.dumps(summary, indent=2, default=str)
+        
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def get_all_tools():
-    """Return list of all available tools for the agent - SEMANTIC AI FIRST ORDER"""
+    """Return list of all available tools for the agent - OMNISCIENT SEMANTIC AI FIRST ORDER"""
     return [
+        # Omniscient Tools (use these first for comprehensive answers)
+        get_vendor_full_profile,
+        deep_search,
+        get_invoice_pdf_link,
+        check_netsuite_health,
+        # Database First
         search_database_first,
         get_top_vendors_by_spend,
+        # Gmail
         check_gmail_status,
         search_gmail_invoices,
+        # NetSuite
         create_netsuite_bill,
         search_netsuite_vendor,
         get_bill_status,
+        create_netsuite_vendor,
+        # Utilities
         match_vendor_to_database,
         run_bigquery,
-        get_subscription_summary,
-        create_netsuite_vendor
+        get_subscription_summary
     ]
