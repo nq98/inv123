@@ -24,27 +24,20 @@ vertex_search_service = VertexSearchService()
 vendor_matcher = VendorMatcher(bigquery_service, vertex_search_service, gemini_service)
 
 
-def _get_gmail_auth_url():
-    """Generate Gmail OAuth URL for use in chat"""
-    try:
-        domain = os.getenv('REPLIT_DEV_DOMAIN', '')
-        if domain:
-            redirect_uri = f"https://{domain}/api/gmail/callback"
-        else:
-            redirect_uri = "http://localhost:5000/api/gmail/callback"
-        
-        auth_url, state = gmail_service.get_authorization_url(redirect_uri)
-        return auth_url, state
-    except Exception as e:
-        return None, str(e)
+def _get_gmail_connect_url():
+    """Get the Gmail connect URL - uses the existing app OAuth flow"""
+    domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+    if domain:
+        return f"https://{domain}/api/ap-automation/gmail/auth"
+    return "/api/ap-automation/gmail/auth"
 
 
 def _check_gmail_connected():
     """Check if Gmail is connected by looking at Flask session"""
     try:
         from flask import session
-        token = session.get('gmail_token')
-        return token is not None and 'token' in token
+        session_token = session.get('gmail_session_token')
+        return session_token is not None
     except:
         return False
 
@@ -67,20 +60,14 @@ def check_gmail_status() -> str:
                 "message": "Gmail is connected and ready to use"
             })
         else:
-            auth_url, state = _get_gmail_auth_url()
-            if auth_url:
-                return json.dumps({
-                    "connected": False,
-                    "message": "Gmail is not connected",
-                    "action_required": True,
-                    "auth_url": auth_url,
-                    "html_button": f'<a href="{auth_url}" target="_blank" class="chat-action-btn">Connect Gmail</a>'
-                })
-            else:
-                return json.dumps({
-                    "connected": False,
-                    "error": "Could not generate Gmail authorization URL"
-                })
+            connect_url = _get_gmail_connect_url()
+            return json.dumps({
+                "connected": False,
+                "message": "Gmail is not connected. Please click the button below to connect your Gmail account.",
+                "action_required": True,
+                "auth_url": connect_url,
+                "html_button": f'<a href="{connect_url}" class="chat-action-btn">Connect Gmail</a>'
+            })
     except Exception as e:
         return json.dumps({"error": str(e)})
 
