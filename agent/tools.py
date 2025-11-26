@@ -34,15 +34,23 @@ def _get_gmail_connect_url():
 
 
 def _check_gmail_connected(user_email: str = None):
-    """Check if Gmail is connected using the Gmail service"""
+    """Check if Gmail is connected - checks BOTH session and database storage"""
     try:
+        from flask import session
+        session_token = session.get('gmail_session_token')
+        if session_token:
+            from services.token_storage import SecureTokenStorage
+            token_storage = SecureTokenStorage()
+            credentials = token_storage.get_credentials(session_token)
+            if credentials:
+                return True
+        
         if user_email:
             gmail = GmailService(owner_email=user_email)
-            return gmail.is_connected_for_user()
-        else:
-            from flask import session
-            session_token = session.get('gmail_session_token')
-            return session_token is not None
+            if gmail.is_connected_for_user():
+                return True
+        
+        return False
     except Exception as e:
         print(f"Error checking Gmail connection: {e}")
         return False
@@ -1938,7 +1946,7 @@ def get_netsuite_statistics(user_email: str) -> str:
 <thead><tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Vendor Name</th><th style="padding:8px;text-align:left;">NetSuite ID</th><th style="padding:8px;text-align:left;">Email</th></tr></thead><tbody>'''
             
             for v in stats["netsuite_vendors"][:20]:
-                name = v.get('companyName') or v.get('entityId', 'N/A')
+                name = v.get('companyname') or v.get('companyName') or v.get('entityid') or v.get('entityId') or 'N/A'
                 ns_id = v.get('id') or v.get('internalId', 'N/A')
                 email = v.get('email', 'N/A')
                 html += f'<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{name}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{ns_id}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">{email}</td></tr>'
@@ -1996,7 +2004,7 @@ def pull_netsuite_vendors(user_email: str) -> str:
         for vendor in vendors:
             try:
                 netsuite_id = vendor.get('id') or vendor.get('internalId')
-                company_name = vendor.get('companyName') or vendor.get('entityId', 'Unknown')
+                company_name = vendor.get('companyname') or vendor.get('companyName') or vendor.get('entityid') or vendor.get('entityId') or 'Unknown'
                 email = vendor.get('email', '')
                 
                 existing = bigquery_service.query(
@@ -2031,7 +2039,7 @@ def pull_netsuite_vendors(user_email: str) -> str:
         
         html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>NetSuite ID</th><th>Email</th><th>Status</th></tr></thead><tbody>'
         for v in vendors[:10]:
-            name = v.get('companyName') or v.get('entityId', 'N/A')
+            name = v.get('companyname') or v.get('companyName') or v.get('entityid') or v.get('entityId') or 'N/A'
             ns_id = v.get('id') or v.get('internalId', 'N/A')
             email = v.get('email', 'N/A')
             html_table += f'<tr><td>{name}</td><td>{ns_id}</td><td>{email}</td><td>✅ Synced</td></tr>'
