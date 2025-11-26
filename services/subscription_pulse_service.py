@@ -160,53 +160,76 @@ class SubscriptionPulseService:
                 
     def analyze_email_fast(self, email_data):
         """
-        Fast Lane analysis of email for subscription data
-        Uses email text only (no PDF processing)
+        Fast Lane analysis with SEMANTIC AI FILTERING for subscription detection.
+        
+        CRITICAL: Every email goes through Gemini for true subscription classification.
+        This filters out marketplace transactions (Mrkter), one-time purchases, and payouts.
         
         Args:
             email_data: Dict with 'subject', 'body', 'sender', 'date', 'id'
             
         Returns:
-            Dict with extracted subscription info or None if not a subscription email
+            Dict with extracted subscription info or None if not a TRUE subscription
         """
         subject = email_data.get('subject', '')
         body = email_data.get('body', '')
         sender = email_data.get('sender', '')
         email_date = email_data.get('date')
         
-        # Quick filter: Check if this looks like a transaction email
+        # Quick pre-filter: Check if this looks like a transaction email
         if not self._is_transaction_email(subject, body, sender):
             return None
-            
-        # Extract vendor from sender domain
-        vendor_info = self._extract_vendor_from_sender(sender)
         
-        # Extract amount from email text
-        amount_info = self._extract_amount(subject + ' ' + body)
-        
-        # Use Gemini Flash for quick classification if available
-        if self.gemini_client and (not vendor_info or not amount_info):
+        # SEMANTIC AI FILTER: Use Gemini for ALL emails to classify
+        # This is the key to filtering out Mrkter, Stripe payouts, etc.
+        if self.gemini_client:
             ai_result = self._classify_with_gemini_flash(subject, body, sender)
-            if ai_result:
-                if not vendor_info and ai_result.get('vendor_name'):
-                    vendor_info = {
-                        'name': ai_result['vendor_name'],
-                        'domain': ai_result.get('domain', ''),
-                        'confidence': ai_result.get('confidence', 0.7)
-                    }
-                if not amount_info and ai_result.get('amount'):
-                    amount_info = {
-                        'amount': ai_result['amount'],
-                        'currency': ai_result.get('currency', 'USD')
-                    }
-                    
+            
+            # If AI says skip or not a subscription, return None
+            if not ai_result:
+                return None
+            
+            # AI confirmed this is a TRUE subscription - use AI-extracted data
+            vendor_name = ai_result.get('vendor_name', '')
+            vendor_domain = ai_result.get('domain', '')
+            
+            # If AI didn't extract domain, try to get it from sender
+            if not vendor_domain:
+                sender_info = self._extract_vendor_from_sender(sender)
+                if sender_info:
+                    vendor_domain = sender_info.get('domain', '')
+            
+            # Detect paid by (for Shadow IT)
+            paid_by = self._extract_paid_by_email(body)
+            
+            return {
+                'vendor_name': vendor_name,
+                'domain': vendor_domain,
+                'amount': ai_result.get('amount', 0),
+                'currency': ai_result.get('currency', 'USD'),
+                'is_subscription': True,  # AI already confirmed this
+                'payment_type': ai_result.get('payment_type', 'subscription'),
+                'email_subject': subject,
+                'email_date': email_date,
+                'email_id': email_data.get('id'),
+                'sender': sender,
+                'paid_by_email': paid_by,
+                'confidence': ai_result.get('confidence', 0.8),
+                'classification_reason': ai_result.get('reason', '')
+            }
+        
+        # FALLBACK (no Gemini): Strict keyword-based detection
+        vendor_info = self._extract_vendor_from_sender(sender)
         if not vendor_info:
             return None
             
-        # Determine if it's a subscription
+        amount_info = self._extract_amount(subject + ' ' + body)
         is_subscription = self._is_subscription_email(subject, body)
         
-        # Detect paid by (for Shadow IT)
+        # Without AI, only accept if keywords strongly suggest subscription
+        if not is_subscription:
+            return None
+        
         paid_by = self._extract_paid_by_email(body)
         
         return {
@@ -215,12 +238,13 @@ class SubscriptionPulseService:
             'amount': amount_info.get('amount', 0) if amount_info else 0,
             'currency': amount_info.get('currency', 'USD') if amount_info else 'USD',
             'is_subscription': is_subscription,
+            'payment_type': 'subscription',
             'email_subject': subject,
             'email_date': email_date,
             'email_id': email_data.get('id'),
             'sender': sender,
             'paid_by_email': paid_by,
-            'confidence': vendor_info.get('confidence', 0.8)
+            'confidence': 0.6
         }
         
     def _is_transaction_email(self, subject, body, sender):
@@ -322,24 +346,53 @@ class SubscriptionPulseService:
         return None
         
     def _classify_with_gemini_flash(self, subject, body, sender):
-        """Use Gemini Flash for quick classification"""
+        """Use Gemini Flash for SEMANTIC subscription classification"""
         if not self.gemini_client:
             return None
             
-        prompt = f"""Analyze this email and extract subscription/payment information.
+        prompt = f"""You are a SaaS Subscription Detector. Your job is to distinguish TRUE RECURRING SUBSCRIPTIONS from one-time purchases and marketplace transactions.
 
-Email Subject: {subject[:200]}
+## Email to Analyze:
+Subject: {subject[:200]}
 Sender: {sender}
 Body Preview: {body[:500]}
 
-Extract (JSON format):
-- vendor_name: Company name providing the service
-- amount: Payment amount (number only)
-- currency: Currency code (USD, EUR, etc.)
-- is_subscription: true if recurring payment
-- confidence: 0.0-1.0 confidence score
+## CRITICAL CLASSIFICATION RULES:
 
-Return ONLY valid JSON, nothing else. If not a payment email, return {{"skip": true}}"""
+### TRUE SUBSCRIPTIONS (is_subscription: true) - These are SaaS/software subscriptions:
+- Software services: GitHub, Notion, Slack, Zoom, Figma, Adobe, Microsoft 365, Google Workspace
+- Streaming services: Netflix, Spotify, Disney+, YouTube Premium
+- Cloud services: AWS, Azure, GCP, Heroku, Vercel, DigitalOcean
+- Business tools: HubSpot, Salesforce, Mailchimp, Intercom, Zendesk
+- Development tools: JetBrains, CircleCI, Datadog, New Relic
+- Key indicators: "monthly plan", "annual subscription", "renewal", "your subscription", "billing cycle"
+
+### NOT SUBSCRIPTIONS (is_subscription: false) - REJECT THESE:
+1. **Marketplace/Platform Transactions**: Payments THROUGH a platform (Mrkter, Fiverr, Upwork, Amazon Marketplace, eBay sales)
+2. **Payment Processor Notifications**: Stripe payout, PayPal transfer, Square deposit notifications
+3. **One-time Purchases**: Single orders, course purchases, one-time consulting fees
+4. **Bank/Card Notifications**: Credit card alerts, bank transfers
+5. **Invoices to Customers**: Bills you SENT to others (not SaaS you're paying for)
+6. **Freelancer Payments**: Contractor payments, consultant fees
+
+### KEY INSIGHT:
+- "Stripe" charging YOU for their service = SUBSCRIPTION
+- "Stripe" notifying about a payout/deposit = NOT SUBSCRIPTION (skip it)
+- "Mrkter" sending receipt for platform transaction = NOT SUBSCRIPTION
+- "Netflix" charging for monthly service = SUBSCRIPTION
+
+## Output JSON (only valid JSON, nothing else):
+{{
+  "vendor_name": "Company providing the subscription service",
+  "amount": 0.00,
+  "currency": "USD",
+  "is_subscription": true/false,
+  "payment_type": "subscription|one_time|marketplace|payout|skip",
+  "confidence": 0.0-1.0,
+  "reason": "Brief explanation of classification"
+}}
+
+If this is clearly NOT a payment email at all, return: {{"skip": true, "reason": "not a payment email"}}"""
 
         try:
             response = self.gemini_client.models.generate_content(
@@ -353,10 +406,26 @@ Return ONLY valid JSON, nothing else. If not a payment email, return {{"skip": t
                 result_text = result_text.split('```')[1]
                 if result_text.startswith('json'):
                     result_text = result_text[4:]
+            result_text = result_text.strip()
             
             result = json.loads(result_text)
+            
+            # Skip non-subscriptions based on semantic analysis
             if result.get('skip'):
                 return None
+            
+            # Only return TRUE subscriptions
+            payment_type = result.get('payment_type', 'unknown')
+            is_subscription = result.get('is_subscription', False)
+            
+            if payment_type in ['marketplace', 'payout', 'skip', 'one_time']:
+                print(f"[Subscription Filter] REJECTED: {result.get('vendor_name', 'Unknown')} - {result.get('reason', payment_type)}")
+                return None
+            
+            if not is_subscription:
+                print(f"[Subscription Filter] REJECTED (not subscription): {result.get('vendor_name', 'Unknown')}")
+                return None
+                
             return result
             
         except Exception as e:
