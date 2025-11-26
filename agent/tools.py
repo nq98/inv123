@@ -2160,7 +2160,62 @@ def show_unsynced_vendors(user_email: str, limit: int = 50) -> str:
     Returns:
         HTML table with unsynced vendors
     """
-    return show_vendors_table.invoke({"user_email": user_email, "limit": limit, "filter_type": "unsynced"})
+    try:
+        if not user_email:
+            return json.dumps({"error": "user_email is required for multi-tenant access"})
+        
+        where_clause = "WHERE owner_email = @user_email AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)"
+        
+        query = f"""
+        SELECT 
+            vendor_id, global_name, netsuite_internal_id, emails, 
+            custom_attributes, countries, source_system, created_at
+        FROM `invoicereader-477008.vendors_ai.global_vendors`
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT {limit}
+        """
+        
+        print(f"🔍 Executing unsynced vendors query for {user_email}...")
+        vendors = bigquery_service.query(query, {"user_email": user_email})
+        
+        if not vendors:
+            return json.dumps({
+                "success": True,
+                "message": "No unsynced vendors found.",
+                "html_table": "<p>All vendors are synced to NetSuite!</p>"
+            })
+        
+        html_table = '<table class="payouts-data-table"><thead><tr><th>Name</th><th>Source</th><th>Country</th><th>Status</th></tr></thead><tbody>'
+        
+        for v in vendors:
+            name = v.get('global_name', 'N/A')
+            source = v.get('source_system', '-')
+            countries = v.get('countries', [])
+            country = countries[0] if countries else '-'
+            
+            html_table += f'<tr><td><strong>{name}</strong></td><td>{source}</td><td>{country}</td><td>⚠️ Not in NetSuite</td></tr>'
+        
+        html_table += '</tbody></table>'
+        
+        total_query = f"SELECT COUNT(*) as count FROM `invoicereader-477008.vendors_ai.global_vendors` {where_clause}"
+        total_result = bigquery_service.query(total_query, {"user_email": user_email})
+        total_count = total_result[0]['count'] if total_result else len(vendors)
+        
+        response = {
+            "success": True,
+            "user_email": user_email,
+            "total_unsynced": total_count,
+            "showing": len(vendors),
+            "message": f"Found {total_count} vendors not synced to NetSuite. Showing {len(vendors)}.",
+            "html_table": html_table
+        }
+        
+        return json.dumps(response, indent=2, default=str)
+        
+    except Exception as e:
+        print(f"❌ Error in show_unsynced_vendors: {e}")
+        return json.dumps({"error": str(e), "details": "Failed to query unsynced vendors"})
 
 
 @tool
