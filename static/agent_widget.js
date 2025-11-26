@@ -143,6 +143,60 @@
                 pointer-events: auto;
             }
 
+            /* Fullscreen/Maximized mode */
+            #payouts-chat-window.maximized {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100vw;
+                height: 100vh;
+                max-width: 100vw;
+                max-height: 100vh;
+                border-radius: 0;
+                z-index: 999999;
+            }
+
+            #payouts-agent-widget.maximized {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 999999;
+            }
+
+            #payouts-agent-widget.maximized #payouts-chat-button {
+                display: none;
+            }
+
+            .payouts-header-buttons {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .payouts-chat-maximize {
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s;
+            }
+
+            .payouts-chat-maximize:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+
             .payouts-chat-header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
@@ -2065,11 +2119,21 @@
                         <span class="payouts-service-badge" id="netsuite-status">🔗 Checking...</span>
                     </div>
                 </div>
-                <button class="payouts-chat-close" aria-label="Close chat">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                </button>
+                <div class="payouts-header-buttons">
+                    <button class="payouts-chat-maximize" id="payouts-maximize-btn" aria-label="Maximize chat">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" id="maximize-icon">
+                            <path d="M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" id="minimize-icon" style="display:none;">
+                            <path d="M5 1v4H1M9 1v4h4M5 13V9H1M9 13V9h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <button class="payouts-chat-close" aria-label="Close chat">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="payouts-chat-messages" id="payouts-messages-container">
                 <div class="payouts-welcome-message">
@@ -2136,11 +2200,34 @@
         attachEventListeners();
     }
 
+    let isMaximized = false;
+
+    function toggleMaximize() {
+        isMaximized = !isMaximized;
+        const maximizeIcon = chatWindow.querySelector('#maximize-icon');
+        const minimizeIcon = chatWindow.querySelector('#minimize-icon');
+        
+        if (isMaximized) {
+            widgetContainer.classList.add('maximized');
+            chatWindow.classList.add('maximized');
+            maximizeIcon.style.display = 'none';
+            minimizeIcon.style.display = 'block';
+        } else {
+            widgetContainer.classList.remove('maximized');
+            chatWindow.classList.remove('maximized');
+            maximizeIcon.style.display = 'block';
+            minimizeIcon.style.display = 'none';
+        }
+    }
+
     function attachEventListeners() {
         floatingButton.addEventListener('click', toggleChat);
 
         const closeBtn = chatWindow.querySelector('.payouts-chat-close');
         closeBtn.addEventListener('click', closeChat);
+
+        const maximizeBtn = document.getElementById('payouts-maximize-btn');
+        maximizeBtn.addEventListener('click', toggleMaximize);
 
         const input = document.getElementById('payouts-chat-input');
         const sendBtn = document.getElementById('payouts-send-btn');
@@ -2179,6 +2266,17 @@
                     sendMessage();
                 }
             });
+        });
+
+        // ESC key to exit fullscreen or close chat
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (isMaximized) {
+                    toggleMaximize();
+                } else if (isOpen) {
+                    closeChat();
+                }
+            }
         });
     }
 
@@ -2269,6 +2367,17 @@
         isOpen = false;
         chatWindow.classList.remove('open');
         floatingButton.classList.remove('open');
+        
+        // Reset maximized state when closing
+        if (isMaximized) {
+            isMaximized = false;
+            widgetContainer.classList.remove('maximized');
+            chatWindow.classList.remove('maximized');
+            const maximizeIcon = chatWindow.querySelector('#maximize-icon');
+            const minimizeIcon = chatWindow.querySelector('#minimize-icon');
+            if (maximizeIcon) maximizeIcon.style.display = 'block';
+            if (minimizeIcon) minimizeIcon.style.display = 'none';
+        }
     }
 
     async function sendMessage() {
