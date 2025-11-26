@@ -33,13 +33,18 @@ def _get_gmail_connect_url():
     return "/api/ap-automation/gmail/auth"
 
 
-def _check_gmail_connected():
-    """Check if Gmail is connected by looking at Flask session"""
+def _check_gmail_connected(user_email: str = None):
+    """Check if Gmail is connected using the Gmail service"""
     try:
-        from flask import session
-        session_token = session.get('gmail_session_token')
-        return session_token is not None
-    except:
+        if user_email:
+            gmail = GmailService(owner_email=user_email)
+            return gmail.is_connected_for_user()
+        else:
+            from flask import session
+            session_token = session.get('gmail_session_token')
+            return session_token is not None
+    except Exception as e:
+        print(f"Error checking Gmail connection: {e}")
         return False
 
 
@@ -57,10 +62,11 @@ def get_dashboard_status(user_email: str) -> str:
         JSON with complete dashboard status for proactive greeting
     """
     try:
+        gmail_connected = _check_gmail_connected(user_email)
         status = {
             "user_email": user_email,
-            "gmail_connected": _check_gmail_connected(),
-            "gmail_auth_url": _get_gmail_connect_url() if not _check_gmail_connected() else None,
+            "gmail_connected": gmail_connected,
+            "gmail_auth_url": _get_gmail_connect_url() if not gmail_connected else None,
             "vendor_count": 0,
             "invoice_count": 0,
             "pending_invoices": 0,
@@ -173,7 +179,7 @@ def check_gmail_status(user_email: str) -> str:
         JSON with connection status and auth URL if not connected
     """
     try:
-        is_connected = _check_gmail_connected()
+        is_connected = _check_gmail_connected(user_email)
         
         if is_connected:
             return json.dumps({
