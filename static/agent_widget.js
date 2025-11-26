@@ -2944,14 +2944,18 @@
     // ============================================
     // DYNAMIC BUTTON CLICK HANDLER
     // Handles buttons rendered by AI with data-action or text patterns
+    // ONLY handles buttons inside the chat widget to avoid interfering with main page
     // ============================================
     document.addEventListener('click', function(e) {
+        // Only handle buttons inside our widget
+        const widgetContainer = document.getElementById('payouts-agent-widget');
+        if (!widgetContainer) return;
+        
         const button = e.target.closest('button, .chat-action-btn, .action-btn, .payouts-quick-action');
         if (!button) return;
         
-        const container = document.getElementById('payouts-messages-container');
-        const widgetContainer = document.getElementById('payouts-agent-widget');
-        if (!container?.contains(button) && !widgetContainer?.contains(button)) return;
+        // STRICT CHECK: Only handle if button is inside the widget
+        if (!widgetContainer.contains(button)) return;
         
         // Skip buttons that already have onclick handlers
         if (button.hasAttribute('onclick')) return;
@@ -2960,12 +2964,11 @@
         const dataAction = button.getAttribute('data-action');
         const dataMessage = button.getAttribute('data-message');
         
-        console.log('Dynamic button click:', { buttonText, dataAction, dataMessage });
+        console.log('Widget button click:', { buttonText, dataAction, dataMessage });
         
         // Handle data-action buttons first (preferred method)
         if (dataAction) {
             e.preventDefault();
-            e.stopPropagation();
             
             const actionMessages = {
                 'scan_gmail': 'Scan my Gmail for invoices',
@@ -2990,7 +2993,6 @@
         // Handle data-message buttons
         if (dataMessage) {
             e.preventDefault();
-            e.stopPropagation();
             button.disabled = true;
             button.style.opacity = '0.7';
             window.PayoutsAgentWidget.sendMessage(dataMessage);
