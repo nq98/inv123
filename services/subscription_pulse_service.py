@@ -29,6 +29,13 @@ except ImportError:
     genai = None
     GENAI_AVAILABLE = False
 
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None
+    OPENAI_AVAILABLE = False
+
 import config
 
 class SubscriptionPulseService:
@@ -70,9 +77,26 @@ class SubscriptionPulseService:
     def __init__(self):
         self.config = config.config
         
-        # Initialize Gemini client for fast classification
+        # Initialize OpenRouter client (PRIMARY - no rate limits)
+        self.openrouter_client = None
+        openrouter_api_key = os.getenv('OPENROUTERA')
+        if openrouter_api_key and OPENAI_AVAILABLE:
+            try:
+                self.openrouter_client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=openrouter_api_key,
+                    default_headers={
+                        "HTTP-Referer": "https://replit.com",
+                        "X-Title": "Subscription Pulse Scanner"
+                    }
+                )
+                print("✅ OpenRouter initialized for Subscription Pulse (no rate limits)")
+            except Exception as e:
+                print(f"⚠️ OpenRouter initialization failed: {e}")
+        
+        # Initialize Gemini client as fallback
         api_key = os.getenv('GOOGLE_GEMINI_API_KEY')
-        if api_key:
+        if api_key and GENAI_AVAILABLE:
             self.gemini_client = genai.Client(api_key=api_key)
         else:
             self.gemini_client = None
@@ -346,14 +370,8 @@ class SubscriptionPulseService:
         return None
         
     def _classify_with_gemini_flash(self, subject, body, sender):
-        """Use Gemini Flash for SEMANTIC subscription classification with rate limiting"""
-        if not self.gemini_client:
-            return None
+        """Use OpenRouter (PRIMARY, no rate limits) or Gemini Flash for subscription classification"""
         
-        # Rate limiting: Add small delay to stay within API quotas
-        import time
-        time.sleep(0.15)  # ~400 requests/minute max to avoid 429 errors
-            
         prompt = f"""You are a SaaS Subscription Detector. Your job is to distinguish TRUE RECURRING SUBSCRIPTIONS from one-time purchases and marketplace transactions.
 
 ## Email to Analyze:
@@ -398,13 +416,40 @@ Body Preview: {body[:500]}
 
 If this is clearly NOT a payment email at all, return: {{"skip": true, "reason": "not a payment email"}}"""
 
-        try:
-            response = self.gemini_client.models.generate_content(
-                model='gemini-1.5-flash',  # Higher rate limits than gemini-2.0-flash-exp
-                contents=prompt
-            )
+        result_text = None
+        
+        # TRY OPENROUTER FIRST (no rate limits!)
+        if self.openrouter_client:
+            try:
+                response = self.openrouter_client.chat.completions.create(
+                    model="google/gemini-flash-1.5",  # Fast Gemini via OpenRouter
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+                result_text = response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"OpenRouter error (falling back to Gemini): {e}")
+        
+        # FALLBACK TO DIRECT GEMINI API (with rate limiting)
+        if not result_text and self.gemini_client:
+            import time
+            time.sleep(0.15)  # Rate limiting for direct API
             
-            result_text = response.text.strip()
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=prompt
+                )
+                result_text = response.text.strip()
+            except Exception as e:
+                print(f"Gemini Flash classification error: {e}")
+                return None
+        
+        if not result_text:
+            return None
+            
+        try:
             # Clean up response
             if result_text.startswith('```'):
                 result_text = result_text.split('```')[1]
@@ -433,7 +478,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             return result
             
         except Exception as e:
-            print(f"Gemini Flash classification error: {e}")
+            print(f"JSON parsing error: {e}")
             return None
             
     def aggregate_subscription_data(self, events):
