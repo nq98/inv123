@@ -2895,4 +2895,104 @@
         }
     };
 
+    // ============================================
+    // DYNAMIC BUTTON CLICK HANDLER
+    // Handles buttons rendered by AI that don't have onclick handlers
+    // ============================================
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('button, .chat-action-btn, .action-btn');
+        if (!button) return;
+        
+        const buttonText = button.textContent.trim().toLowerCase();
+        const container = document.getElementById('payouts-messages-container');
+        if (!container || !container.contains(button)) return;
+        
+        // Skip buttons that already have onclick handlers
+        if (button.hasAttribute('onclick')) return;
+        
+        console.log('Dynamic button click:', buttonText);
+        
+        // Handle "Use This Vendor" button
+        if (buttonText.includes('use this vendor') || buttonText.includes('use vendor')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Find vendor info from nearby elements
+            const vendorCard = button.closest('.vendor-match-card, .payouts-match-card, .payouts-vendor-card, [class*="vendor"], [class*="match"]');
+            
+            // Try to extract vendor and invoice info from the context
+            let vendorName = 'Unknown';
+            let vendorId = null;
+            let netsuiteId = null;
+            let invoiceId = null;
+            
+            // Look for vendor name in nearby text
+            if (vendorCard) {
+                const vendorNameEl = vendorCard.querySelector('[class*="vendor-name"], strong, b, .vendor-name');
+                if (vendorNameEl) {
+                    vendorName = vendorNameEl.textContent.trim();
+                }
+                
+                // Try to get vendor ID from data attributes
+                vendorId = vendorCard.dataset?.vendorId || vendorCard.querySelector('[data-vendor-id]')?.dataset?.vendorId;
+                netsuiteId = vendorCard.dataset?.netsuiteId || vendorCard.querySelector('[data-netsuite-id]')?.dataset?.netsuiteId;
+                invoiceId = vendorCard.dataset?.invoiceId || vendorCard.querySelector('[data-invoice-id]')?.dataset?.invoiceId;
+            }
+            
+            // Send confirmation message to agent
+            button.disabled = true;
+            button.innerHTML = '✅ Selected';
+            window.PayoutsAgentWidget.sendMessage(`I want to use the matched vendor "${vendorName}" for this invoice. Please proceed with the next step.`);
+            return;
+        }
+        
+        // Handle "Sync to NetSuite" button
+        if (buttonText.includes('sync to netsuite') || buttonText.includes('sync vendor')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            button.disabled = true;
+            button.innerHTML = '🔄 Syncing...';
+            window.PayoutsAgentWidget.sendMessage('Sync this vendor to NetSuite now.');
+            return;
+        }
+        
+        // Handle "Create Bill" button
+        if (buttonText.includes('create bill') || buttonText.includes('create the bill')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            button.disabled = true;
+            button.innerHTML = '📄 Creating...';
+            window.PayoutsAgentWidget.sendMessage('Create the bill in NetSuite now.');
+            return;
+        }
+        
+        // Handle "Create Vendor" / "Create New Vendor" button
+        if (buttonText.includes('create vendor') || buttonText.includes('create new vendor') || buttonText.includes('add vendor')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            button.disabled = true;
+            button.innerHTML = '➕ Creating...';
+            window.PayoutsAgentWidget.sendMessage('Create this as a new vendor in the system.');
+            return;
+        }
+        
+        // Handle "View Original PDF" / "View PDF" button
+        if (buttonText.includes('view') && (buttonText.includes('pdf') || buttonText.includes('original'))) {
+            // Let the link work naturally if it's an anchor tag
+            if (button.tagName === 'A' && button.href) {
+                return; // Allow default behavior
+            }
+            
+            // Try to find PDF URL
+            const pdfLink = button.closest('.payouts-message')?.querySelector('a[href*=".pdf"], a[href*="storage.googleapis.com"]');
+            if (pdfLink) {
+                window.open(pdfLink.href, '_blank');
+            }
+            return;
+        }
+    });
+
 })();

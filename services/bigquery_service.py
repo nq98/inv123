@@ -1669,6 +1669,18 @@ class BigQueryService:
             print(f"❌ Error getting invoice details: {e}")
             return None
     
+    def get_invoice_by_id(self, invoice_id: str) -> Optional[dict]:
+        """
+        Alias for get_invoice_details - used by app.py endpoints.
+        
+        Args:
+            invoice_id: The invoice ID to look up
+            
+        Returns:
+            dict with invoice data or None if not found
+        """
+        return self.get_invoice_details(invoice_id)
+    
     def get_invoice_by_number(self, invoice_number: str) -> Optional[dict]:
         """
         Get invoice details by invoice_number (alternative lookup when invoice_id doesn't match)
