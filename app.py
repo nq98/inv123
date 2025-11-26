@@ -2689,8 +2689,30 @@ def gmail_status():
     token_storage = get_token_storage()
     credentials = token_storage.get_credentials(session_token)
     
-    connected = credentials is not None
-    return jsonify({'connected': connected})
+    if not credentials:
+        return jsonify({'connected': False})
+    
+    # Get the connected email address
+    try:
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        from googleapiclient.discovery import build
+        
+        creds = OAuthCredentials(
+            token=credentials.get('token'),
+            refresh_token=credentials.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv('GMAIL_CLIENT_ID'),
+            client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+        )
+        
+        gmail_service = build('gmail', 'v1', credentials=creds)
+        profile = gmail_service.users().getProfile(userId='me').execute()
+        email = profile.get('emailAddress', 'Connected')
+        
+        return jsonify({'connected': True, 'email': email})
+    except Exception as e:
+        print(f"Error getting Gmail profile: {e}")
+        return jsonify({'connected': True, 'email': 'Connected'})
 
 @app.route('/api/ap-automation/gmail/disconnect', methods=['POST'])
 def gmail_disconnect():
@@ -8266,19 +8288,45 @@ def subscription_scan_stream():
             
             service = build('gmail', 'v1', credentials=creds)
             
+            # Get user profile for email display
+            try:
+                profile = service.users().getProfile(userId='me').execute()
+                user_email = profile.get('emailAddress', 'unknown')
+                yield f"data: {json.dumps({'type': 'progress', 'percent': 8, 'message': f'Connected as {user_email}'})}\n\n"
+            except:
+                user_email = 'unknown'
+            
             # Search for transaction emails using Fast Lane keywords
             yield f"data: {json.dumps({'type': 'progress', 'percent': 10, 'message': 'Searching for subscription emails...'})}\n\n"
             
-            # Multi-language subscription/payment query
-            query_parts = [
-                'receipt OR invoice OR payment OR subscription OR billing OR charged',
-                f'newer_than:{days}d'
-            ]
-            query = ' '.join(query_parts)
+            # MULTI-LANGUAGE subscription/payment query (like Gmail tab's Elite Gatekeeper)
+            # Supports: English, Hebrew, German, French, Spanish
+            from datetime import datetime, timedelta
+            after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
             
-            # Get email IDs
+            query = (
+                f'after:{after_date} '
+                '('
+                'subject:subscription OR subject:receipt OR subject:invoice OR subject:payment OR '
+                'subject:charged OR subject:billing OR subject:renewal OR subject:plan OR '
+                'subject:"thank you for your purchase" OR subject:"order confirmation" OR '
+                'subject:חשבונית OR subject:קבלה OR subject:תשלום OR subject:מנוי OR '
+                'subject:rechnung OR subject:zahlung OR subject:abonnement OR '
+                'subject:facture OR subject:paiement OR subject:factura OR subject:recibo'
+                ') '
+                '-subject:"invitation" -subject:"newsletter" -subject:"webinar" '
+                '-subject:"verify your" -subject:"confirm your email" -subject:"password reset"'
+            )
+            
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 12, 'message': f'Using multi-language query for {days} days...'})}\n\n"
+            
+            # Get email IDs - NO ARTIFICIAL CAP for proper time-based scanning
             all_message_ids = []
             page_token = None
+            page_count = 0
+            
+            # Calculate reasonable max based on time range (avg ~10 emails/day for heavy inbox)
+            max_emails = min(days * 15, 10000)  # Dynamic limit based on days
             
             while True:
                 results = service.users().messages().list(
@@ -8291,8 +8339,12 @@ def subscription_scan_stream():
                 messages = results.get('messages', [])
                 all_message_ids.extend([m['id'] for m in messages])
                 
+                page_count += 1
+                if page_count % 2 == 0:
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': 12, 'message': f'Fetching emails... {len(all_message_ids)} found so far'})}\n\n"
+                
                 page_token = results.get('nextPageToken')
-                if not page_token or len(all_message_ids) >= 1000:  # Cap at 1000 emails
+                if not page_token or len(all_message_ids) >= max_emails:
                     break
                     
             total_emails = len(all_message_ids)
@@ -8302,8 +8354,12 @@ def subscription_scan_stream():
                 yield f"data: {json.dumps({'type': 'complete', 'results': {'active_subscriptions': [], 'stopped_subscriptions': [], 'active_count': 0, 'stopped_count': 0, 'monthly_spend': 0, 'potential_savings': 0, 'alerts': [], 'duplicates': [], 'price_alerts': [], 'shadow_it': [], 'timeline': []}})}\n\n"
                 return
                 
-            # Process emails with Fast Lane (text only)
+            # STAGE 2: Process emails with Fast Lane (text only) + AI filtering
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 22, 'message': '🧠 STAGE 2: Analyzing emails with Fast Lane AI...'})}\n\n"
+            
             processed_events = []
+            skipped_count = 0
+            
             for i, msg_id in enumerate(all_message_ids):
                 try:
                     # Get email metadata and snippet (not full body for speed)
@@ -8317,11 +8373,23 @@ def subscription_scan_stream():
                     # Extract headers
                     headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
                     
+                    subject = headers.get('Subject', '')
+                    sender = headers.get('From', '')
+                    snippet = msg.get('snippet', '')
+                    
+                    # Quick pre-filter: Skip obvious non-subscription emails
+                    subject_lower = subject.lower()
+                    skip_keywords = ['unsubscribe from', 'marketing', 'we miss you', 'confirm your', 
+                                     'verify your', 'welcome to', 'password reset', 'security alert']
+                    if any(kw in subject_lower for kw in skip_keywords):
+                        skipped_count += 1
+                        continue
+                    
                     email_data = {
                         'id': msg_id,
-                        'subject': headers.get('Subject', ''),
-                        'sender': headers.get('From', ''),
-                        'body': msg.get('snippet', ''),  # Use snippet for speed
+                        'subject': subject,
+                        'sender': sender,
+                        'body': snippet,  # Use snippet for speed
                         'date': None
                     }
                     
@@ -8334,10 +8402,15 @@ def subscription_scan_stream():
                         except:
                             pass
                     
-                    # Fast Lane analysis
+                    # Fast Lane analysis using Gemini
                     result = pulse_service.analyze_email_fast(email_data)
                     if result:
                         processed_events.append(result)
+                        # Send subscription_found event for terminal
+                        vendor_name = result.get('vendor_name', 'Unknown')
+                        amount = result.get('amount')
+                        amount_str = f"${amount:.2f}" if amount else ''
+                        yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
                         
                 except Exception as e:
                     print(f"Error processing email {msg_id}: {e}")
@@ -8345,8 +8418,8 @@ def subscription_scan_stream():
                     
                 # Progress update every 50 emails
                 if i > 0 and i % 50 == 0:
-                    percent = 20 + int((i / total_emails) * 60)
-                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments'})}\n\n"
+                    percent = 22 + int((i / total_emails) * 58)
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments (skipped {skipped_count} non-financial)'})}\n\n"
                     
             yield f"data: {json.dumps({'type': 'progress', 'percent': 85, 'message': f'Aggregating data from {len(processed_events)} payment events...'})}\n\n"
             
