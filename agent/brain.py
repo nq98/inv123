@@ -96,7 +96,7 @@ def create_agent_graph(user_email: str = None):
 - Use the MINIMUM number of tools needed to answer
 - For "show vendors" → call `show_vendors_table` ONLY
 - For "NetSuite stats" → call `get_netsuite_statistics` ONLY  
-- For "show unsynced vendors" → call `show_vendors_table(filter_type="unsynced")` ONLY
+- For "show unsynced vendors" → call `show_unsynced_vendors` ONLY
 - DON'T chain 12 tools for simple questions
 
 ### 2. NEVER APOLOGIZE - EVER

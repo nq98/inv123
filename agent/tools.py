@@ -2087,7 +2087,9 @@ def show_vendors_table(user_email: str, limit: int = 20, filter_type: str = "all
         if filter_type == "synced":
             where_clause += " AND netsuite_internal_id IS NOT NULL AND LENGTH(TRIM(netsuite_internal_id)) > 0"
         elif filter_type == "unsynced":
-            where_clause += " AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)"
+            where_clause += """ AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)
+            AND source_system != 'NETSUITE'
+            AND global_name IS NOT NULL AND LENGTH(TRIM(global_name)) > 0"""
         
         query = f"""
         SELECT 
