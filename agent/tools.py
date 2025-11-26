@@ -1265,8 +1265,14 @@ def get_vendor_full_profile(user_email: str, vendor_name: str) -> str:
 @tool
 def process_uploaded_invoice(user_email: str, file_path: str) -> str:
     """
-    Process an uploaded invoice PDF through the full extraction pipeline.
-    Uses Document AI for OCR, Gemini for semantic extraction, and Supreme Judge for vendor matching.
+    Process an uploaded invoice PDF through the FULL extraction pipeline.
+    Uses the EXACT SAME technology as Gmail tab and Invoice tab:
+    - Document AI for OCR extraction
+    - Vertex AI Search RAG for historical context
+    - Gemini for semantic validation
+    - VendorMatcher for AI-powered vendor matching (Supreme Judge)
+    - BigQuery for invoice storage
+    - GCS for permanent file storage
     
     AUTOMATICALLY CALL THIS when user uploads a PDF file.
     
@@ -1275,12 +1281,19 @@ def process_uploaded_invoice(user_email: str, file_path: str) -> str:
         file_path: Path to the uploaded PDF file (e.g., "uploads/abc123_invoice.pdf")
     
     Returns:
-        Extraction results with vendor match and action buttons for next steps
+        Complete extraction results with vendor match, PDF URL, and action buttons
     """
     try:
         import sys
         sys.path.insert(0, '.')
         from invoice_processor import InvoiceProcessor
+        from services.bigquery_service import BigQueryService
+        from services.vertex_search_service import VertexSearchService
+        from services.gemini_service import GeminiService
+        from services.vendor_matcher import VendorMatcher
+        from google.cloud import storage
+        from datetime import datetime
+        import uuid
         
         if not os.path.exists(file_path):
             return json.dumps({
@@ -1288,123 +1301,266 @@ def process_uploaded_invoice(user_email: str, file_path: str) -> str:
                 "suggestion": "The file may have been moved or deleted."
             })
         
+        print(f"\n{'='*60}")
+        print(f"📄 AGENT INVOICE PROCESSING: {file_path}")
+        print(f"👤 User: {user_email}")
+        print(f"{'='*60}\n")
+        
+        # ========== STEP 1: FULL 3-LAYER EXTRACTION (Document AI + Vertex + Gemini) ==========
+        print("🔍 STEP 1: Running full 3-layer extraction pipeline...")
         processor = InvoiceProcessor()
-        
-        print(f"📄 Processing invoice for {user_email}: {file_path}")
-        
         result = processor.process_local_file(file_path)
         
-        if result.get('status') == 'completed':
-            validated_data = result.get('validated_data', {})
-            if not isinstance(validated_data, dict):
-                validated_data = {}
-            vendor_data = validated_data.get('vendor', {})
-            if not isinstance(vendor_data, dict):
-                vendor_data = {}
-            vendor_name = vendor_data.get('name', 'Unknown Vendor')
-            vendor_email = vendor_data.get('email', '')
-            vendor_address = vendor_data.get('address', '')
-            vendor_tax_id = vendor_data.get('taxId', '')
-            
-            invoice_number = validated_data.get('invoiceNumber', 'N/A')
-            invoice_date = validated_data.get('documentDate', '')
-            due_date = validated_data.get('dueDate', '')
-            
-            totals = validated_data.get('totals', {})
-            if not isinstance(totals, dict):
-                totals = {}
-            total = totals.get('total', 0)
-            subtotal = totals.get('subtotal', total)
-            tax = totals.get('tax', 0)
-            currency = validated_data.get('currency', 'USD')
-            
-            line_items = validated_data.get('lineItems', [])
-            if not isinstance(line_items, list):
-                line_items = []
-            
-            confidence_val = validated_data.get('extractionConfidence', 0)
-            confidence = (confidence_val if isinstance(confidence_val, (int, float)) else 0) * 100
-            
-            vendor_match = validated_data.get('vendorMatch', {})
-            if not isinstance(vendor_match, dict):
-                vendor_match = {}
-            matched_vendor_id = vendor_match.get('vendor_id')
-            matched_vendor_name = vendor_match.get('vendor_name', vendor_name)
-            netsuite_id = vendor_match.get('netsuite_id')
-            match_confidence = vendor_match.get('confidence', 0)
-            match_reasoning = vendor_match.get('reasoning', '')
-            match_verdict = vendor_match.get('verdict', 'NEW_VENDOR')
-            
-            gcs_uri = result.get('gcs_uri', '')
-            pdf_url = result.get('pdf_url', '')
-            invoice_id = result.get('invoice_id', invoice_number)
-            
-            response = {
-                "success": True,
-                "user_email": user_email,
-                "invoice_id": invoice_id,
-                "extraction": {
-                    "vendor_name": vendor_name,
-                    "vendor_email": vendor_email,
-                    "vendor_address": vendor_address,
-                    "vendor_tax_id": vendor_tax_id,
-                    "invoice_number": invoice_number,
-                    "invoice_date": invoice_date,
-                    "due_date": due_date,
-                    "subtotal": subtotal,
-                    "tax": tax,
-                    "total": total,
-                    "currency": currency,
-                    "confidence": round(confidence),
-                    "line_items": line_items[:10]
-                },
-                "vendor_match": {
-                    "verdict": match_verdict,
-                    "matched": matched_vendor_id is not None,
-                    "vendor_id": matched_vendor_id,
-                    "vendor_name": matched_vendor_name,
-                    "netsuite_id": netsuite_id,
-                    "confidence": match_confidence,
-                    "reasoning": match_reasoning
-                },
-                "pdf_url": pdf_url,
-                "gcs_uri": gcs_uri,
-                "next_steps": []
-            }
-            
-            if match_verdict == 'MATCH' and netsuite_id:
-                response["next_steps"] = [
-                    {"action": "create_bill", "label": "Create Bill in NetSuite", "enabled": True},
-                    {"action": "view_vendor", "label": "View Vendor Profile", "enabled": True}
-                ]
-                response["proactive_message"] = f"I found a match! Vendor '{matched_vendor_name}' is already in NetSuite (ID: {netsuite_id}). Ready to create the bill?"
-            elif match_verdict == 'MATCH' and matched_vendor_id:
-                response["next_steps"] = [
-                    {"action": "sync_vendor", "label": "Sync Vendor to NetSuite", "enabled": True},
-                    {"action": "create_bill", "label": "Create Bill", "enabled": False, "reason": "Sync vendor first"}
-                ]
-                response["proactive_message"] = f"Matched to vendor '{matched_vendor_name}' in your database, but they're not synced to NetSuite yet. Want me to sync them first?"
-            elif match_verdict == 'AMBIGUOUS':
-                response["next_steps"] = [
-                    {"action": "select_vendor", "label": "Select from Candidates", "enabled": True},
-                    {"action": "create_vendor", "label": "Create New Vendor", "enabled": True}
-                ]
-                response["proactive_message"] = f"I found multiple potential matches. Please select the correct vendor or create a new one."
-            else:
-                response["next_steps"] = [
-                    {"action": "create_vendor", "label": "Create New Vendor", "enabled": True}
-                ]
-                response["proactive_message"] = f"'{vendor_name}' appears to be a new vendor. Would you like me to create them in your database and sync to NetSuite?"
-            
-            return json.dumps(response, indent=2, default=str)
-        else:
+        if result.get('status') != 'completed':
             return json.dumps({
                 "success": False,
                 "error": result.get('error', 'Unknown extraction error'),
                 "file_path": file_path
             })
         
+        print("✅ Extraction complete!")
+        
+        # Extract validated data
+        validated_data = result.get('validated_data', {}) or {}
+        vendor_data = validated_data.get('vendor', {}) or {}
+        vendor_name = vendor_data.get('name', 'Unknown Vendor')
+        vendor_email = vendor_data.get('email', '')
+        vendor_address = vendor_data.get('address', '')
+        vendor_tax_id = vendor_data.get('taxId', '')
+        vendor_country = vendor_data.get('country', '')
+        vendor_phone = vendor_data.get('phone', '')
+        
+        invoice_number = validated_data.get('invoiceNumber', 'N/A')
+        invoice_date = validated_data.get('documentDate', '')
+        due_date = validated_data.get('dueDate', '')
+        
+        totals = validated_data.get('totals', {}) or {}
+        total = totals.get('total', 0)
+        subtotal = totals.get('subtotal', total)
+        tax = totals.get('tax', 0)
+        currency = validated_data.get('currency', 'USD')
+        
+        line_items = validated_data.get('lineItems', []) or []
+        
+        confidence_val = validated_data.get('extractionConfidence', 0)
+        confidence = (confidence_val if isinstance(confidence_val, (int, float)) else 0) * 100
+        
+        gcs_uri = result.get('gcs_uri', '')
+        
+        # ========== STEP 2: VENDOR MATCHING (Same as Gmail tab - VendorMatcher + Supreme Judge) ==========
+        print(f"\n⚖️ STEP 2: Running VendorMatcher for '{vendor_name}'...")
+        
+        vendor_match_result = None
+        match_verdict = 'NEW_VENDOR'
+        matched_vendor_id = None
+        matched_vendor_name = vendor_name
+        netsuite_id = None
+        match_confidence = 0
+        match_reasoning = ''
+        candidates = []
+        
+        if vendor_name and vendor_name != 'Unknown Vendor':
+            try:
+                bigquery_svc = BigQueryService()
+                vertex_search_svc = VertexSearchService()
+                gemini_svc = GeminiService()
+                
+                vendor_matcher = VendorMatcher(bigquery_svc, vertex_search_svc, gemini_svc)
+                
+                # Build invoice vendor data (same as Gmail tab)
+                email_domain = None
+                if vendor_email and '@' in vendor_email:
+                    try:
+                        email_domain = vendor_email.split('@')[-1]
+                    except:
+                        pass
+                
+                invoice_data = {
+                    'vendor_name': vendor_name,
+                    'tax_id': vendor_tax_id,
+                    'address': vendor_address,
+                    'email_domain': email_domain,
+                    'phone': vendor_phone,
+                    'country': vendor_country
+                }
+                
+                # Run vendor matching (same as Gmail tab)
+                match_result = vendor_matcher.match_vendor(invoice_data)
+                
+                if match_result:
+                    match_verdict = match_result.get('verdict', 'NEW_VENDOR')
+                    matched_vendor_id = match_result.get('vendor_id')
+                    matched_vendor_name = match_result.get('vendor_name', vendor_name)
+                    netsuite_id = match_result.get('netsuite_id')
+                    match_confidence = match_result.get('confidence', 0)
+                    match_reasoning = match_result.get('reasoning', '')
+                    candidates = match_result.get('candidates', [])
+                    
+                    print(f"✅ Vendor match result: {match_verdict} (confidence: {match_confidence}%)")
+                    if matched_vendor_id:
+                        print(f"   Matched to: {matched_vendor_name} (ID: {matched_vendor_id})")
+                    if netsuite_id:
+                        print(f"   NetSuite ID: {netsuite_id}")
+                else:
+                    print("⚠️ No vendor match found - new vendor")
+                    
+            except Exception as match_err:
+                print(f"⚠️ Vendor matching error (non-fatal): {match_err}")
+        else:
+            print("⚠️ Vendor name is unknown - skipping matching")
+        
+        # ========== STEP 3: GENERATE PDF URL (Same as Gmail tab) ==========
+        print("\n📎 STEP 3: Generating PDF download URL...")
+        pdf_url = ''
+        
+        if gcs_uri and gcs_uri.startswith('gs://'):
+            try:
+                from google.oauth2 import service_account
+                import config
+                
+                credentials = None
+                sa_json = os.getenv('GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON')
+                if sa_json:
+                    try:
+                        sa_info = json.loads(sa_json)
+                        credentials = service_account.Credentials.from_service_account_info(sa_info)
+                    except:
+                        pass
+                elif os.path.exists(config.VERTEX_RUNNER_SA_PATH):
+                    credentials = service_account.Credentials.from_service_account_file(config.VERTEX_RUNNER_SA_PATH)
+                
+                storage_client = storage.Client(project=config.GOOGLE_CLOUD_PROJECT_ID, credentials=credentials)
+                
+                # Parse GCS URI
+                gcs_parts = gcs_uri.replace('gs://', '').split('/', 1)
+                bucket_name = gcs_parts[0]
+                blob_name = gcs_parts[1] if len(gcs_parts) > 1 else ''
+                
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                
+                # Generate signed URL (valid for 7 days)
+                pdf_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=datetime.utcnow() + timedelta(days=7),
+                    method="GET"
+                )
+                print(f"✅ PDF URL generated: {pdf_url[:80]}...")
+            except Exception as url_err:
+                print(f"⚠️ Could not generate PDF URL: {url_err}")
+        
+        # ========== STEP 4: SAVE TO BIGQUERY (Same as Gmail tab) ==========
+        print("\n💾 STEP 4: Saving invoice to BigQuery...")
+        invoice_id = f"INV-{uuid.uuid4().hex[:8].upper()}"
+        
+        try:
+            bigquery_svc = BigQueryService()
+            
+            invoice_record = {
+                'invoice_id': invoice_number if invoice_number != 'N/A' else invoice_id,
+                'vendor_id': matched_vendor_id,
+                'vendor_name': vendor_name,
+                'client_id': validated_data.get('buyer', {}).get('name', 'Unknown'),
+                'amount': float(total) if total else 0,
+                'currency': currency,
+                'invoice_date': invoice_date,
+                'status': 'matched' if matched_vendor_id else 'unmatched',
+                'gcs_uri': gcs_uri,
+                'file_type': result.get('file_type', 'pdf'),
+                'file_size': result.get('file_size', 0),
+                'metadata': json.dumps({
+                    'source': 'agent_upload',
+                    'user_email': user_email,
+                    'extraction_confidence': confidence,
+                    'full_data': validated_data,
+                    'vendor_match': {
+                        'verdict': match_verdict,
+                        'vendor_id': matched_vendor_id,
+                        'netsuite_id': netsuite_id,
+                        'confidence': match_confidence
+                    }
+                })
+            }
+            
+            bigquery_svc.save_invoice(invoice_record)
+            print(f"✅ Invoice saved to BigQuery: {invoice_record['invoice_id']}")
+        except Exception as bq_err:
+            print(f"⚠️ BigQuery save error (non-fatal): {bq_err}")
+        
+        # ========== BUILD RESPONSE (Matches Gmail tab output format) ==========
+        print(f"\n{'='*60}")
+        print("✅ INVOICE PROCESSING COMPLETE!")
+        print(f"{'='*60}\n")
+        
+        response = {
+            "success": True,
+            "user_email": user_email,
+            "invoice_id": invoice_number if invoice_number != 'N/A' else invoice_id,
+            "source": "agent_upload",
+            "extraction": {
+                "vendor_name": vendor_name,
+                "vendor_email": vendor_email,
+                "vendor_address": vendor_address,
+                "vendor_tax_id": vendor_tax_id,
+                "vendor_country": vendor_country,
+                "vendor_phone": vendor_phone,
+                "invoice_number": invoice_number,
+                "invoice_date": invoice_date,
+                "due_date": due_date,
+                "subtotal": subtotal,
+                "tax": tax,
+                "total": total,
+                "currency": currency,
+                "confidence": round(confidence),
+                "line_items": line_items[:10]
+            },
+            "vendor_match": {
+                "verdict": match_verdict,
+                "matched": matched_vendor_id is not None,
+                "vendor_id": matched_vendor_id,
+                "vendor_name": matched_vendor_name,
+                "netsuite_id": netsuite_id,
+                "confidence": match_confidence,
+                "reasoning": match_reasoning,
+                "candidates": candidates[:5] if candidates else []
+            },
+            "pdf_url": pdf_url,
+            "gcs_uri": gcs_uri,
+            "next_steps": [],
+            "proactive_message": ""
+        }
+        
+        # Determine next steps based on match result (same logic as Gmail tab)
+        if match_verdict == 'MATCH' and netsuite_id:
+            response["next_steps"] = [
+                {"action": "create_bill", "label": "Create Bill in NetSuite", "enabled": True},
+                {"action": "view_vendor", "label": "View Vendor Profile", "enabled": True}
+            ]
+            response["proactive_message"] = f"Great news! I matched this invoice to '{matched_vendor_name}' who is already in NetSuite (ID: {netsuite_id}). Ready to create the bill?"
+        elif match_verdict == 'MATCH' and matched_vendor_id:
+            response["next_steps"] = [
+                {"action": "sync_vendor", "label": "Sync Vendor to NetSuite First", "enabled": True},
+                {"action": "create_bill", "label": "Create Bill", "enabled": False, "reason": "Sync vendor first"}
+            ]
+            response["proactive_message"] = f"I matched this to vendor '{matched_vendor_name}' in your database, but they're not in NetSuite yet. Want me to sync them first, then create the bill?"
+        elif match_verdict == 'AMBIGUOUS':
+            response["next_steps"] = [
+                {"action": "select_vendor", "label": "Select Correct Vendor", "enabled": True},
+                {"action": "create_vendor", "label": "Create New Vendor", "enabled": True}
+            ]
+            response["proactive_message"] = f"I found {len(candidates)} potential matches for '{vendor_name}'. Please select the correct vendor or create a new one."
+        else:
+            response["next_steps"] = [
+                {"action": "create_vendor", "label": "Create New Vendor & Sync", "enabled": True}
+            ]
+            response["proactive_message"] = f"'{vendor_name}' is a new vendor. Would you like me to add them to your database and sync to NetSuite?"
+        
+        return json.dumps(response, indent=2, default=str)
+        
     except Exception as e:
+        import traceback
+        print(f"❌ Error processing invoice: {e}")
+        traceback.print_exc()
         return json.dumps({"error": str(e), "file_path": file_path})
 
 
