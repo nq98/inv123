@@ -2164,7 +2164,10 @@ def show_unsynced_vendors(user_email: str, limit: int = 50) -> str:
         if not user_email:
             return json.dumps({"error": "user_email is required for multi-tenant access"})
         
-        where_clause = "WHERE owner_email = @user_email AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)"
+        where_clause = """WHERE owner_email = @user_email 
+        AND (netsuite_internal_id IS NULL OR LENGTH(TRIM(COALESCE(netsuite_internal_id, ''))) = 0)
+        AND source_system != 'NETSUITE'
+        AND global_name IS NOT NULL AND LENGTH(TRIM(global_name)) > 0"""
         
         query = f"""
         SELECT 
@@ -2172,7 +2175,7 @@ def show_unsynced_vendors(user_email: str, limit: int = 50) -> str:
             custom_attributes, countries, source_system, created_at
         FROM `invoicereader-477008.vendors_ai.global_vendors`
         {where_clause}
-        ORDER BY created_at DESC
+        ORDER BY global_name ASC
         LIMIT {limit}
         """
         
