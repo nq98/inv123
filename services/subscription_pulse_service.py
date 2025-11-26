@@ -422,12 +422,13 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
         if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-2.0-flash-001",  # Gemini 2.0 Flash via OpenRouter
+                    model="google/gemini-3-pro-preview",  # Gemini 3 Pro via OpenRouter (no rate limits)
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     response_format={"type": "json_object"}
                 )
                 result_text = response.choices[0].message.content.strip()
+                print(f"✅ OpenRouter Gemini 3 Pro classified email")
             except Exception as e:
                 print(f"OpenRouter error (falling back to Gemini): {e}")
         
