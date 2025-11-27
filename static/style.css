@@ -55,6 +55,8 @@ html {
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    overflow-y: auto !important;
 }
 
 body {
@@ -65,6 +67,8 @@ body {
     line-height: 1.6;
     padding-top: 70px; /* Space for fixed header */
     padding-bottom: 20px;
+    overflow-x: hidden;
+    overflow-y: auto !important;
 }
 
 /* ========== MAIN NAVIGATION HEADER ========== */

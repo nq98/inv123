@@ -7449,3 +7449,23 @@ async function claimSubscription(id) {
         }
     }
 }
+
+/**
+ * Safety function to ensure page remains interactive
+ * Prevents any stuck loading overlays from freezing the page
+ */
+function ensurePageInteractive() {
+    document.body.style.overflow = 'auto';
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.pointerEvents = 'auto';
+    
+    const hiddenModals = document.querySelectorAll('.modal[style*="display: none"]');
+    hiddenModals.forEach(modal => {
+        modal.style.pointerEvents = 'none';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    ensurePageInteractive();
+    setInterval(ensurePageInteractive, 5000);
+});
