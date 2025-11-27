@@ -169,6 +169,10 @@
                     <span class="nav-text">Bill Audit</span>
                 </a>
             </nav>
+            <div class="nav-user-section" style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
+                <span style="color: #666; font-size: 14px;">{{ current_user.email }}</span>
+                <a href="/logout" class="logout-btn" style="background: #ef4444; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;">Logout</a>
+            </div>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
                 <svg class="nav-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path d="M3 12h18M3 6h18M3 18h18"></path>
