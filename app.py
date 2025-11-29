@@ -8612,20 +8612,31 @@ def start_background_scan():
         # Create background job
         job_id = job_manager.create_job('subscription_scan', user_email)
         
-        # Start background thread (NON-DAEMON so it survives worker recycling)
-        def run_scan():
-            try:
-                run_background_subscription_scan(job_id, credentials, days, user_email)
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                job_manager.update_job(job_id, status='error', error=str(e),
-                    message=f'Scan failed: {str(e)}')
+        # Save credentials to temp file for worker subprocess
+        creds_file = f"/tmp/subscription_jobs/{job_id}_creds.json"
+        with open(creds_file, 'w') as f:
+            json.dump(credentials, f)
+            f.flush()
+            os.fsync(f.fileno())
         
-        # CRITICAL: daemon=False so thread survives gunicorn worker restarts
-        thread = threading.Thread(target=run_scan, daemon=False, name=f'scan-{job_id}')
-        thread.start()
-        print(f"[Background Scan] Started thread scan-{job_id} for {user_email}")
+        # Start DETACHED SUBPROCESS - survives gunicorn worker recycling
+        import subprocess
+        import sys
+        
+        worker_script = os.path.join(os.path.dirname(__file__), 'subscription_scan_worker.py')
+        
+        stdout_log = open(f'/tmp/subscription_jobs/{job_id}_stdout.log', 'w')
+        stderr_log = open(f'/tmp/subscription_jobs/{job_id}_stderr.log', 'w')
+        
+        proc = subprocess.Popen(
+            [sys.executable, worker_script, job_id, creds_file, str(days), user_email],
+            stdout=stdout_log,
+            stderr=stderr_log,
+            start_new_session=True,
+            close_fds=True
+        )
+        
+        print(f"[Background Scan] Started worker PID {proc.pid} for job {job_id} user {user_email}")
         
         return jsonify({
             'job_id': job_id,
