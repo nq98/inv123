@@ -344,25 +344,8 @@ Return results for ALL {len(email_batch)} emails in order by index.
 
         result_text = None
         
-        # PRIMARY: Gemini 1.5 Flash (most reliable for JSON output)
-        if self.gemini_client:
-            try:
-                response = self.gemini_client.models.generate_content(
-                    model="gemini-1.5-flash-latest",
-                    contents=prompt,
-                    config={
-                        "temperature": 0.1,
-                        "response_mime_type": "application/json"
-                    }
-                )
-                result_text = response.text
-                print(f"✅ Batch analyzed {len(email_batch)} emails with Gemini 1.5 Flash")
-            except Exception as e:
-                print(f"Gemini batch error: {e}")
-                raise  # Let caller handle with sequential fallback
-        
-        # FALLBACK: OpenRouter Gemini if primary fails
-        if not result_text and self.openrouter_client:
+        # PRIMARY: OpenRouter Gemini 2.5 Flash (faster and more reliable)
+        if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
                     model="google/gemini-2.5-flash-preview",
@@ -370,10 +353,26 @@ Return results for ALL {len(email_batch)} emails in order by index.
                     temperature=0.1
                 )
                 result_text = response.choices[0].message.content
-                print(f"✅ Batch analyzed {len(email_batch)} emails with OpenRouter fallback")
+                print(f"✅ Stage 2 Batch: {len(email_batch)} emails analyzed with OpenRouter Gemini 2.5 Flash")
             except Exception as e:
-                print(f"OpenRouter batch fallback error: {e}")
-                raise  # Let caller handle with sequential fallback
+                print(f"⚠️ OpenRouter Stage 2 error: {e}")
+        
+        # FALLBACK: Gemini native client
+        if not result_text and self.gemini_client:
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model="gemini-2.5-flash-preview-05-20",
+                    contents=prompt,
+                    config={
+                        "temperature": 0.1,
+                        "response_mime_type": "application/json"
+                    }
+                )
+                result_text = response.text
+                print(f"✅ Stage 2 Batch: {len(email_batch)} emails analyzed with Gemini native fallback")
+            except Exception as e:
+                print(f"⚠️ Gemini native Stage 2 error: {e}")
+                raise
         
         if not result_text:
             raise ValueError("No AI response received for batch analysis")
@@ -394,6 +393,10 @@ Return results for ALL {len(email_batch)} emails in order by index.
         # Handle both array and object with "results" key
         if isinstance(batch_results, dict):
             batch_results = batch_results.get('results', batch_results.get('emails', []))
+        
+        # Debug: Count how many are subscriptions
+        sub_count = sum(1 for r in batch_results if r.get('is_subscription'))
+        print(f"📊 Stage 2 Batch Result: {sub_count}/{len(batch_results)} emails are subscriptions")
         
         # Map results back to email order
         results = []
@@ -574,10 +577,14 @@ Return ALL {len(email_batch)} emails."""
                 
                 return filtered
             except Exception as e:
-                print(f"⚠️ Batch {batch_idx} error: {e}")
+                print(f"⚠️ Stage 1 Batch {batch_idx} error: {e}")
+                import traceback
+                traceback.print_exc()
                 with lock:
                     completed[0] += 1
-                return [email.copy() for email in batch]
+                # On error, return empty list to filter out this batch
+                # (safer than passing all through as false positives)
+                return []
         
         print(f"⚡ Starting parallel semantic filter: {len(all_emails)} emails in {len(batches)} batches with {MAX_PARALLEL_WORKERS} workers")
         
