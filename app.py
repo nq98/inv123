@@ -10,68 +10,117 @@ from flask import Flask, request, jsonify, render_template, session, redirect, u
 
 # ========== BACKGROUND JOB MANAGER ==========
 # Allows subscription scans to run even when browser disconnects
+# Uses FILE-BASED storage so jobs persist across gunicorn workers
+
+import fcntl
 
 class BackgroundJobManager:
-    """Simple in-memory job manager for background subscription scans"""
+    """File-based job manager for background subscription scans.
+    
+    Stores jobs in /tmp/subscription_jobs/ so they persist across
+    all gunicorn workers (which have separate memory spaces).
+    """
+    
+    JOBS_DIR = "/tmp/subscription_jobs"
     
     def __init__(self):
-        self.jobs = {}  # job_id -> job_data
-        self.lock = threading.Lock()
+        os.makedirs(self.JOBS_DIR, exist_ok=True)
+        
+    def _job_file(self, job_id):
+        return os.path.join(self.JOBS_DIR, f"{job_id}.json")
+        
+    def _read_job(self, job_id):
+        """Read job from file with locking"""
+        path = self._job_file(job_id)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, 'r') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                data = json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                return data
+        except (json.JSONDecodeError, IOError):
+            return None
+            
+    def _write_job(self, job_id, data):
+        """Write job to file with locking"""
+        path = self._job_file(job_id)
+        with open(path, 'w') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            json.dump(data, f)
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         
     def create_job(self, job_type, user_email):
         """Create a new background job"""
         job_id = str(uuid.uuid4())[:8]
-        with self.lock:
-            self.jobs[job_id] = {
-                'job_id': job_id,
-                'type': job_type,
-                'user_email': user_email,
-                'status': 'starting',
-                'progress': 0,
-                'message': 'Starting scan...',
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat(),
-                'results': None,
-                'error': None,
-                'subscriptions_found': []
-            }
+        job_data = {
+            'job_id': job_id,
+            'type': job_type,
+            'user_email': user_email,
+            'status': 'starting',
+            'progress': 0,
+            'message': 'Starting scan...',
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat(),
+            'results': None,
+            'error': None,
+            'subscriptions_found': []
+        }
+        self._write_job(job_id, job_data)
         return job_id
         
     def update_job(self, job_id, **kwargs):
         """Update job status"""
-        with self.lock:
-            if job_id in self.jobs:
-                self.jobs[job_id].update(kwargs)
-                self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+        job = self._read_job(job_id)
+        if job:
+            job.update(kwargs)
+            job['updated_at'] = datetime.now().isoformat()
+            self._write_job(job_id, job)
                 
     def add_subscription_found(self, job_id, vendor_name, amount):
         """Track a found subscription for live updates"""
-        with self.lock:
-            if job_id in self.jobs:
-                self.jobs[job_id]['subscriptions_found'].append({
-                    'vendor': vendor_name,
-                    'amount': amount,
-                    'found_at': datetime.now().isoformat()
-                })
+        job = self._read_job(job_id)
+        if job:
+            job['subscriptions_found'].append({
+                'vendor': vendor_name,
+                'amount': amount,
+                'found_at': datetime.now().isoformat()
+            })
+            self._write_job(job_id, job)
                 
     def get_job(self, job_id):
         """Get job status"""
-        with self.lock:
-            return self.jobs.get(job_id, {}).copy()
+        return self._read_job(job_id) or {}
             
     def get_user_jobs(self, user_email):
         """Get all jobs for a user"""
-        with self.lock:
-            return [j.copy() for j in self.jobs.values() if j.get('user_email') == user_email]
+        jobs = []
+        try:
+            for fname in os.listdir(self.JOBS_DIR):
+                if fname.endswith('.json'):
+                    job_id = fname[:-5]
+                    job = self._read_job(job_id)
+                    if job and job.get('user_email') == user_email:
+                        jobs.append(job)
+        except OSError:
+            pass
+        return sorted(jobs, key=lambda x: x.get('created_at', ''), reverse=True)
             
     def cleanup_old_jobs(self, max_age_hours=24):
         """Remove jobs older than max_age_hours"""
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
-        with self.lock:
-            old_jobs = [jid for jid, j in self.jobs.items() 
-                       if datetime.fromisoformat(j['created_at']) < cutoff]
-            for jid in old_jobs:
-                del self.jobs[jid]
+        try:
+            for fname in os.listdir(self.JOBS_DIR):
+                if fname.endswith('.json'):
+                    job_id = fname[:-5]
+                    job = self._read_job(job_id)
+                    if job:
+                        created = datetime.fromisoformat(job['created_at'])
+                        if created < cutoff:
+                            os.remove(self._job_file(job_id))
+        except OSError:
+            pass
 
 # Global job manager instance
 job_manager = BackgroundJobManager()
