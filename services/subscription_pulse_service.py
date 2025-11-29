@@ -388,21 +388,51 @@ Extract ALL {len(email_batch)} emails. When in doubt, INCLUDE with lower confide
                 print(f"⚠️ Gemini native Stage 2 error: {e}")
                 raise
         
+        # If no AI response, create results from email metadata (fallback)
         if not result_text:
-            raise ValueError("No AI response received for batch analysis")
-        
-        # Parse batch results with strict validation
-        try:
-            # Clean markdown if present
-            if '```json' in result_text:
-                result_text = result_text.split('```json')[1].split('```')[0]
-            elif '```' in result_text:
-                result_text = result_text.split('```')[1].split('```')[0]
-            
-            batch_results = json.loads(result_text.strip())
-        except json.JSONDecodeError as e:
-            print(f"Batch JSON parse error: {e}, response: {result_text[:500]}")
-            raise  # Let caller handle with sequential fallback
+            print(f"⚠️ No AI response - using email metadata fallback for {len(email_batch)} emails")
+            batch_results = []
+            for i, email in enumerate(email_batch):
+                vendor_info = self._extract_vendor_from_sender(email.get('sender', ''))
+                batch_results.append({
+                    'index': i,
+                    'is_subscription': True,  # Stage 1 already filtered
+                    'vendor_name': vendor_info.get('name', 'Unknown') if vendor_info else email.get('vendor_hint', 'Unknown'),
+                    'amount': 0,
+                    'currency': 'USD',
+                    'billing_cadence': 'monthly',
+                    'payment_type': 'subscription',
+                    'confidence': 0.5,
+                    'reasoning': 'Fallback: Using Stage 1 classification'
+                })
+        else:
+            # Parse batch results with flexible validation
+            try:
+                # Clean markdown if present
+                if '```json' in result_text:
+                    result_text = result_text.split('```json')[1].split('```')[0]
+                elif '```' in result_text:
+                    result_text = result_text.split('```')[1].split('```')[0]
+                
+                batch_results = json.loads(result_text.strip())
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON parse error: {e}")
+                print(f"   AI Response: {result_text[:300]}...")
+                # FALLBACK: Create results from email metadata instead of failing
+                batch_results = []
+                for i, email in enumerate(email_batch):
+                    vendor_info = self._extract_vendor_from_sender(email.get('sender', ''))
+                    batch_results.append({
+                        'index': i,
+                        'is_subscription': True,
+                        'vendor_name': vendor_info.get('name', 'Unknown') if vendor_info else email.get('vendor_hint', 'Unknown'),
+                        'amount': 0,
+                        'currency': 'USD',
+                        'billing_cadence': 'monthly',
+                        'payment_type': 'subscription',
+                        'confidence': 0.4,
+                        'reasoning': 'Fallback: JSON parse failed, using email metadata'
+                    })
         
         # Handle both array and object with "results" key
         if isinstance(batch_results, dict):
