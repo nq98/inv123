@@ -8462,19 +8462,31 @@ def subscription_scan_stream():
             from datetime import datetime, timedelta
             after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
             
-            query = (
-                f'after:{after_date} '
-                '('
-                'subject:subscription OR subject:receipt OR subject:invoice OR subject:payment OR '
-                'subject:charged OR subject:billing OR subject:renewal OR subject:plan OR '
-                'subject:"thank you for your purchase" OR subject:"order confirmation" OR '
+            transactional_subjects = (
+                'subject:receipt OR subject:invoice OR subject:payment OR subject:charged OR '
+                'subject:subscription OR subject:billing OR subject:renewal OR '
+                'subject:"your receipt" OR subject:"payment received" OR subject:"payment successful" OR '
+                'subject:"your invoice" OR subject:"order confirmation" OR subject:"thank you for your order" OR '
                 'subject:חשבונית OR subject:קבלה OR subject:תשלום OR subject:מנוי OR '
                 'subject:rechnung OR subject:zahlung OR subject:abonnement OR '
                 'subject:facture OR subject:paiement OR subject:factura OR subject:recibo'
-                ') '
-                '-subject:"invitation" -subject:"newsletter" -subject:"webinar" '
-                '-subject:"verify your" -subject:"confirm your email" -subject:"password reset"'
             )
+            
+            payment_processors = (
+                'from:stripe.com OR from:@stripe.com OR from:billing.stripe.com OR '
+                'from:paypal.com OR from:@paypal.com OR from:service@paypal.com OR '
+                'from:paddle.com OR from:gumroad.com OR from:chargebee.com OR '
+                'from:recurly.com OR from:braintree.com OR from:fastspring.com OR '
+                'from:square.com OR from:shopify.com OR from:2checkout.com'
+            )
+            
+            exclusions = (
+                '-subject:"invitation" -subject:"newsletter" -subject:"webinar" '
+                '-subject:"verify your" -subject:"confirm your email" -subject:"password reset" '
+                '-subject:"we miss you" -subject:"marketing" -subject:"unsubscribe"'
+            )
+            
+            query = f'after:{after_date} (({transactional_subjects}) OR ({payment_processors})) {exclusions}'
             
             yield f"data: {json.dumps({'type': 'progress', 'percent': 12, 'message': f'Using multi-language query for {days} days...'})}\n\n"
             
@@ -8526,14 +8538,81 @@ def subscription_scan_stream():
             except:
                 client_email = 'unknown'
             
+            def extract_email_body(payload, snippet=""):
+                """
+                Robust email body extraction with currency preservation.
+                - Prefers text/plain over HTML
+                - Preserves currency symbols and numeric entities
+                - Falls back to snippet if body extraction fails
+                """
+                import base64
+                import re
+                import html as html_lib
+                
+                plain_texts = []
+                html_texts = []
+                
+                def decode_body(data):
+                    if not data:
+                        return ""
+                    try:
+                        return base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                    except:
+                        return ""
+                
+                def sanitize_html(raw_html):
+                    """Convert HTML to text while PRESERVING currency symbols and amounts"""
+                    if not raw_html:
+                        return ""
+                    text = re.sub(r'<style[^>]*>.*?</style>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
+                    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+                    text = re.sub(r'<br\s*/?\s*>', '\n', text, flags=re.IGNORECASE)
+                    text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)
+                    text = re.sub(r'</div>', '\n', text, flags=re.IGNORECASE)
+                    text = re.sub(r'</tr>', '\n', text, flags=re.IGNORECASE)
+                    text = re.sub(r'<[^>]+>', ' ', text)
+                    text = html_lib.unescape(text)
+                    text = re.sub(r'[ \t]+', ' ', text)
+                    text = re.sub(r'\n\s*\n+', '\n\n', text)
+                    return text.strip()
+                
+                def extract_parts(part_payload):
+                    """Recursively extract text from multipart emails"""
+                    if 'parts' in part_payload:
+                        for part in part_payload['parts']:
+                            extract_parts(part)
+                    else:
+                        mime_type = part_payload.get('mimeType', '')
+                        data = part_payload.get('body', {}).get('data', '')
+                        if data:
+                            decoded = decode_body(data)
+                            if decoded:
+                                if 'text/plain' in mime_type:
+                                    plain_texts.append(decoded)
+                                elif 'text/html' in mime_type:
+                                    html_texts.append(decoded)
+                
+                extract_parts(payload)
+                
+                if plain_texts:
+                    result = '\n'.join(plain_texts)
+                    if result.strip():
+                        return result
+                
+                if html_texts:
+                    result = sanitize_html('\n'.join(html_texts))
+                    if result.strip():
+                        return result
+                
+                return snippet if snippet else ""
+            
             for i, msg_id in enumerate(all_message_ids):
                 try:
-                    # Get email metadata and snippet (not full body for speed)
+                    # Get FULL email with body for proper amount extraction
                     msg = service.users().messages().get(
                         userId='me',
                         id=msg_id,
-                        format='metadata',
-                        metadataHeaders=['From', 'Subject', 'Date']
+                        format='full'
                     ).execute()
                     
                     # Extract headers
@@ -8543,10 +8622,14 @@ def subscription_scan_stream():
                     sender = headers.get('From', '')
                     snippet = msg.get('snippet', '')
                     
+                    # Extract full body text with snippet fallback
+                    full_body = extract_email_body(msg.get('payload', {}), snippet=snippet)
+                    
                     # Quick pre-filter: Skip obvious non-subscription emails
                     subject_lower = subject.lower()
                     skip_keywords = ['unsubscribe from', 'marketing', 'we miss you', 'confirm your', 
-                                     'verify your', 'welcome to', 'password reset', 'security alert']
+                                     'verify your', 'welcome to', 'password reset', 'security alert',
+                                     'newsletter', 'promotional', 'special offer', 'limited time']
                     if any(kw in subject_lower for kw in skip_keywords):
                         skipped_count += 1
                         continue
@@ -8555,7 +8638,7 @@ def subscription_scan_stream():
                         'id': msg_id,
                         'subject': subject,
                         'sender': sender,
-                        'body': snippet,  # Use snippet for speed
+                        'body': full_body,  # FULL BODY for proper amount extraction
                         'date': None
                     }
                     
@@ -8568,14 +8651,14 @@ def subscription_scan_stream():
                         except:
                             pass
                     
-                    # Fast Lane analysis using Gemini
+                    # AI semantic analysis with Gemini 3 Pro
                     result = pulse_service.analyze_email_fast(email_data)
                     if result:
                         processed_events.append(result)
                         # Send subscription_found event for terminal
                         vendor_name = result.get('vendor_name', 'Unknown')
                         amount = result.get('amount')
-                        amount_str = f"${amount:.2f}" if amount else ''
+                        amount_str = f"${amount:.2f}" if amount else 'analyzing...'
                         yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
                         
                 except Exception as e:
