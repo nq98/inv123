@@ -8689,9 +8689,13 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
     """
     Run the subscription scan in a background thread.
     Updates job_manager with progress so user can poll for status.
+    
+    IMPORTANT: This runs independently of the browser session.
+    Credentials are passed directly and can auto-refresh.
     """
     from google.oauth2.credentials import Credentials as OAuthCredentials
     from googleapiclient.discovery import build
+    from google.auth.transport.requests import Request
     
     try:
         job_manager.update_job(job_id, status='running', progress=5, message='Connecting to Gmail...')
@@ -8705,6 +8709,16 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
             client_id=os.getenv('GMAIL_CLIENT_ID'),
             client_secret=os.getenv('GMAIL_CLIENT_SECRET')
         )
+        
+        # Force refresh the token immediately to ensure we have a valid one
+        # This makes the scan independent of the browser session
+        try:
+            if creds.expired or not creds.valid:
+                creds.refresh(Request())
+                print(f"[Background Scan] Token refreshed for job {job_id}")
+        except Exception as refresh_error:
+            print(f"[Background Scan] Token refresh warning: {refresh_error}")
+            # Continue anyway - token might still be valid
         
         service = build('gmail', 'v1', credentials=creds)
         
@@ -8825,12 +8839,31 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         
         all_emails = []
         batch_size = 100
+        last_refresh_time = time.time()
+        
+        def refresh_token_if_needed():
+            """Refresh OAuth token if expired or close to expiring"""
+            nonlocal creds, service, last_refresh_time
+            current_time = time.time()
+            # Refresh every 45 minutes to stay ahead of expiration
+            if current_time - last_refresh_time > 2700:  # 45 minutes
+                try:
+                    if creds.refresh_token:
+                        creds.refresh(Request())
+                        service = build('gmail', 'v1', credentials=creds)
+                        last_refresh_time = current_time
+                        print(f"[Background Scan] Token refreshed proactively for job {job_id}")
+                except Exception as e:
+                    print(f"[Background Scan] Token refresh failed: {e}")
         
         for batch_start in range(0, len(all_message_ids), batch_size):
             batch_ids = all_message_ids[batch_start:batch_start + batch_size]
             progress = 25 + int((batch_start / len(all_message_ids)) * 25)
             job_manager.update_job(job_id, progress=progress,
                 message=f'Downloading emails {batch_start+1}-{min(batch_start+batch_size, len(all_message_ids))} of {len(all_message_ids)}...')
+            
+            # Refresh token proactively during long scans
+            refresh_token_if_needed()
             
             for msg_id in batch_ids:
                 try:
@@ -8849,7 +8882,30 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
                     }
                     all_emails.append(email_data)
                 except Exception as e:
-                    print(f"Error fetching email {msg_id}: {e}")
+                    # Try refreshing token on auth errors
+                    if '401' in str(e) or 'invalid_grant' in str(e).lower():
+                        try:
+                            creds.refresh(Request())
+                            service = build('gmail', 'v1', credentials=creds)
+                            last_refresh_time = time.time()
+                            print(f"[Background Scan] Token refreshed after 401 for job {job_id}")
+                            # Retry the failed request
+                            msg = service.users().messages().get(
+                                userId='me', id=msg_id, format='full'
+                            ).execute()
+                            headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                            email_data = {
+                                'id': msg_id,
+                                'subject': headers.get('subject', ''),
+                                'sender': headers.get('from', ''),
+                                'date': headers.get('date', ''),
+                                'body': extract_email_body(msg.get('payload', {}), msg.get('snippet', ''))
+                            }
+                            all_emails.append(email_data)
+                        except Exception as retry_error:
+                            print(f"Error fetching email {msg_id} after retry: {retry_error}")
+                    else:
+                        print(f"Error fetching email {msg_id}: {e}")
         
         # STAGE 1: AI Triage
         job_manager.update_job(job_id, progress=50,
