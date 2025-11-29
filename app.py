@@ -8403,6 +8403,54 @@ def get_subscription_pulse_service():
         _subscription_pulse_service = SubscriptionPulseService()
     return _subscription_pulse_service
 
+@app.route('/api/subscriptions/health-check', methods=['GET'])
+def subscription_health_check():
+    """
+    Quick health check to verify Subscription Pulse AI is working
+    Tests OpenRouter connectivity with a synthetic email
+    """
+    try:
+        pulse_service = get_subscription_pulse_service()
+        
+        # Synthetic test email that SHOULD be detected as subscription
+        test_email = [{
+            'subject': 'Your Notion subscription receipt - $10.00/month',
+            'sender': 'billing@notion.so',
+            'body': 'Thank you for your subscription! You have been charged $10.00 for your monthly Notion Pro plan. Next billing date: Dec 29, 2025.'
+        }]
+        
+        print("🧪 Running Subscription Pulse health check...")
+        
+        # Test the semantic_fast_filter
+        results = pulse_service.semantic_fast_filter(test_email)
+        
+        if not results:
+            return jsonify({
+                'status': 'error',
+                'message': 'AI returned empty results',
+                'openrouter_available': pulse_service.openrouter_client is not None,
+                'gemini_available': pulse_service.gemini_client is not None
+            }), 500
+        
+        # Check if AI correctly identified as subscription
+        is_subscription = results[0].get('is_subscription', False) if results else False
+        
+        return jsonify({
+            'status': 'ok' if is_subscription else 'warning',
+            'message': 'AI correctly identified test subscription' if is_subscription else 'AI did not detect test email as subscription',
+            'openrouter_available': pulse_service.openrouter_client is not None,
+            'gemini_available': pulse_service.gemini_client is not None,
+            'test_result': results[0] if results else None
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 @app.route('/api/subscriptions/scan/stream', methods=['GET'])
 def subscription_scan_stream():
     """

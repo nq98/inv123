@@ -357,16 +357,16 @@ Return results for ALL {len(email_batch)} emails in order by index.
 
         result_text = None
         
-        # PRIMARY: OpenRouter Gemini 2.5 Flash (faster and more reliable)
+        # PRIMARY: OpenRouter Gemini (faster and more reliable)
         if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-2.5-flash-preview",
+                    model="google/gemini-2.5-flash",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1
                 )
                 result_text = response.choices[0].message.content
-                print(f"✅ Stage 2 Batch: {len(email_batch)} emails analyzed with OpenRouter Gemini 2.5 Flash")
+                print(f"✅ Stage 2 Batch: {len(email_batch)} emails analyzed with OpenRouter")
             except Exception as e:
                 print(f"⚠️ OpenRouter Stage 2 error: {e}")
         
@@ -374,7 +374,7 @@ Return results for ALL {len(email_batch)} emails in order by index.
         if not result_text and self.gemini_client:
             try:
                 response = self.gemini_client.models.generate_content(
-                    model="gemini-2.5-flash-preview-05-20",
+                    model="gemini-2.5-flash",
                     contents=prompt,
                     config={
                         "temperature": 0.1,
@@ -499,11 +499,11 @@ Return ALL {len(email_batch)} emails."""
 
         result_text = None
         
-        # PRIMARY: OpenRouter Gemini 2.5 Flash (faster, no rate limits)
+        # PRIMARY: OpenRouter Gemini (fast, no rate limits)
         if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-2.5-flash-preview",
+                    model="google/gemini-2.5-flash",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1
                 )
@@ -516,7 +516,7 @@ Return ALL {len(email_batch)} emails."""
         if not result_text and self.gemini_client:
             try:
                 response = self.gemini_client.models.generate_content(
-                    model="gemini-2.5-flash-preview-05-20",
+                    model="gemini-2.5-flash",
                     contents=prompt,
                     config={
                         "temperature": 0.1,
