@@ -8722,10 +8722,26 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         
         service = build('gmail', 'v1', credentials=creds)
         
-        job_manager.update_job(job_id, progress=10, message='Searching for subscription emails...')
+        job_manager.update_job(job_id, progress=8, message='Counting total emails in mailbox...')
         
         # Build query
         after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
+        
+        # STEP 1: Count ALL emails in date range (for stats)
+        try:
+            total_count_result = service.users().messages().list(
+                userId='me',
+                q=f'after:{after_date}',
+                maxResults=1
+            ).execute()
+            total_inbox_emails = total_count_result.get('resultSizeEstimate', 0)
+            job_manager.update_job(job_id, progress=10, 
+                message=f'📬 Total inbox: ~{total_inbox_emails:,} emails in last {days} days')
+        except:
+            total_inbox_emails = 0
+        
+        # STEP 2: Search for subscription-related emails
+        job_manager.update_job(job_id, progress=12, message='🔍 Filtering for subscription keywords...')
         
         transactional_subjects = (
             'subject:receipt OR subject:invoice OR subject:payment OR subject:charged OR '
@@ -8753,7 +8769,7 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         
         query = f'after:{after_date} (({transactional_subjects}) OR ({payment_processors})) {exclusions}'
         
-        # Fetch emails
+        # Fetch potential subscription emails
         all_message_ids = []
         page_token = None
         max_emails = min(days * 15, 10000)
@@ -8769,18 +8785,19 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
             messages = results.get('messages', [])
             all_message_ids.extend([m['id'] for m in messages])
             
-            job_manager.update_job(job_id, progress=12, 
-                message=f'Fetching emails... {len(all_message_ids)} found so far')
+            job_manager.update_job(job_id, progress=15, 
+                message=f'🔍 Keyword filter: {len(all_message_ids):,} potential emails found...')
             
             page_token = results.get('nextPageToken')
             if not page_token or len(all_message_ids) >= max_emails:
                 break
         
-        total_emails = len(all_message_ids)
+        potential_emails = len(all_message_ids)
+        filter_pct = round((1 - potential_emails / max(total_inbox_emails, 1)) * 100, 1) if total_inbox_emails > 0 else 0
         job_manager.update_job(job_id, progress=20, 
-            message=f'Found {total_emails} potential subscription emails')
+            message=f'📊 {total_inbox_emails:,} total → {potential_emails:,} potential ({filter_pct}% filtered)')
         
-        if total_emails == 0:
+        if potential_emails == 0:
             job_manager.update_job(job_id, status='complete', progress=100,
                 message='No subscription emails found',
                 results={'active_subscriptions': [], 'stopped_subscriptions': [], 
@@ -8909,17 +8926,17 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         
         # STAGE 1: AI Triage
         job_manager.update_job(job_id, progress=50,
-            message=f'⚡ Stage 1: AI Triage on {len(all_emails)} emails...')
+            message=f'⚡ Stage 1: AI analyzing {len(all_emails):,} emails for subscriptions...')
         
         email_queue = pulse_service.parallel_ai_triage(all_emails)
         
-        filter_rate = round(((len(all_emails) - len(email_queue)) / len(all_emails)) * 100, 1) if len(all_emails) > 0 else 0
+        ai_filter_rate = round(((len(all_emails) - len(email_queue)) / len(all_emails)) * 100, 1) if len(all_emails) > 0 else 0
         job_manager.update_job(job_id, progress=60,
-            message=f'⚡ Stage 1 complete: {len(email_queue)} potential subscriptions ({filter_rate}% filtered)')
+            message=f'📊 FUNNEL: {total_inbox_emails:,} total → {potential_emails:,} keyword → {len(email_queue):,} AI confirmed')
         
         # STAGE 2: Deep Extraction
         job_manager.update_job(job_id, progress=65,
-            message=f'🧠 Stage 2: Deep extraction on {len(email_queue)} emails...')
+            message=f'🧠 Stage 2: Extracting subscription details from {len(email_queue):,} emails...')
         
         processed_events = pulse_service.parallel_deep_extraction(email_queue)
         
@@ -8945,8 +8962,9 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         except Exception as save_error:
             print(f"Save error: {save_error}")
         
+        final_count = results.get("active_count", 0)
         job_manager.update_job(job_id, status='complete', progress=100,
-            message=f'Found {results.get("active_count", 0)} active subscriptions',
+            message=f'✅ COMPLETE: {total_inbox_emails:,} emails → {potential_emails:,} keyword → {len(email_queue):,} AI → {final_count} subscriptions',
             results=results)
             
     except Exception as e:
