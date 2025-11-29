@@ -420,18 +420,32 @@ Return results for ALL {len(email_batch)} emails in order by index.
         skipped_payout = 0
         accepted = 0
         
+        # DEBUG: Log first few AI results to understand what Gemini returns
+        if batch_results and len(batch_results) > 0:
+            sample = batch_results[0] if batch_results else {}
+            print(f"🔍 STAGE 2 DEBUG - Sample AI response: is_subscription={sample.get('is_subscription')} (type: {type(sample.get('is_subscription')).__name__}), payment_type={sample.get('payment_type')}")
+        
         for i, email in enumerate(email_batch):
             ai_result = result_map.get(i)
             
-            # FIX: Only skip if AI EXPLICITLY says it's NOT a subscription
-            # Stage 1 already pre-filtered, so we trust those emails more
-            if ai_result and ai_result.get('is_subscription') == False:
+            # FIX: Handle both boolean False and string "false" 
+            # Gemini sometimes returns "false" as string, not boolean
+            is_sub_value = ai_result.get('is_subscription') if ai_result else None
+            is_explicitly_not_subscription = (
+                is_sub_value == False or 
+                is_sub_value == "false" or 
+                is_sub_value == "False" or
+                str(is_sub_value).lower() == "false"
+            )
+            
+            # Only skip if AI EXPLICITLY says NOT a subscription
+            if ai_result and is_explicitly_not_subscription:
                 skipped_explicit_false += 1
                 results.append(None)
                 continue
             
             # Also skip if AI identifies it as a payout (not a charge)
-            payment_type = ai_result.get('payment_type', '') if ai_result else ''
+            payment_type = str(ai_result.get('payment_type', '')).lower() if ai_result else ''
             if payment_type in ['payout', 'marketplace', 'skip']:
                 skipped_payout += 1
                 results.append(None)
@@ -714,6 +728,34 @@ Return ALL {len(email_batch)} emails."""
                     print(f"Future error: {e}")
         
         print(f"✅ Parallel Stage 2 complete: {len(all_subscriptions)} subscriptions extracted")
+        
+        # CRITICAL FALLBACK: If Stage 2 rejected everything, trust Stage 1's pre-filter
+        # and create minimal records from Stage 1 data (which has vendor_hint)
+        if len(all_subscriptions) == 0 and len(filtered_emails) > 0:
+            print(f"⚠️ STAGE 2 FALLBACK: Stage 2 rejected all {len(filtered_emails)} emails. Trusting Stage 1 hints...")
+            for email in filtered_emails:
+                vendor_hint = email.get('vendor_hint', '')
+                if vendor_hint:
+                    fallback_result = {
+                        'vendor_name': vendor_hint,
+                        'domain': self._extract_domain(email.get('sender', '')),
+                        'amount': 0,
+                        'amount_usd': 0,
+                        'monthly_amount_usd': 0,
+                        'currency': 'USD',
+                        'billing_cadence': 'monthly',
+                        'is_subscription': True,
+                        'payment_type': 'subscription',
+                        'email_subject': email.get('subject', ''),
+                        'email_date': email.get('date').isoformat() if email.get('date') and hasattr(email.get('date'), 'isoformat') else None,
+                        'email_id': email.get('id'),
+                        'sender': email.get('sender', ''),
+                        'confidence': 0.5,  # Lower confidence since Stage 2 rejected it
+                        'ai_reasoning': 'Stage 1 identified as subscription, Stage 2 rejected - using fallback',
+                    }
+                    all_subscriptions.append(fallback_result)
+            print(f"✅ FALLBACK created {len(all_subscriptions)} records from Stage 1 hints")
+        
         return all_subscriptions
     
     def _semantic_classify_with_gemini(self, subject, body, sender):
