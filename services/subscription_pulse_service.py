@@ -82,6 +82,8 @@ class SubscriptionPulseService:
     def __init__(self):
         self.config = config.config
         
+        print("🚀 Initializing Subscription Pulse AI Service...")
+        
         # Initialize OpenRouter client (PRIMARY - no rate limits, best model)
         self.openrouter_client = None
         openrouter_api_key = os.getenv('OPENROUTERA')
@@ -95,16 +97,27 @@ class SubscriptionPulseService:
                         "X-Title": "Subscription Pulse AI Scanner"
                     }
                 )
-                print("✅ OpenRouter Gemini 3 Pro initialized for AI-First Subscription Pulse")
+                print("✅ [Subscription Pulse] OpenRouter client initialized (PRIMARY)")
             except Exception as e:
-                print(f"⚠️ OpenRouter initialization failed: {e}")
+                print(f"❌ [Subscription Pulse] OpenRouter initialization failed: {e}")
+        else:
+            print(f"⚠️ [Subscription Pulse] OpenRouter not available (key: {bool(openrouter_api_key)}, openai: {OPENAI_AVAILABLE})")
         
         # Initialize Gemini client as fallback
+        self.gemini_client = None
         api_key = os.getenv('GOOGLE_GEMINI_API_KEY')
         if api_key and GENAI_AVAILABLE:
-            self.gemini_client = genai.Client(api_key=api_key)
+            try:
+                self.gemini_client = genai.Client(api_key=api_key)
+                print("✅ [Subscription Pulse] Gemini native client initialized (FALLBACK)")
+            except Exception as e:
+                print(f"❌ [Subscription Pulse] Gemini initialization failed: {e}")
         else:
-            self.gemini_client = None
+            print(f"⚠️ [Subscription Pulse] Gemini not available (key: {bool(api_key)}, genai: {GENAI_AVAILABLE})")
+        
+        # Verify at least one AI client is available
+        if not self.openrouter_client and not self.gemini_client:
+            print("❌ CRITICAL: No AI client available for Subscription Pulse! Scans will fail.")
             
         # Initialize BigQuery
         self._init_bigquery()
@@ -486,7 +499,21 @@ Return ALL {len(email_batch)} emails."""
 
         result_text = None
         
-        if self.gemini_client:
+        # PRIMARY: OpenRouter Gemini 2.5 Flash (faster, no rate limits)
+        if self.openrouter_client:
+            try:
+                response = self.openrouter_client.chat.completions.create(
+                    model="google/gemini-2.5-flash-preview",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+                result_text = response.choices[0].message.content
+                print(f"✅ Stage 1: Batch of {len(email_batch)} emails filtered with OpenRouter")
+            except Exception as e:
+                print(f"⚠️ Stage 1 OpenRouter error: {e}")
+        
+        # FALLBACK: Gemini native client
+        if not result_text and self.gemini_client:
             try:
                 response = self.gemini_client.models.generate_content(
                     model="gemini-2.5-flash-preview-05-20",
@@ -497,20 +524,9 @@ Return ALL {len(email_batch)} emails."""
                     }
                 )
                 result_text = response.text
+                print(f"✅ Stage 1: Batch of {len(email_batch)} emails filtered with Gemini native")
             except Exception as e:
-                print(f"Fast filter Gemini error: {e}")
-                raise
-        
-        if not result_text and self.openrouter_client:
-            try:
-                response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-2.5-flash-preview",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1
-                )
-                result_text = response.choices[0].message.content
-            except Exception as e:
-                print(f"Fast filter OpenRouter error: {e}")
+                print(f"⚠️ Stage 1 Gemini native error: {e}")
                 raise
         
         if not result_text:
