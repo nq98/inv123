@@ -8606,14 +8606,13 @@ def subscription_scan_stream():
                 
                 return snippet if snippet else ""
             
-            # ==================== STAGE 1: AI SEMANTIC TRIAGE ====================
-            # Use Gemini 2.5 Flash to classify emails in large batches (12 per call)
-            yield f"data: {json.dumps({'type': 'progress', 'percent': 15, 'message': 'Stage 1: AI Semantic Triage with Gemini Flash...'})}\n\n"
+            # ==================== STAGE 1: TURBO AI SEMANTIC TRIAGE ====================
+            # Use parallel processing with 20 workers, 50 emails per batch
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 15, 'message': '⚡ Stage 1: TURBO AI Triage (20 parallel workers)...'})}\n\n"
             
-            email_queue = []  # Emails that pass AI triage
             all_emails = []   # Collect all emails first
             
-            # Fetch all emails
+            # Fetch all emails (this is I/O bound to Gmail API)
             for i, msg_id in enumerate(all_message_ids):
                 try:
                     msg = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
@@ -8625,7 +8624,7 @@ def subscription_scan_stream():
                     
                     email_data = {
                         'id': msg_id,
-                        'subject': subject,
+                        'subject': subject[:150],
                         'sender': sender,
                         'body': full_body[:2000],
                         'date': None
@@ -8645,99 +8644,33 @@ def subscription_scan_stream():
                 except Exception as e:
                     continue
                 
-                if i > 0 and i % 100 == 0:
+                if i > 0 and i % 500 == 0:
                     percent = 15 + int((i / total_emails) * 15)
-                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Fetching: {i}/{total_emails} emails...'})}\n\n"
-                elif i > 0 and i % 30 == 0:
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Fetching: {i:,}/{total_emails:,} emails...'})}\n\n"
+                elif i > 0 and i % 100 == 0:
                     yield f": heartbeat\n\n"
             
-            yield f"data: {json.dumps({'type': 'progress', 'percent': 30, 'message': f'Fetched {len(all_emails)} emails. Running AI semantic triage...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 30, 'message': f'⚡ Fetched {len(all_emails):,} emails. Running PARALLEL AI triage (50/batch × 20 workers)...'})}\n\n"
             
-            # AI Semantic Triage in batches of 12
-            TRIAGE_BATCH_SIZE = 12
-            triage_batches = (len(all_emails) + TRIAGE_BATCH_SIZE - 1) // TRIAGE_BATCH_SIZE
-            
-            for batch_idx in range(0, len(all_emails), TRIAGE_BATCH_SIZE):
-                batch = all_emails[batch_idx:batch_idx + TRIAGE_BATCH_SIZE]
-                batch_num = batch_idx // TRIAGE_BATCH_SIZE + 1
-                
-                try:
-                    # AI SEMANTIC FILTER
-                    filter_results = pulse_service.semantic_fast_filter(batch)
-                    
-                    # Map results back to emails
-                    result_map = {r.get('index', i): r for i, r in enumerate(filter_results)}
-                    
-                    for i, email in enumerate(batch):
-                        result = result_map.get(i)
-                        if result and result.get('is_subscription'):
-                            email['ai_reason'] = result.get('reason', '')
-                            email['vendor_hint'] = result.get('vendor_hint')
-                            email_queue.append(email)
-                    
-                except Exception as triage_error:
-                    print(f"Triage batch {batch_num} error: {triage_error}")
-                    # On error, include batch for safety (let Stage 2 filter)
-                    email_queue.extend(batch)
-                
-                percent = 30 + int((batch_num / triage_batches) * 20)
-                yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'AI Triage: Batch {batch_num}/{triage_batches} | {len(email_queue)} potential subscriptions'})}\n\n"
+            # PARALLEL STAGE 1: AI Semantic Triage with 20 workers
+            email_queue = pulse_service.parallel_semantic_filter(all_emails)
             
             filter_rate = round(((len(all_emails) - len(email_queue)) / len(all_emails)) * 100, 1) if len(all_emails) > 0 else 0
-            yield f"data: {json.dumps({'type': 'progress', 'percent': 50, 'message': f'AI Triage complete: {len(email_queue)} potential subscriptions ({filter_rate}% filtered by AI)'})}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 55, 'message': f'⚡ Stage 1 complete: {len(email_queue):,} potential subscriptions ({filter_rate}% filtered by AI)'})}\n\n"
             
-            # ==================== STAGE 2: DEEP AI EXTRACTION ====================
-            yield f"data: {json.dumps({'type': 'progress', 'percent': 52, 'message': f'Stage 2: Deep extraction with Gemini 3 Pro on {len(email_queue)} emails...'})}\n\n"
+            # ==================== STAGE 2: TURBO DEEP EXTRACTION ====================
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 60, 'message': f'⚡ Stage 2: TURBO Deep extraction (15/batch × 10 workers) on {len(email_queue):,} emails...'})}\n\n"
             
-            BATCH_SIZE = 6  # Process 6 emails per Gemini call
-            total_batches = (len(email_queue) + BATCH_SIZE - 1) // BATCH_SIZE
+            # PARALLEL STAGE 2: Deep extraction with 10 workers
+            processed_events = pulse_service.parallel_deep_extraction(email_queue)
             
-            for batch_idx in range(0, len(email_queue), BATCH_SIZE):
-                batch = email_queue[batch_idx:batch_idx + BATCH_SIZE]
-                batch_num = batch_idx // BATCH_SIZE + 1
-                
-                try:
-                    # BULK GEMINI CALL - Analyze multiple emails at once
-                    batch_results = pulse_service.analyze_email_batch(batch)
-                    
-                    if batch_results:
-                        for result in batch_results:
-                            if result:
-                                processed_events.append(result)
-                                vendor_name = result.get('vendor_name', 'Unknown')
-                                amount = result.get('amount')
-                                amount_str = f"${amount:.2f}" if amount else 'analyzing...'
-                                yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
-                    
-                except Exception as batch_error:
-                    print(f"Batch {batch_num} failed, falling back to sequential: {batch_error}")
-                    # Fallback: process individually if batch fails
-                    for email_data in batch:
-                        try:
-                            result = pulse_service.analyze_email_fast(email_data)
-                            if result:
-                                processed_events.append(result)
-                                vendor_name = result.get('vendor_name', 'Unknown')
-                                amount = result.get('amount')
-                                amount_str = f"${amount:.2f}" if amount else 'analyzing...'
-                                yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
-                        except Exception as seq_error:
-                            print(f"Sequential fallback error for email: {seq_error}")
-                            continue
-                
-                # Progress update per batch
-                percent = 52 + int((batch_num / total_batches) * 33)
-                yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Deep extraction: Batch {batch_num}/{total_batches} ({len(processed_events)} subscriptions found)'})}\n\n"
-                
-                # Incremental save every 2 batches
-                if batch_num % 2 == 0 and len(processed_events) > last_save_count:
-                    try:
-                        interim_results = pulse_service.aggregate_subscription_data(processed_events)
-                        pulse_service.store_subscription_results(client_email, interim_results)
-                        last_save_count = len(processed_events)
-                        yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Auto-saved {len(processed_events)} subscriptions'})}\n\n"
-                    except Exception as save_error:
-                        print(f"Incremental save error: {save_error}")
+            # Report found subscriptions
+            for result in processed_events:
+                if result:
+                    vendor_name = result.get('vendor_name', 'Unknown')
+                    amount = result.get('amount')
+                    amount_str = f"${amount:.2f}" if amount else 'analyzing...'
+                    yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
                     
             yield f"data: {json.dumps({'type': 'progress', 'percent': 85, 'message': f'Aggregating data from {len(processed_events)} payment events...'})}\n\n"
             
