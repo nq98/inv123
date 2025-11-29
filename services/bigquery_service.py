@@ -2218,6 +2218,72 @@ class BigQueryService:
         try:
             self.client.query(query, job_config=job_config).result()
             print(f"✅ Stored AI feedback: {feedback_id}")
+            
+            # === RAG FEEDBACK LOOP: Sync corrections to Vertex AI Search ===
+            # When user corrects extraction, store it in Vertex AI Search
+            # so the RAG system can retrieve this correction for future similar invoices
+            if feedback_type == 'corrected' and corrected_data:
+                try:
+                    # Lazy import to avoid circular dependencies
+                    from services.vertex_search_service import VertexSearchService
+                    
+                    vertex_search = VertexSearchService()
+                    
+                    # Get vendor name from corrected data
+                    vendor_name = vendor_corrected or 'Unknown Vendor'
+                    
+                    # Build a synthetic document_text from the correction for RAG indexing
+                    # This helps future extractions learn from this correction
+                    correction_summary = f"""
+USER CORRECTION FEEDBACK - Learning Entry
+==========================================
+Invoice ID: {invoice_id}
+Feedback ID: {feedback_id}
+Correction Type: Human-verified extraction
+
+ORIGINAL AI EXTRACTION:
+- Vendor: {vendor_original or 'N/A'}
+- Amount: {amount_original or 'N/A'}
+
+CORRECTED VALUES (Ground Truth):
+- Vendor: {vendor_corrected or 'N/A'}  
+- Amount: {amount_corrected or 'N/A'}
+- Invoice Number: {corrected_data.get('invoiceNumber', 'N/A')}
+- Date: {corrected_data.get('documentDate', 'N/A')}
+
+This is a human-verified correction. Use this as ground truth for future extractions.
+"""
+                    
+                    # Store the correction in Vertex AI Search for future RAG retrieval
+                    vertex_stored = vertex_search.store_invoice_extraction(
+                        document_text=correction_summary,
+                        vendor_name=vendor_name,
+                        extracted_data=corrected_data,
+                        success=True  # This is a verified successful extraction
+                    )
+                    
+                    if vertex_stored:
+                        print(f"🔄 RAG Learning: Synced correction to Vertex AI Search for vendor '{vendor_name}'")
+                        
+                        # Mark feedback as applied to learning in BigQuery
+                        update_query = f"""
+                        UPDATE `{config.GOOGLE_CLOUD_PROJECT_ID}.{self.dataset_id}.ai_feedback_log`
+                        SET applied_to_learning = true
+                        WHERE feedback_id = @feedback_id
+                        """
+                        update_config = bigquery.QueryJobConfig(
+                            query_parameters=[
+                                bigquery.ScalarQueryParameter("feedback_id", "STRING", feedback_id)
+                            ]
+                        )
+                        self.client.query(update_query, job_config=update_config).result()
+                    else:
+                        print(f"⚠️ RAG Learning: Failed to sync correction to Vertex AI Search")
+                        
+                except Exception as vertex_error:
+                    # Don't fail the feedback storage if Vertex sync fails
+                    print(f"⚠️ RAG Learning: Error syncing to Vertex AI Search: {vertex_error}")
+            
             return feedback_id
         except Exception as e:
             print(f"❌ Error storing AI feedback: {e}")

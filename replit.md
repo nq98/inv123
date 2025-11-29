@@ -23,6 +23,15 @@ This involves AI-powered CSV mapping using Gemini AI with Vertex AI Search RAG t
 #### AI-First Semantic Entity Validation
 A pure AI-driven validation system using a SemanticEntityClassifier (Gemini 1.5) prevents non-vendors from entering the database. It operates on all vendor ingest paths and uses a RAG Learning Loop for continuous improvement.
 
+#### RAG Feedback Loop - Self-Learning System
+When users correct AI extraction errors, the system automatically syncs corrections to Vertex AI Search:
+1. **User Correction**: User corrects extraction via UI → Stored in BigQuery `ai_feedback_log` table
+2. **Vertex AI Sync**: When `feedback_type == 'corrected'`, automatically calls `store_invoice_extraction()` in Vertex AI Search
+3. **RAG Retrieval**: Future similar invoices retrieve this correction as historical context
+4. **Learning Flag**: BigQuery marks `applied_to_learning = true` after successful sync
+
+This creates a true learning loop where human corrections improve future AI extractions.
+
 #### Vendor Matching Engine — Semantic Vendor Resolution
 A 3-step AI-first semantic matching system links invoices to vendor IDs: Hard Tax ID Match, Semantic Candidate Retrieval (Vertex AI Search RAG), and The Supreme Judge (Gemini 1.5 Pro) for global entity resolution based on an evidence hierarchy and semantic reasoning rules.
 
