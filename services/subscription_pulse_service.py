@@ -415,15 +415,46 @@ Return results for ALL {len(email_batch)} emails in order by index.
         results = []
         result_map = {r.get('index', i): r for i, r in enumerate(batch_results)}
         
+        # Track diagnostics
+        skipped_explicit_false = 0
+        skipped_payout = 0
+        accepted = 0
+        
         for i, email in enumerate(email_batch):
             ai_result = result_map.get(i)
             
-            if not ai_result or not ai_result.get('is_subscription'):
+            # FIX: Only skip if AI EXPLICITLY says it's NOT a subscription
+            # Stage 1 already pre-filtered, so we trust those emails more
+            if ai_result and ai_result.get('is_subscription') == False:
+                skipped_explicit_false += 1
                 results.append(None)
                 continue
             
-            # Process subscription result
-            vendor_name = ai_result.get('vendor_name', 'Unknown')
+            # Also skip if AI identifies it as a payout (not a charge)
+            payment_type = ai_result.get('payment_type', '') if ai_result else ''
+            if payment_type in ['payout', 'marketplace', 'skip']:
+                skipped_payout += 1
+                results.append(None)
+                continue
+            
+            # FIX: If no AI result, still process since Stage 1 passed it
+            if not ai_result:
+                ai_result = {}
+            
+            accepted += 1
+            
+            # Process subscription result - use fallbacks if AI didn't provide data
+            vendor_name = ai_result.get('vendor_name') or ai_result.get('vendor_hint') or ''
+            
+            # FIX: Fallback to extract vendor from sender if AI didn't provide it
+            if not vendor_name:
+                vendor_info = self._extract_vendor_from_sender(email.get('sender', ''))
+                if vendor_info:
+                    vendor_name = vendor_info.get('name', 'Unknown')
+            
+            if not vendor_name:
+                vendor_name = email.get('vendor_hint', 'Unknown')
+            
             vendor_domain = ai_result.get('domain', self._extract_domain(email.get('sender', '')))
             amount = ai_result.get('amount', 0)
             currency = ai_result.get('currency', 'USD')
@@ -452,6 +483,9 @@ Return results for ALL {len(email_batch)} emails in order by index.
                 'confidence': ai_result.get('confidence', 0.8),
                 'ai_reasoning': ai_result.get('reasoning', ''),
             })
+        
+        # Diagnostic logging
+        print(f"📊 Stage 2 Batch Stats: {accepted} accepted, {skipped_explicit_false} rejected (is_subscription=false), {skipped_payout} skipped (payout/marketplace)")
         
         return results
     
