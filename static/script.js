@@ -7085,6 +7085,11 @@ function displaySubscriptionDashboard(results) {
     displayDuplicates(results.duplicates || []);
     displayShadowIT(results.shadow_it || []);
     displayTimeline(results.timeline || []);
+    
+    loadSubscriptionAnalytics({ 
+        active_subscriptions: results.active_subscriptions,
+        stopped_subscriptions: results.stopped_subscriptions 
+    });
 }
 
 /**
@@ -7497,6 +7502,298 @@ async function claimSubscription(id) {
             alert('Error claiming subscription: ' + error.message);
         }
     }
+}
+
+// ==================== SUBSCRIPTION ANALYTICS DASHBOARD ====================
+
+let monthlyTrendChart = null;
+let categoryChart = null;
+
+/**
+ * Load and display subscription analytics
+ */
+async function loadSubscriptionAnalytics(scanResults = null) {
+    const analyticsSection = document.getElementById('subscriptionAnalytics');
+    if (!analyticsSection) return;
+    
+    analyticsSection.classList.remove('hidden');
+    
+    let data;
+    
+    if (scanResults) {
+        data = buildAnalyticsFromScanResults(scanResults);
+    } else {
+        try {
+            const response = await fetch('/api/subscriptions/analytics');
+            data = await response.json();
+            if (!data.success) {
+                console.error('Analytics error:', data.error);
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to load analytics:', error);
+            return;
+        }
+    }
+    
+    updateAnalyticsStats(data.stats);
+    renderMonthlyTrendChart(data.monthly_trend);
+    renderCategoryChart(data.categories);
+    renderSubscriptionTable(data.subscriptions);
+}
+
+/**
+ * Build analytics data from scan results
+ */
+function buildAnalyticsFromScanResults(results) {
+    const subscriptions = results.active_subscriptions || [];
+    const stopped = results.stopped_subscriptions || [];
+    
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    
+    const categorySpend = {};
+    let totalMonthly = 0;
+    
+    const allSubs = subscriptions.map(sub => {
+        let monthlyAmount = parseFloat(sub.monthly_amount || sub.amount) || 0;
+        const cadence = (sub.frequency || sub.cadence || 'monthly').toLowerCase();
+        
+        if (cadence === 'annual' || cadence === 'yearly') {
+            monthlyAmount = monthlyAmount / 12;
+        } else if (cadence === 'weekly') {
+            monthlyAmount = monthlyAmount * 4.33;
+        } else if (cadence === 'quarterly') {
+            monthlyAmount = monthlyAmount / 3;
+        }
+        
+        const category = sub.category || 'Other';
+        categorySpend[category] = (categorySpend[category] || 0) + monthlyAmount;
+        totalMonthly += monthlyAmount;
+        
+        return {
+            vendor: sub.vendor || sub.vendor_name || 'Unknown',
+            amount: parseFloat(sub.amount) || monthlyAmount,
+            monthly_amount: Math.round(monthlyAmount * 100) / 100,
+            currency: sub.currency || 'USD',
+            cadence: cadence,
+            status: 'active',
+            category: category,
+            last_charge: sub.last_seen || sub.last_charge_date || sub.date
+        };
+    });
+    
+    stopped.forEach(sub => {
+        let lastAmount = parseFloat(sub.last_amount || sub.amount) || 0;
+        allSubs.push({
+            vendor: sub.vendor || sub.vendor_name || 'Unknown',
+            amount: lastAmount,
+            monthly_amount: 0,
+            currency: sub.currency || 'USD',
+            cadence: (sub.frequency || sub.cadence || 'monthly').toLowerCase(),
+            status: 'stopped',
+            category: sub.category || 'Other',
+            last_charge: sub.last_seen || sub.last_charge_date || sub.date
+        });
+    });
+    
+    const monthlyTrend = [];
+    for (let i = 11; i >= 0; i--) {
+        let month = currentMonth - i;
+        let year = currentYear;
+        if (month <= 0) {
+            month += 12;
+            year--;
+        }
+        const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' });
+        monthlyTrend.push({
+            month: monthName,
+            amount: Math.round(totalMonthly * 100) / 100
+        });
+    }
+    
+    const categories = Object.entries(categorySpend)
+        .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
+        .sort((a, b) => b.amount - a.amount);
+    
+    return {
+        stats: {
+            active_count: subscriptions.length,
+            stopped_count: stopped.length,
+            monthly_spend: Math.round(totalMonthly * 100) / 100,
+            annual_spend: Math.round(totalMonthly * 12 * 100) / 100,
+            last_year_spend: 0,
+            yoy_change: 0,
+            avg_per_subscription: subscriptions.length > 0 ? Math.round((totalMonthly / subscriptions.length) * 100) / 100 : 0
+        },
+        monthly_trend: monthlyTrend,
+        categories: categories,
+        subscriptions: allSubs
+    };
+}
+
+/**
+ * Update analytics stats cards
+ */
+function updateAnalyticsStats(stats) {
+    const monthlyEl = document.getElementById('analyticsMonthlySpend');
+    if (monthlyEl) monthlyEl.textContent = formatCurrency(stats.monthly_spend);
+    
+    const annualEl = document.getElementById('analyticsAnnualSpend');
+    if (annualEl) annualEl.textContent = formatCurrency(stats.annual_spend);
+    
+    const yoyEl = document.getElementById('analyticsYoYChange');
+    if (yoyEl) {
+        const arrow = stats.yoy_change > 0 ? '↑' : stats.yoy_change < 0 ? '↓' : '→';
+        const color = stats.yoy_change > 0 ? '#ef4444' : stats.yoy_change < 0 ? '#10b981' : '#64748b';
+        yoyEl.innerHTML = `<span style="color: ${color}">${arrow} ${Math.abs(stats.yoy_change)}%</span>`;
+    }
+    
+    const activeEl = document.getElementById('analyticsActiveCount');
+    if (activeEl) activeEl.textContent = stats.active_count;
+    
+    const avgEl = document.getElementById('analyticsAvgSpend');
+    if (avgEl) avgEl.textContent = formatCurrency(stats.avg_per_subscription);
+    
+    const stoppedEl = document.getElementById('analyticsStoppedCount');
+    if (stoppedEl) stoppedEl.textContent = stats.stopped_count;
+}
+
+/**
+ * Render monthly trend line chart
+ */
+function renderMonthlyTrendChart(data) {
+    const ctx = document.getElementById('monthlyTrendChart');
+    if (!ctx) return;
+    
+    if (monthlyTrendChart) {
+        monthlyTrendChart.destroy();
+    }
+    
+    monthlyTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.month),
+            datasets: [{
+                label: 'Monthly Spend',
+                data: data.map(d => d.amount),
+                borderColor: '#8b5cf6',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => formatCurrency(ctx.raw)
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: (value) => '$' + value.toLocaleString()
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Render category breakdown doughnut chart
+ */
+function renderCategoryChart(data) {
+    const ctx = document.getElementById('categoryChart');
+    if (!ctx) return;
+    
+    if (categoryChart) {
+        categoryChart.destroy();
+    }
+    
+    if (!data || data.length === 0) {
+        return;
+    }
+    
+    const colors = [
+        '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', 
+        '#ef4444', '#ec4899', '#6366f1', '#84cc16'
+    ];
+    
+    categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: data.map(d => d.name),
+            datasets: [{
+                data: data.map(d => d.amount),
+                backgroundColor: colors.slice(0, data.length),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { boxWidth: 12, padding: 15 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.label}: ${formatCurrency(ctx.raw)}/mo`
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Render subscription table for analytics
+ */
+function renderSubscriptionTable(subscriptions) {
+    const tableBody = document.getElementById('subscriptionTableBody');
+    if (!tableBody) return;
+    
+    if (!subscriptions || subscriptions.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center">No subscriptions found</td></tr>';
+        return;
+    }
+    
+    const sorted = [...subscriptions].sort((a, b) => b.monthly_amount - a.monthly_amount);
+    
+    tableBody.innerHTML = sorted.map(sub => `
+        <tr class="${sub.status === 'stopped' ? 'stopped-row' : ''}">
+            <td>
+                <div class="vendor-cell">
+                    <strong>${escapeHtml(sub.vendor)}</strong>
+                    <span class="vendor-category">${escapeHtml(sub.category || 'Other')}</span>
+                </div>
+            </td>
+            <td class="amount-cell">
+                <strong>${formatCurrency(sub.monthly_amount)}</strong>
+                <span class="cadence-label">/mo</span>
+            </td>
+            <td>
+                <span class="cadence-badge cadence-${sub.cadence}">${sub.cadence}</span>
+            </td>
+            <td>
+                <span class="status-badge status-${sub.status}">${sub.status}</span>
+            </td>
+            <td>${sub.last_charge ? new Date(sub.last_charge).toLocaleDateString() : '-'}</td>
+            <td class="amount-cell">${formatCurrency(sub.monthly_amount * 12)}/yr</td>
+        </tr>
+    `).join('');
 }
 
 /**

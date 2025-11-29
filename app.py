@@ -8793,55 +8793,145 @@ def claim_subscription(subscription_id):
         }), 500
 
 @app.route('/api/subscriptions/analytics', methods=['GET'])
+@login_required
 def get_subscription_analytics():
-    """Get subscription analytics summary"""
+    """Get subscription analytics with YoY comparison, monthly trends, and categories"""
     try:
-        pulse_service = get_subscription_pulse_service()
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+        
         bigquery_service = get_bigquery_service()
         
-        # Query aggregated stats
         query = f"""
         SELECT 
-            COUNT(*) as total_vendors,
-            SUM(CASE WHEN status = 'active' AND is_subscription THEN 1 ELSE 0 END) as active_count,
-            SUM(CASE WHEN status = 'stopped' THEN 1 ELSE 0 END) as stopped_count,
-            SUM(CASE WHEN status = 'active' AND is_subscription THEN average_amount ELSE 0 END) as monthly_spend,
-            SUM(lifetime_spend) as total_lifetime_spend
+            vendor_name,
+            average_amount as amount,
+            'USD' as currency,
+            frequency as cadence,
+            last_seen as last_charge_date,
+            status,
+            category
         FROM `{config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai.subscription_vendors`
+        WHERE user_email = @user_email
+        ORDER BY average_amount DESC
         """
         
-        results = list(bigquery_service.client.query(query).result())
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_email", "STRING", current_user.email)
+            ]
+        )
         
-        if results:
-            row = results[0]
-            return jsonify({
-                'success': True,
-                'analytics': {
-                    'total_vendors': row['total_vendors'] or 0,
-                    'active_count': row['active_count'] or 0,
-                    'stopped_count': row['stopped_count'] or 0,
-                    'monthly_spend': row['monthly_spend'] or 0,
-                    'total_lifetime_spend': row['total_lifetime_spend'] or 0
-                }
+        results = list(bigquery_service.client.query(query, job_config=job_config).result())
+        
+        now = datetime.now()
+        current_year = now.year
+        last_year = current_year - 1
+        current_month = now.month
+        
+        monthly_spend = defaultdict(float)
+        yearly_spend = {current_year: 0, last_year: 0}
+        category_spend = defaultdict(float)
+        all_subscriptions = []
+        active_count = 0
+        stopped_count = 0
+        
+        for row in results:
+            vendor = row.vendor_name or 'Unknown'
+            amount = float(row.amount or 0)
+            currency = row.currency or 'USD'
+            cadence = (row.cadence or 'monthly').lower()
+            status = row.status or 'active'
+            category = row.category or 'Other'
+            last_charge = row.last_charge_date
+            
+            monthly_amount = amount
+            if cadence == 'annual' or cadence == 'yearly':
+                monthly_amount = amount / 12
+            elif cadence == 'weekly':
+                monthly_amount = amount * 4.33
+            elif cadence == 'quarterly':
+                monthly_amount = amount / 3
+            
+            if status == 'active':
+                active_count += 1
+                yearly_spend[current_year] += monthly_amount * 12
+                category_spend[category] += monthly_amount
+                
+                for i in range(12):
+                    month_offset = current_month - i
+                    year = current_year
+                    if month_offset <= 0:
+                        month_offset += 12
+                        year = last_year
+                    month_key = f"{year}-{month_offset:02d}"
+                    monthly_spend[month_key] += monthly_amount
+            else:
+                stopped_count += 1
+                if last_charge:
+                    charge_year = last_charge.year if hasattr(last_charge, 'year') else current_year
+                    if charge_year == last_year:
+                        yearly_spend[last_year] += monthly_amount * 12
+            
+            all_subscriptions.append({
+                'vendor': vendor,
+                'amount': amount,
+                'monthly_amount': round(monthly_amount, 2),
+                'currency': currency,
+                'cadence': cadence,
+                'status': status,
+                'category': category,
+                'last_charge': last_charge.isoformat() if last_charge and hasattr(last_charge, 'isoformat') else str(last_charge) if last_charge else None
             })
+        
+        monthly_trend = []
+        for i in range(11, -1, -1):
+            month_offset = current_month - i
+            year = current_year
+            if month_offset <= 0:
+                month_offset += 12
+                year = last_year
+            month_key = f"{year}-{month_offset:02d}"
+            month_name = datetime(year, month_offset, 1).strftime('%b %Y')
+            monthly_trend.append({
+                'month': month_name,
+                'amount': round(monthly_spend.get(month_key, 0), 2)
+            })
+        
+        current_yearly = yearly_spend[current_year]
+        last_yearly = yearly_spend[last_year]
+        yoy_change = 0
+        if last_yearly > 0:
+            yoy_change = round(((current_yearly - last_yearly) / last_yearly) * 100, 1)
+        
+        categories = [
+            {'name': cat, 'amount': round(amt, 2)}
+            for cat, amt in sorted(category_spend.items(), key=lambda x: -x[1])
+        ]
+        
+        total_monthly = sum(s['monthly_amount'] for s in all_subscriptions if s['status'] == 'active')
         
         return jsonify({
             'success': True,
-            'analytics': {
-                'total_vendors': 0,
-                'active_count': 0,
-                'stopped_count': 0,
-                'monthly_spend': 0,
-                'total_lifetime_spend': 0
-            }
+            'stats': {
+                'active_count': active_count,
+                'stopped_count': stopped_count,
+                'monthly_spend': round(total_monthly, 2),
+                'annual_spend': round(current_yearly, 2),
+                'last_year_spend': round(last_yearly, 2),
+                'yoy_change': yoy_change,
+                'avg_per_subscription': round(total_monthly / active_count, 2) if active_count > 0 else 0
+            },
+            'monthly_trend': monthly_trend,
+            'categories': categories,
+            'subscriptions': all_subscriptions
         })
         
     except Exception as e:
-        print(f"Error getting subscription analytics: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Analytics error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ========== LANGGRAPH AGENT CHAT ENDPOINT ==========
 

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enterprise Invoice Extraction System</title>
-    <link rel="stylesheet" href="/static/style.css?v=10">
+    <link rel="stylesheet" href="/static/style.css?v=11">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <!-- ==================== STEP 1: VENDOR SELECTION MODAL (REQUIRED) ==================== -->
@@ -1067,6 +1068,93 @@
                         <div class="pulse-timeline" id="fullTimeline">
                             <!-- Will be populated by JavaScript -->
                         </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ==================== ANALYTICS DASHBOARD ==================== -->
+            <div id="subscriptionAnalytics" class="subscription-analytics hidden">
+                <!-- Stats Cards Row -->
+                <div class="analytics-stats-grid">
+                    <div class="analytics-stat-card purple">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsMonthlySpend">$0</div>
+                            <div class="stat-label">Monthly Spend</div>
+                        </div>
+                    </div>
+                    <div class="analytics-stat-card blue">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsAnnualSpend">$0</div>
+                            <div class="stat-label">Annual Spend</div>
+                        </div>
+                    </div>
+                    <div class="analytics-stat-card green">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsYoYChange">→ 0%</div>
+                            <div class="stat-label">vs Last Year</div>
+                        </div>
+                    </div>
+                    <div class="analytics-stat-card orange">
+                        <div class="stat-icon">🔢</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsActiveCount">0</div>
+                            <div class="stat-label">Active Subscriptions</div>
+                        </div>
+                    </div>
+                    <div class="analytics-stat-card teal">
+                        <div class="stat-icon">💵</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsAvgSpend">$0</div>
+                            <div class="stat-label">Avg. per Subscription</div>
+                        </div>
+                    </div>
+                    <div class="analytics-stat-card red">
+                        <div class="stat-icon">🔴</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="analyticsStoppedCount">0</div>
+                            <div class="stat-label">Stopped This Year</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Charts Row -->
+                <div class="analytics-charts-grid">
+                    <div class="chart-card">
+                        <h3 class="chart-title">📊 Monthly Spend Trend</h3>
+                        <div class="chart-container">
+                            <canvas id="monthlyTrendChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h3 class="chart-title">🎯 Spend by Category</h3>
+                        <div class="chart-container">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Subscriptions Table -->
+                <div class="subscriptions-table-card">
+                    <h3 class="table-title">📋 All Subscriptions</h3>
+                    <div class="table-responsive">
+                        <table class="subscriptions-table">
+                            <thead>
+                                <tr>
+                                    <th>Vendor</th>
+                                    <th>Monthly Cost</th>
+                                    <th>Billing</th>
+                                    <th>Status</th>
+                                    <th>Last Charge</th>
+                                    <th>Annual Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subscriptionTableBody">
+                                <tr><td colspan="6" class="text-center">Run a scan to see your subscriptions</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
