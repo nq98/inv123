@@ -432,6 +432,101 @@ Return results for ALL {len(email_batch)} emails in order by index.
         
         return results
     
+    def semantic_fast_filter(self, email_batch):
+        """
+        STAGE 1: AI Semantic Triage using Gemini 2.5 Flash
+        
+        Fast classification of multiple emails in one API call.
+        Returns list of dicts with 'is_subscription' boolean and 'reason'.
+        
+        Args:
+            email_batch: List of 10-15 email dicts with subject, sender, body
+            
+        Returns:
+            List of {'index': int, 'is_subscription': bool, 'reason': str, 'vendor_hint': str}
+        """
+        if not email_batch:
+            return []
+        
+        emails_json = []
+        for i, email in enumerate(email_batch):
+            emails_json.append({
+                "index": i,
+                "subject": email.get('subject', '')[:150],
+                "sender": email.get('sender', ''),
+                "snippet": email.get('body', '')[:500]
+            })
+        
+        prompt = f"""🔍 FAST SUBSCRIPTION FILTER - Classify {len(email_batch)} emails
+
+Analyze each email and determine if it's a TRUE RECURRING SUBSCRIPTION CHARGE.
+
+## EMAILS:
+{json.dumps(emails_json, indent=2)}
+
+## CLASSIFICATION RULES:
+
+✅ TRUE SUBSCRIPTION (is_subscription: true):
+- Monthly/annual software charges: Notion, Slack, Zoom, GitHub, Netflix, Spotify
+- Cloud services: AWS, Google Cloud, Azure, Vercel, Heroku
+- AI tools: OpenAI, Cursor, Anthropic
+- The email shows YOU were CHARGED money for a service
+
+❌ NOT SUBSCRIPTION (is_subscription: false):
+- Payouts/withdrawals: "Your payout is ready", "Funds deposited"
+- Money YOU RECEIVED: Marketplace sales, freelance payments
+- One-time purchases: Amazon orders, hardware
+- Welcome/marketing emails: No actual charge
+- Newsletters, webinars, promotional
+
+## CRITICAL: The amount must be a CHARGE TO YOU, not income/payout
+
+## OUTPUT (JSON array, no markdown):
+[
+  {{"index": 0, "is_subscription": true/false, "reason": "Brief why", "vendor_hint": "Vendor name or null"}},
+  ...
+]
+
+Return ALL {len(email_batch)} emails in order."""
+
+        result_text = None
+        
+        if self.gemini_client:
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model="gemini-2.5-flash-preview-05-20",
+                    contents=prompt,
+                    config={
+                        "temperature": 0.1,
+                        "response_mime_type": "application/json"
+                    }
+                )
+                result_text = response.text
+                print(f"✅ Fast filter: {len(email_batch)} emails classified with Gemini 2.5 Flash")
+            except Exception as e:
+                print(f"Fast filter Gemini error: {e}")
+                raise
+        
+        if not result_text:
+            raise Exception("No AI response for fast filter")
+        
+        try:
+            if '```json' in result_text:
+                result_text = result_text.split('```json')[1].split('```')[0]
+            elif '```' in result_text:
+                result_text = result_text.split('```')[1].split('```')[0]
+            
+            results = json.loads(result_text.strip())
+            
+            if isinstance(results, dict):
+                results = results.get('results', results.get('emails', []))
+            
+            return results
+            
+        except json.JSONDecodeError as e:
+            print(f"Fast filter JSON error: {e}, response: {result_text[:300]}")
+            raise
+    
     def _semantic_classify_with_gemini(self, subject, body, sender):
         """
         AI-FIRST SEMANTIC CLASSIFICATION - The Supreme Subscription Judge
