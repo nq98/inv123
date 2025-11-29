@@ -88,7 +88,7 @@ class SubscriptionPulseService:
                         "X-Title": "Subscription Pulse AI Scanner"
                     }
                 )
-                print("✅ OpenRouter Gemini 3 Pro initialized for AI-First Subscription Pulse")
+                print("✅ OpenRouter Gemini 2.5 Pro initialized for AI-First Subscription Pulse")
             except Exception as e:
                 print(f"⚠️ OpenRouter initialization failed: {e}")
         
@@ -333,18 +333,18 @@ If this is clearly NOT a payment/transaction email, return:
 
         result_text = None
         
-        # PRIMARY: OpenRouter Gemini 3 Pro (no rate limits)
+        # PRIMARY: OpenRouter Gemini 2.5 Pro (same as main agent - best reasoning)
         if self.openrouter_client:
             try:
                 response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-2.5-flash-preview",
+                    model="google/gemini-2.5-pro",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     response_format={"type": "json_object"}
                 )
                 result_text = response.choices[0].message.content.strip()
             except Exception as e:
-                print(f"OpenRouter error: {e}")
+                print(f"OpenRouter Gemini 2.5 Pro error: {e}")
         
         # FALLBACK: Direct Gemini API
         if not result_text and self.gemini_client:
