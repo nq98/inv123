@@ -8606,39 +8606,140 @@ def subscription_scan_stream():
                 
                 return snippet if snippet else ""
             
+            # ==================== EVIDENCE-GATED TRIAGE SYSTEM ====================
+            # Bulletproof multi-signal filtering to reduce 5000 emails to ~100-300 high-potential
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 15, 'message': 'Evidence-Gated Triage: Filtering emails with strict rules...'})}\n\n"
+            
+            email_queue = []  # Only HIGH-POTENTIAL emails go here
+            
+            # COMPILED REGEX PATTERNS (performance optimized)
+            # HARD REJECT patterns - immediate disqualification
+            NEGATIVE_PATTERNS = [
+                re.compile(r'\b(payout|withdrawal|deposit(ed)?|funds?\s+available|your\s+earnings|refund(ed)?|credit\s+(issued|received))\b', re.I),
+                re.compile(r'\b(newsletter|webinar|we\s+miss\s+you|marketing|promotional|special\s+offer|limited\s+time)\b', re.I),
+                re.compile(r'\b(verify\s+your\s+(email|account)|confirm\s+your\s+email|password\s+reset|security\s+alert)\b', re.I),
+                re.compile(r'\b(welcome\s+to|getting\s+started|activate\s+your|invitation\s+to\s+join|free\s+trial)\b', re.I),
+                re.compile(r'\b(unsubscribe|email\s+preferences|manage\s+preferences|update\s+preferences)\b', re.I),
+            ]
+            
+            # CHARGE VERB patterns - must appear for billing signal
+            CHARGE_PATTERNS = [
+                re.compile(r'\b(receipt|invoice|billed|charged|payment\s+(received|successful|confirmation)|billing\s+statement)\b', re.I),
+                re.compile(r'\b(subscription\s+(renewal|charge|confirmed)|renewed|auto-?renew(al|ed)?)\b', re.I),
+                re.compile(r'\b(חשבונית|קבלה|תשלום\s+התקבל|חיוב)\b'),  # Hebrew
+                re.compile(r'\b(rechnung|zahlungsbestätigung|abbuchung)\b', re.I),  # German
+                re.compile(r'\b(facture|reçu|factura|recibo|pago\s+recibido)\b', re.I),  # French/Spanish
+            ]
+            
+            # AMOUNT pattern - must find actual monetary values
+            AMOUNT_PATTERN = re.compile(r'(?:[$€£₪¥]|USD|EUR|GBP|ILS|CAD|AUD)\s*\d{1,6}(?:[.,]\d{2})?|\d{1,6}[.,]\d{2}\s*(?:USD|EUR|GBP|ILS|CAD|AUD)', re.I)
+            
+            # RECURRING keywords for subscription signals
+            RECURRING_PATTERN = re.compile(r'\b(monthly|annual(ly)?|yearly|weekly|quarterly|subscription\s+plan|billing\s+period|next\s+billing)\b', re.I)
+            
+            def extract_sender_domain(sender):
+                """Extract clean domain from sender email"""
+                match = re.search(r'@([\w.-]+\.[a-z]{2,})', sender.lower())
+                return match.group(1) if match else ''
+            
+            # PAYMENT PROCESSOR DOMAINS - exact matches only
+            PAYMENT_PROCESSOR_DOMAINS = {
+                'stripe.com', 'paypal.com', 'paddle.com', 'gumroad.com', 'chargebee.com',
+                'recurly.com', 'braintree.com', 'fastspring.com', 'lemonsqueezy.com'
+            }
+            
+            # KNOWN SAAS VENDOR DOMAINS - exact matches only
+            SAAS_VENDOR_DOMAINS = {
+                'notion.so', 'slack.com', 'zoom.us', 'figma.com', 'github.com', 'gitlab.com',
+                'linear.app', 'vercel.com', 'netlify.com', 'openai.com', 'anthropic.com',
+                'netflix.com', 'spotify.com', 'salesforce.com', 'hubspot.com', 'datadog.com',
+                'sentry.io', '1password.com', 'dropbox.com', 'asana.com', 'monday.com',
+                'atlassian.com', 'jetbrains.com', 'adobe.com', 'canva.com', 'twilio.com',
+                'grammarly.com', 'calendly.com', 'loom.com', 'replit.com', 'supabase.com'
+            }
+            
+            SCORE_THRESHOLD = 5  # Strict threshold for high-quality filtering
+            
             for i, msg_id in enumerate(all_message_ids):
                 try:
-                    # Get FULL email with body for proper amount extraction
                     msg = service.users().messages().get(
                         userId='me',
                         id=msg_id,
                         format='full'
                     ).execute()
                     
-                    # Extract headers
                     headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
-                    
                     subject = headers.get('Subject', '')
                     sender = headers.get('From', '')
                     snippet = msg.get('snippet', '')
                     
-                    # Extract full body text with snippet fallback
+                    # Extract full body for scoring
                     full_body = extract_email_body(msg.get('payload', {}), snippet=snippet)
                     
-                    # Quick pre-filter: Skip obvious non-subscription emails
+                    # Prepare text for pattern matching
+                    sender_domain = extract_sender_domain(sender)
+                    combined_text = f"{subject} {full_body[:2000]}"
                     subject_lower = subject.lower()
-                    skip_keywords = ['unsubscribe from', 'marketing', 'we miss you', 'confirm your', 
-                                     'verify your', 'welcome to', 'password reset', 'security alert',
-                                     'newsletter', 'promotional', 'special offer', 'limited time']
-                    if any(kw in subject_lower for kw in skip_keywords):
+                    
+                    # STEP 1: HARD REJECT - Any negative pattern = skip immediately
+                    if any(pat.search(combined_text) for pat in NEGATIVE_PATTERNS):
                         skipped_count += 1
                         continue
+                    
+                    # STEP 2: Check for CHARGE evidence (required)
+                    has_charge_in_subject = any(pat.search(subject_lower) for pat in CHARGE_PATTERNS)
+                    has_charge_in_body = any(pat.search(combined_text) for pat in CHARGE_PATTERNS)
+                    has_charge = has_charge_in_subject or has_charge_in_body
+                    
+                    # STEP 3: Check for AMOUNT evidence (required)
+                    has_amount = bool(AMOUNT_PATTERN.search(combined_text))
+                    
+                    # STEP 4: Check sender domain
+                    is_payment_processor = sender_domain in PAYMENT_PROCESSOR_DOMAINS
+                    is_saas_vendor = sender_domain in SAAS_VENDOR_DOMAINS
+                    
+                    # STEP 5: Scoring with strict requirements
+                    score = 0
+                    
+                    if is_payment_processor and has_charge:  # Stripe/PayPal with charge verb
+                        score += 6
+                    elif is_saas_vendor:
+                        score += 4
+                    
+                    if has_charge_in_subject:
+                        score += 4
+                    elif has_charge_in_body:
+                        score += 2
+                    
+                    if has_amount:
+                        score += 3
+                    
+                    if RECURRING_PATTERN.search(combined_text):
+                        score += 2
+                    
+                    # GATE: Must have BOTH charge evidence AND amount to pass
+                    # Exception: Known SaaS vendors with charge evidence can pass without visible amount
+                    if not has_charge:
+                        skipped_count += 1
+                        continue
+                    
+                    if not has_amount and not (is_saas_vendor or is_payment_processor):
+                        skipped_count += 1
+                        continue
+                    
+                    if score < SCORE_THRESHOLD:
+                        skipped_count += 1
+                        continue
+                    
+                    # PASSED - Queue for AI analysis
+                    body_truncated = full_body[:2000] if len(full_body) > 2000 else full_body
                     
                     email_data = {
                         'id': msg_id,
                         'subject': subject,
                         'sender': sender,
-                        'body': full_body,  # FULL BODY for proper amount extraction
+                        'body': body_truncated,
+                        'score': score,
                         'date': None
                     }
                     
@@ -8651,37 +8752,75 @@ def subscription_scan_stream():
                         except:
                             pass
                     
-                    # AI semantic analysis with Gemini 3 Pro
-                    result = pulse_service.analyze_email_fast(email_data)
-                    if result:
-                        processed_events.append(result)
-                        # Send subscription_found event for terminal
-                        vendor_name = result.get('vendor_name', 'Unknown')
-                        amount = result.get('amount')
-                        amount_str = f"${amount:.2f}" if amount else 'analyzing...'
-                        yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
-                        
-                except Exception as e:
-                    print(f"Error processing email {msg_id}: {e}")
-                    continue
+                    email_queue.append(email_data)
                     
-                # Progress update every 50 emails AND keep-alive heartbeat
-                if i > 0 and i % 50 == 0:
-                    percent = 22 + int((i / total_emails) * 58)
-                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Analyzed {i}/{total_emails} emails... Found {len(processed_events)} payments (skipped {skipped_count} non-financial)'})}\n\n"
+                except Exception as e:
+                    print(f"Error fetching email {msg_id}: {e}")
+                    continue
                 
-                # Keep-alive heartbeat every 10 emails to prevent connection timeout
-                elif i > 0 and i % 10 == 0:
-                    yield f": heartbeat\n\n"  # SSE comment for keep-alive
+                # Progress update during triage
+                if i > 0 and i % 100 == 0:
+                    percent = 15 + int((i / total_emails) * 25)
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Evidence-Gated Triage: {i}/{total_emails} scanned | {len(email_queue)} passed | {skipped_count} filtered'})}\n\n"
+                elif i > 0 and i % 30 == 0:
+                    yield f": heartbeat\n\n"
+            
+            # Sort by score (highest first) for best results
+            email_queue.sort(key=lambda x: x.get('score', 0), reverse=True)
+            
+            filter_rate = round((skipped_count / total_emails) * 100, 1) if total_emails > 0 else 0
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 40, 'message': f'Evidence-Gated Triage: {len(email_queue)} high-potential emails from {total_emails} ({filter_rate}% filtered)'})}\n\n"
+            
+            # ==================== STAGE 2: BULK AI ANALYSIS ====================
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 40, 'message': 'Stage 2: Bulk AI analysis with Gemini 3 Pro...'})}\n\n"
+            
+            BATCH_SIZE = 6  # Process 6 emails per Gemini call
+            total_batches = (len(email_queue) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            for batch_idx in range(0, len(email_queue), BATCH_SIZE):
+                batch = email_queue[batch_idx:batch_idx + BATCH_SIZE]
+                batch_num = batch_idx // BATCH_SIZE + 1
                 
-                # INCREMENTAL SAVE: Save progress every 5 new subscriptions found
-                if len(processed_events) >= last_save_count + 5:
+                try:
+                    # BULK GEMINI CALL - Analyze multiple emails at once
+                    batch_results = pulse_service.analyze_email_batch(batch)
+                    
+                    if batch_results:
+                        for result in batch_results:
+                            if result:
+                                processed_events.append(result)
+                                vendor_name = result.get('vendor_name', 'Unknown')
+                                amount = result.get('amount')
+                                amount_str = f"${amount:.2f}" if amount else 'analyzing...'
+                                yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
+                    
+                except Exception as batch_error:
+                    print(f"Batch {batch_num} failed, falling back to sequential: {batch_error}")
+                    # Fallback: process individually if batch fails
+                    for email_data in batch:
+                        try:
+                            result = pulse_service.analyze_email_fast(email_data)
+                            if result:
+                                processed_events.append(result)
+                                vendor_name = result.get('vendor_name', 'Unknown')
+                                amount = result.get('amount')
+                                amount_str = f"${amount:.2f}" if amount else 'analyzing...'
+                                yield f"data: {json.dumps({'type': 'subscription_found', 'vendor': vendor_name, 'amount': amount_str})}\n\n"
+                        except Exception as seq_error:
+                            print(f"Sequential fallback error for email: {seq_error}")
+                            continue
+                
+                # Progress update per batch
+                percent = 40 + int((batch_num / total_batches) * 40)
+                yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Batch {batch_num}/{total_batches} analyzed ({len(processed_events)} subscriptions found)'})}\n\n"
+                
+                # Incremental save every 2 batches
+                if batch_num % 2 == 0 and len(processed_events) > last_save_count:
                     try:
-                        percent = 22 + int((i / total_emails) * 58)
                         interim_results = pulse_service.aggregate_subscription_data(processed_events)
                         pulse_service.store_subscription_results(client_email, interim_results)
                         last_save_count = len(processed_events)
-                        yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'💾 Auto-saved {len(processed_events)} subscriptions (checkpoint)'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'progress', 'percent': percent, 'message': f'Auto-saved {len(processed_events)} subscriptions'})}\n\n"
                     except Exception as save_error:
                         print(f"Incremental save error: {save_error}")
                     

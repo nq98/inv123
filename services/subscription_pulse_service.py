@@ -265,6 +265,173 @@ class SubscriptionPulseService:
         """Backward compatibility - now uses full semantic analysis"""
         return self.analyze_email_semantic(email_data)
     
+    def analyze_email_batch(self, email_batch):
+        """
+        BULK ANALYSIS - Analyze multiple emails in a single Gemini API call.
+        
+        This is 6x faster than individual calls and provides better context
+        for Gemini to compare patterns across emails.
+        
+        Args:
+            email_batch: List of email_data dicts (max 6-8 recommended)
+            
+        Returns:
+            List of results (same order as input, None for non-subscriptions)
+        """
+        if not email_batch:
+            return []
+        
+        # Build batch prompt with all emails
+        emails_json = []
+        for i, email in enumerate(email_batch):
+            emails_json.append({
+                "index": i,
+                "subject": email.get('subject', '')[:200],
+                "sender": email.get('sender', ''),
+                "body_preview": email.get('body', '')[:1000]
+            })
+        
+        prompt = f"""🧠 BULK SUBSCRIPTION ANALYZER - Analyze {len(email_batch)} emails at once
+
+You are an expert at identifying TRUE RECURRING SUBSCRIPTIONS from emails.
+Analyze ALL emails below and return a JSON array with results for each.
+
+## EMAILS TO ANALYZE:
+{json.dumps(emails_json, indent=2)}
+
+## CLASSIFICATION RULES:
+
+### ✅ TRUE SUBSCRIPTIONS (is_subscription: true):
+- SaaS Products: Notion, Slack, Zoom, Figma, GitHub, Linear, Vercel, Netlify
+- Cloud Services: AWS, Google Cloud, Azure, DigitalOcean, Heroku
+- AI Tools: OpenAI, Anthropic, Cursor, Midjourney
+- Streaming: Netflix, Spotify, Disney+, YouTube Premium
+- Business Tools: Salesforce, HubSpot, Intercom, Mailchimp
+- Development: JetBrains, CircleCI, Datadog, Sentry
+
+### ❌ NOT SUBSCRIPTIONS (is_subscription: false):
+- Marketplace payouts (Fiverr, Upwork - money YOU RECEIVE)
+- Payment processor notifications ("Stripe payout", "PayPal deposit")
+- One-time purchases (Amazon orders, hardware)
+- Welcome emails, newsletters, marketing
+- Invoices YOU SENT to customers
+
+## OUTPUT FORMAT (JSON array, no markdown):
+[
+  {{
+    "index": 0,
+    "is_subscription": true/false,
+    "vendor_name": "The REAL company name",
+    "amount": 0.00,
+    "currency": "USD",
+    "billing_cadence": "monthly|annual|quarterly",
+    "payment_type": "subscription|one_time|marketplace|payout|skip",
+    "confidence": 0.0-1.0,
+    "reasoning": "Brief explanation"
+  }},
+  ...
+]
+
+Return results for ALL {len(email_batch)} emails in order by index.
+"""
+
+        result_text = None
+        
+        # PRIMARY: Gemini 1.5 Flash (most reliable for JSON output)
+        if self.gemini_client:
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model="gemini-1.5-flash-latest",
+                    contents=prompt,
+                    config={
+                        "temperature": 0.1,
+                        "response_mime_type": "application/json"
+                    }
+                )
+                result_text = response.text
+                print(f"✅ Batch analyzed {len(email_batch)} emails with Gemini 1.5 Flash")
+            except Exception as e:
+                print(f"Gemini batch error: {e}")
+                raise  # Let caller handle with sequential fallback
+        
+        # FALLBACK: OpenRouter Gemini if primary fails
+        if not result_text and self.openrouter_client:
+            try:
+                response = self.openrouter_client.chat.completions.create(
+                    model="google/gemini-2.5-flash-preview",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+                result_text = response.choices[0].message.content
+                print(f"✅ Batch analyzed {len(email_batch)} emails with OpenRouter fallback")
+            except Exception as e:
+                print(f"OpenRouter batch fallback error: {e}")
+                raise  # Let caller handle with sequential fallback
+        
+        if not result_text:
+            raise ValueError("No AI response received for batch analysis")
+        
+        # Parse batch results with strict validation
+        try:
+            # Clean markdown if present
+            if '```json' in result_text:
+                result_text = result_text.split('```json')[1].split('```')[0]
+            elif '```' in result_text:
+                result_text = result_text.split('```')[1].split('```')[0]
+            
+            batch_results = json.loads(result_text.strip())
+        except json.JSONDecodeError as e:
+            print(f"Batch JSON parse error: {e}, response: {result_text[:500]}")
+            raise  # Let caller handle with sequential fallback
+        
+        # Handle both array and object with "results" key
+        if isinstance(batch_results, dict):
+            batch_results = batch_results.get('results', batch_results.get('emails', []))
+        
+        # Map results back to email order
+        results = []
+        result_map = {r.get('index', i): r for i, r in enumerate(batch_results)}
+        
+        for i, email in enumerate(email_batch):
+            ai_result = result_map.get(i)
+            
+            if not ai_result or not ai_result.get('is_subscription'):
+                results.append(None)
+                continue
+            
+            # Process subscription result
+            vendor_name = ai_result.get('vendor_name', 'Unknown')
+            vendor_domain = ai_result.get('domain', self._extract_domain(email.get('sender', '')))
+            amount = ai_result.get('amount', 0)
+            currency = ai_result.get('currency', 'USD')
+            amount_usd = self._convert_to_usd(amount, currency)
+            billing_cadence = ai_result.get('billing_cadence', 'monthly')
+            monthly_amount_usd = self._calculate_monthly_amount(amount_usd, billing_cadence)
+            
+            email_date = email.get('date')
+            if email_date and hasattr(email_date, 'isoformat'):
+                email_date = email_date.isoformat()
+            
+            results.append({
+                'vendor_name': vendor_name,
+                'domain': vendor_domain,
+                'amount': amount,
+                'amount_usd': amount_usd,
+                'monthly_amount_usd': monthly_amount_usd,
+                'currency': currency,
+                'billing_cadence': billing_cadence,
+                'is_subscription': True,
+                'payment_type': ai_result.get('payment_type', 'subscription'),
+                'email_subject': email.get('subject', ''),
+                'email_date': email_date,
+                'email_id': email.get('id'),
+                'sender': email.get('sender', ''),
+                'confidence': ai_result.get('confidence', 0.8),
+                'ai_reasoning': ai_result.get('reasoning', ''),
+            })
+        
+        return results
+    
     def _semantic_classify_with_gemini(self, subject, body, sender):
         """
         AI-FIRST SEMANTIC CLASSIFICATION - The Supreme Subscription Judge
