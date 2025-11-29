@@ -8612,17 +8612,20 @@ def start_background_scan():
         # Create background job
         job_id = job_manager.create_job('subscription_scan', user_email)
         
-        # Start background thread
+        # Start background thread (NON-DAEMON so it survives worker recycling)
         def run_scan():
             try:
                 run_background_subscription_scan(job_id, credentials, days, user_email)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                job_manager.update_job(job_id, status='error', error=str(e))
+                job_manager.update_job(job_id, status='error', error=str(e),
+                    message=f'Scan failed: {str(e)}')
         
-        thread = threading.Thread(target=run_scan, daemon=True)
+        # CRITICAL: daemon=False so thread survives gunicorn worker restarts
+        thread = threading.Thread(target=run_scan, daemon=False, name=f'scan-{job_id}')
         thread.start()
+        print(f"[Background Scan] Started thread scan-{job_id} for {user_email}")
         
         return jsonify({
             'job_id': job_id,
@@ -8692,13 +8695,46 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
     
     IMPORTANT: This runs independently of the browser session.
     Credentials are passed directly and can auto-refresh.
+    
+    OAuth Strategy:
+    - Refresh token immediately on start
+    - Proactively refresh every 45 minutes (before 1hr expiry)
+    - Auto-refresh on 401 errors
     """
     from google.oauth2.credentials import Credentials as OAuthCredentials
     from googleapiclient.discovery import build
     from google.auth.transport.requests import Request
+    import time as time_module
+    
+    last_refresh_time = time_module.time()
+    REFRESH_INTERVAL = 45 * 60  # 45 minutes
+    
+    def ensure_fresh_token(creds, force=False):
+        """Proactively refresh token to prevent expiration during long scans"""
+        nonlocal last_refresh_time
+        current_time = time_module.time()
+        
+        should_refresh = (
+            force or
+            creds.expired or 
+            not creds.valid or
+            (current_time - last_refresh_time) > REFRESH_INTERVAL
+        )
+        
+        if should_refresh:
+            try:
+                creds.refresh(Request())
+                last_refresh_time = time_module.time()
+                print(f"[Background Scan {job_id}] Token refreshed (elapsed: {int(current_time - last_refresh_time)}s)")
+                return True
+            except Exception as e:
+                print(f"[Background Scan {job_id}] Token refresh failed: {e}")
+                return False
+        return True
     
     try:
         job_manager.update_job(job_id, status='running', progress=5, message='Connecting to Gmail...')
+        print(f"[Background Scan {job_id}] Starting scan for {user_email}")
         
         pulse_service = get_subscription_pulse_service()
         
@@ -8711,14 +8747,11 @@ def run_background_subscription_scan(job_id, credentials, days, user_email):
         )
         
         # Force refresh the token immediately to ensure we have a valid one
-        # This makes the scan independent of the browser session
-        try:
-            if creds.expired or not creds.valid:
-                creds.refresh(Request())
-                print(f"[Background Scan] Token refreshed for job {job_id}")
-        except Exception as refresh_error:
-            print(f"[Background Scan] Token refresh warning: {refresh_error}")
-            # Continue anyway - token might still be valid
+        if not ensure_fresh_token(creds, force=True):
+            job_manager.update_job(job_id, status='error', 
+                message='OAuth token refresh failed. Please reconnect Gmail.',
+                error='Token refresh failed')
+            return
         
         service = build('gmail', 'v1', credentials=creds)
         
