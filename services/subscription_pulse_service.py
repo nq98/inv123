@@ -311,48 +311,49 @@ class SubscriptionPulseService:
                 "body_preview": email.get('body', '')[:1000]
             })
         
-        prompt = f"""🧠 BULK SUBSCRIPTION ANALYZER - Analyze {len(email_batch)} emails at once
+        prompt = f"""🧠 SEMANTIC SUBSCRIPTION EXTRACTOR - Extract subscription data from {len(email_batch)} emails
 
-You are an expert at identifying TRUE RECURRING SUBSCRIPTIONS from emails.
-Analyze ALL emails below and return a JSON array with results for each.
+IMPORTANT: These emails were PRE-FILTERED as likely subscriptions. Your job is to EXTRACT DATA, not reject emails.
 
 ## EMAILS TO ANALYZE:
 {json.dumps(emails_json, indent=2)}
 
-## CLASSIFICATION RULES:
+## EXTRACTION RULES:
 
-### ✅ TRUE SUBSCRIPTIONS (is_subscription: true):
-- SaaS Products: Notion, Slack, Zoom, Figma, GitHub, Linear, Vercel, Netlify
-- Cloud Services: AWS, Google Cloud, Azure, DigitalOcean, Heroku
-- AI Tools: OpenAI, Anthropic, Cursor, Midjourney
-- Streaming: Netflix, Spotify, Disney+, YouTube Premium
-- Business Tools: Salesforce, HubSpot, Intercom, Mailchimp
-- Development: JetBrains, CircleCI, Datadog, Sentry
+### ALWAYS EXTRACT (is_subscription: true) - Services you PAY FOR:
+- SaaS: Notion, Slack, Zoom, Figma, GitHub, Linear, Vercel, Netlify, Airtable, Monday, Asana
+- Cloud: AWS, Google Cloud, Azure, DigitalOcean, Heroku, Cloudflare, Render
+- AI: OpenAI, Anthropic, Claude, ChatGPT, Cursor, Midjourney, Jasper, Perplexity
+- Streaming: Netflix, Spotify, Disney+, YouTube Premium, Apple Music, HBO Max
+- Business: Salesforce, HubSpot, Intercom, Zendesk, Mailchimp, ConvertKit
+- Dev Tools: JetBrains, CircleCI, Datadog, Sentry, New Relic, PagerDuty
+- Security: 1Password, LastPass, Okta, Auth0
+- Design: Adobe Creative Cloud, Canva Pro, Framer
+- Communication: Zoom, Webex, Microsoft 365, Google Workspace
 
-### ❌ NOT SUBSCRIPTIONS (is_subscription: false):
-- Marketplace payouts (Fiverr, Upwork - money YOU RECEIVE)
-- Payment processor notifications ("Stripe payout", "PayPal deposit")
-- One-time purchases (Amazon orders, hardware)
-- Welcome emails, newsletters, marketing
-- Invoices YOU SENT to customers
+### ONLY REJECT (is_subscription: false) if CLEARLY:
+- Payout/deposit TO you (Stripe payout, PayPal deposit, bank transfer IN)
+- Physical product delivery (Amazon package, hardware shipment)
+- Pure marketing email with no payment
 
-## OUTPUT FORMAT (JSON array, no markdown):
+### WHEN UNCERTAIN: Default to is_subscription: true with lower confidence
+
+## OUTPUT (JSON array, extract aggressively):
 [
   {{
     "index": 0,
-    "is_subscription": true/false,
-    "vendor_name": "The REAL company name",
-    "amount": 0.00,
+    "is_subscription": true,
+    "vendor_name": "Company Name",
+    "amount": 29.99,
     "currency": "USD",
-    "billing_cadence": "monthly|annual|quarterly",
-    "payment_type": "subscription|one_time|marketplace|payout|skip",
-    "confidence": 0.0-1.0,
-    "reasoning": "Brief explanation"
-  }},
-  ...
+    "billing_cadence": "monthly",
+    "payment_type": "subscription",
+    "confidence": 0.8,
+    "reasoning": "Payment confirmation for SaaS"
+  }}
 ]
 
-Return results for ALL {len(email_batch)} emails in order by index.
+Extract ALL {len(email_batch)} emails. When in doubt, INCLUDE with lower confidence.
 """
 
         result_text = None
@@ -416,44 +417,58 @@ Return results for ALL {len(email_batch)} emails in order by index.
         result_map = {r.get('index', i): r for i, r in enumerate(batch_results)}
         
         # Track diagnostics
-        skipped_explicit_false = 0
         skipped_payout = 0
         accepted = 0
+        heuristic_rescued = 0
         
-        # DEBUG: Log first few AI results to understand what Gemini returns
+        # SUBSCRIPTION KEYWORD HEURISTICS - If these appear, likely a subscription
+        SUBSCRIPTION_KEYWORDS = [
+            'subscription', 'monthly', 'annual', 'yearly', 'recurring', 'renewal',
+            'billing', 'invoice', 'payment', 'charge', 'receipt', 'plan', 'pro plan',
+            'premium', 'enterprise', 'team plan', 'business plan', 'starter',
+            'your account', 'has been charged', 'payment successful', 'auto-renew'
+        ]
+        
+        # PAYOUT KEYWORDS - Only reject if CLEARLY a payout TO the user
+        PAYOUT_KEYWORDS = [
+            'payout to your', 'deposit to your', 'transfer to your bank',
+            'funds have been sent to you', 'you have received', 'your earnings',
+            'payment sent to you', 'withdrawal complete'
+        ]
+        
+        # DEBUG: Log first AI result
         if batch_results and len(batch_results) > 0:
-            sample = batch_results[0] if batch_results else {}
-            print(f"🔍 STAGE 2 DEBUG - Sample AI response: is_subscription={sample.get('is_subscription')} (type: {type(sample.get('is_subscription')).__name__}), payment_type={sample.get('payment_type')}")
+            sample = batch_results[0]
+            print(f"🔍 STAGE 2 DEBUG - Sample: is_subscription={sample.get('is_subscription')} (type={type(sample.get('is_subscription')).__name__}), vendor={sample.get('vendor_name')}, payment_type={sample.get('payment_type')}")
         
         for i, email in enumerate(email_batch):
-            ai_result = result_map.get(i)
+            ai_result = result_map.get(i) or {}
             
-            # FIX: Handle both boolean False and string "false" 
-            # Gemini sometimes returns "false" as string, not boolean
-            is_sub_value = ai_result.get('is_subscription') if ai_result else None
-            is_explicitly_not_subscription = (
-                is_sub_value == False or 
-                is_sub_value == "false" or 
-                is_sub_value == "False" or
-                str(is_sub_value).lower() == "false"
-            )
+            # Get email content for heuristic analysis
+            email_text = (email.get('subject', '') + ' ' + email.get('body', '')).lower()
             
-            # Only skip if AI EXPLICITLY says NOT a subscription
-            if ai_result and is_explicitly_not_subscription:
-                skipped_explicit_false += 1
-                results.append(None)
-                continue
+            # HEURISTIC CHECK: Is this clearly a payout TO the user?
+            is_clear_payout = any(kw in email_text for kw in PAYOUT_KEYWORDS)
+            payment_type = str(ai_result.get('payment_type', '')).lower()
             
-            # Also skip if AI identifies it as a payout (not a charge)
-            payment_type = str(ai_result.get('payment_type', '')).lower() if ai_result else ''
-            if payment_type in ['payout', 'marketplace', 'skip']:
+            # ONLY SKIP if: AI says payout AND heuristics confirm it's money TO the user
+            if payment_type == 'payout' and is_clear_payout:
                 skipped_payout += 1
                 results.append(None)
                 continue
             
-            # FIX: If no AI result, still process since Stage 1 passed it
-            if not ai_result:
-                ai_result = {}
+            # HEURISTIC CHECK: Does email have subscription keywords?
+            has_subscription_signals = any(kw in email_text for kw in SUBSCRIPTION_KEYWORDS)
+            
+            # AI says not subscription, but heuristics say it is? TRUST HEURISTICS
+            is_sub_value = ai_result.get('is_subscription')
+            ai_says_not_sub = str(is_sub_value).lower() == 'false' if is_sub_value is not None else False
+            
+            if ai_says_not_sub and has_subscription_signals and not is_clear_payout:
+                heuristic_rescued += 1
+                # Override AI decision - this looks like a subscription
+                ai_result['is_subscription'] = True
+                ai_result['confidence'] = 0.6  # Lower confidence since AI disagreed
             
             accepted += 1
             
@@ -499,7 +514,7 @@ Return results for ALL {len(email_batch)} emails in order by index.
             })
         
         # Diagnostic logging
-        print(f"📊 Stage 2 Batch Stats: {accepted} accepted, {skipped_explicit_false} rejected (is_subscription=false), {skipped_payout} skipped (payout/marketplace)")
+        print(f"📊 Stage 2 Batch Stats: {accepted} accepted, {skipped_payout} skipped (confirmed payout), {heuristic_rescued} rescued by heuristics")
         
         return results
     
