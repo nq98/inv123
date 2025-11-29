@@ -7125,7 +7125,7 @@ function getAlertIcon(type) {
 }
 
 /**
- * Display active subscriptions
+ * Display active subscriptions with AI reasoning
  */
 function displayActiveSubscriptions(subscriptions) {
     const container = document.getElementById('activeSubscriptionsList');
@@ -7136,33 +7136,53 @@ function displayActiveSubscriptions(subscriptions) {
             <div class="pulse-empty-state">
                 <div class="pulse-empty-state-icon">📭</div>
                 <div class="pulse-empty-state-text">No active subscriptions found</div>
+                <div class="pulse-empty-state-sub">Connect Gmail and scan to discover your subscriptions</div>
             </div>
         `;
         return;
     }
     
     container.innerHTML = subscriptions.map(sub => `
-        <div class="pulse-subscription-item">
-            <div class="pulse-sub-icon">${getVendorIcon(sub.vendor_name)}</div>
-            <div class="pulse-sub-info">
-                <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
-                <div class="pulse-sub-meta">First payment: ${formatDate(sub.first_seen)} | Last: ${formatDate(sub.last_seen)}</div>
+        <div class="pulse-subscription-item pulse-subscription-card">
+            <div class="pulse-card-header">
+                <div class="pulse-sub-icon">${getVendorIcon(sub.vendor_name)}</div>
+                <div class="pulse-sub-info">
+                    <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
+                    <div class="pulse-sub-category">${sub.category ? sub.category.replace(/_/g, ' ') : 'Subscription'}</div>
+                </div>
+                <span class="pulse-sub-status active">Active</span>
             </div>
-            <div class="pulse-sparkline" title="Payment history">
-                ${renderSparkline(sub.payment_history || [])}
+            <div class="pulse-card-body">
+                <div class="pulse-amount-row">
+                    <div class="pulse-main-amount">
+                        <span class="pulse-amount-value">${formatCurrency(sub.monthly_amount)}</span>
+                        <span class="pulse-amount-period">/${sub.frequency || 'month'}</span>
+                    </div>
+                    <div class="pulse-sparkline" title="Payment history">
+                        ${renderSparkline(sub.payment_history || [])}
+                    </div>
+                </div>
+                <div class="pulse-meta-row">
+                    <span class="pulse-meta-item">📊 ${sub.payment_count || 0} payments</span>
+                    <span class="pulse-meta-item">💰 ${formatCurrency(sub.lifetime_spend)} lifetime</span>
+                    <span class="pulse-meta-item" title="AI Confidence">🎯 ${Math.round((sub.confidence || 0.8) * 100)}%</span>
+                </div>
+                ${sub.ai_reasoning ? `
+                    <div class="pulse-ai-reasoning">
+                        <span class="pulse-ai-icon">🤖</span>
+                        <span class="pulse-ai-text">${escapeHtml(sub.ai_reasoning)}</span>
+                    </div>
+                ` : ''}
             </div>
-            <div class="pulse-sub-stats">
-                <div class="pulse-sub-amount">${formatCurrency(sub.monthly_amount)}</div>
-                <div class="pulse-sub-frequency">${sub.frequency || 'monthly'}</div>
-                <div class="pulse-sub-lifetime">Lifetime: ${formatCurrency(sub.lifetime_spend)}</div>
+            <div class="pulse-card-footer">
+                <span class="pulse-date-range">First: ${formatDate(sub.first_seen)} → Last: ${formatDate(sub.last_seen)}</span>
             </div>
-            <span class="pulse-sub-status active">Active</span>
         </div>
     `).join('');
 }
 
 /**
- * Display stopped/churned subscriptions
+ * Display stopped/churned subscriptions with AI reasoning
  */
 function displayStoppedSubscriptions(subscriptions) {
     const container = document.getElementById('stoppedSubscriptionsList');
@@ -7172,24 +7192,53 @@ function displayStoppedSubscriptions(subscriptions) {
         container.innerHTML = `
             <div class="pulse-empty-state">
                 <div class="pulse-empty-state-icon">✅</div>
-                <div class="pulse-empty-state-text">No stopped subscriptions found - all your subscriptions are active!</div>
+                <div class="pulse-empty-state-text">No stopped subscriptions found</div>
+                <div class="pulse-empty-state-sub">All your subscriptions are currently active!</div>
             </div>
         `;
         return;
     }
     
     container.innerHTML = subscriptions.map(sub => `
-        <div class="pulse-subscription-item">
-            <div class="pulse-sub-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);">${getVendorIcon(sub.vendor_name)}</div>
-            <div class="pulse-sub-info">
-                <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
-                <div class="pulse-sub-meta">Stopped: ${formatDate(sub.last_seen)} | Duration: ${sub.duration_months} months</div>
+        <div class="pulse-subscription-item pulse-subscription-card pulse-stopped-card">
+            <div class="pulse-card-header">
+                <div class="pulse-sub-icon pulse-stopped-icon">${getVendorIcon(sub.vendor_name)}</div>
+                <div class="pulse-sub-info">
+                    <div class="pulse-sub-name">${escapeHtml(sub.vendor_name)}</div>
+                    <div class="pulse-sub-category">${sub.category ? sub.category.replace(/_/g, ' ') : 'Subscription'}</div>
+                </div>
+                <span class="pulse-sub-status stopped">Stopped</span>
             </div>
-            <div class="pulse-sub-stats">
-                <div class="pulse-sub-amount">${formatCurrency(sub.last_amount)}</div>
-                <div class="pulse-sub-lifetime">Total Spent: ${formatCurrency(sub.lifetime_spend)}</div>
+            <div class="pulse-card-body">
+                <div class="pulse-amount-row">
+                    <div class="pulse-main-amount pulse-stopped-amount">
+                        <span class="pulse-amount-value">${formatCurrency(sub.last_amount)}</span>
+                        <span class="pulse-amount-period">was /${sub.frequency || 'month'}</span>
+                    </div>
+                    <div class="pulse-days-ago">
+                        <span class="pulse-days-number">${sub.days_since_payment || '?'}</span>
+                        <span class="pulse-days-label">days ago</span>
+                    </div>
+                </div>
+                <div class="pulse-meta-row">
+                    <span class="pulse-meta-item">📊 ${sub.payment_count || 0} total payments</span>
+                    <span class="pulse-meta-item">💰 ${formatCurrency(sub.lifetime_spend)} total spent</span>
+                </div>
+                ${sub.ai_reasoning ? `
+                    <div class="pulse-ai-reasoning pulse-stopped-reason">
+                        <span class="pulse-ai-icon">🤖</span>
+                        <span class="pulse-ai-text">${escapeHtml(sub.ai_reasoning)}</span>
+                    </div>
+                ` : `
+                    <div class="pulse-ai-reasoning pulse-stopped-reason">
+                        <span class="pulse-ai-icon">⏰</span>
+                        <span class="pulse-ai-text">No payment detected in over ${sub.days_since_payment || 45} days based on ${sub.frequency || 'monthly'} billing cycle</span>
+                    </div>
+                `}
             </div>
-            <span class="pulse-sub-status stopped">Stopped</span>
+            <div class="pulse-card-footer">
+                <span class="pulse-date-range">Started: ${formatDate(sub.first_seen)} → Last Payment: ${formatDate(sub.last_seen)}</span>
+            </div>
         </div>
     `).join('');
 }

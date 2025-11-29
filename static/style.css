@@ -3953,6 +3953,158 @@ button {
     font-size: 1rem;
 }
 
+.pulse-empty-state-sub {
+    font-size: 0.875rem;
+    color: var(--gray-400);
+    margin-top: 0.5rem;
+}
+
+/* Enhanced Subscription Cards with AI Reasoning */
+.pulse-subscription-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--gray-200);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: all 0.2s ease;
+}
+
+.pulse-subscription-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.pulse-stopped-card {
+    border-left: 4px solid var(--error);
+}
+
+.pulse-card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.pulse-stopped-icon {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    opacity: 0.7;
+}
+
+.pulse-sub-category {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    text-transform: capitalize;
+}
+
+.pulse-card-body {
+    padding: 1.25rem;
+}
+
+.pulse-amount-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.pulse-main-amount {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+}
+
+.pulse-amount-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+
+.pulse-amount-period {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+.pulse-stopped-amount .pulse-amount-value {
+    color: var(--gray-500);
+    text-decoration: line-through;
+}
+
+.pulse-days-ago {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(239, 68, 68, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+}
+
+.pulse-days-number {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--error);
+}
+
+.pulse-days-label {
+    font-size: 0.7rem;
+    color: var(--gray-500);
+}
+
+.pulse-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.pulse-meta-item {
+    font-size: 0.8rem;
+    color: var(--gray-600);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pulse-ai-reasoning {
+    background: linear-gradient(135deg, rgba(147, 51, 234, 0.05), rgba(79, 70, 229, 0.05));
+    border: 1px solid rgba(147, 51, 234, 0.1);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.pulse-stopped-reason {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(220, 38, 38, 0.05));
+    border-color: rgba(239, 68, 68, 0.1);
+}
+
+.pulse-ai-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.pulse-ai-text {
+    font-size: 0.8rem;
+    color: var(--gray-700);
+    line-height: 1.4;
+}
+
+.pulse-card-footer {
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--gray-100);
+    background: var(--gray-50);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.pulse-date-range {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+}
+
 /* Duplicate Card */
 .pulse-duplicate-card {
     background: var(--gray-50);

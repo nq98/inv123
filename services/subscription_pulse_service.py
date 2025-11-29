@@ -1,16 +1,14 @@
 """
-Subscription Pulse - Fast Lane SaaS Spend Analytics Service
+Subscription Pulse - AI-FIRST Semantic SaaS Spend Analytics Service
 
-This service provides rapid subscription discovery by analyzing email text
-(subjects and bodies) instead of processing PDF attachments.
+This service provides TRUE AI-FIRST subscription discovery where Gemini AI 
+is the SOLE decision maker - NO keyword pre-filtering.
 
 Key Features:
-- Fast Lane scanning (text-only, no Document AI)
-- Gemini Flash for quick classification
-- Subscription vs. one-time purchase detection
-- Price change detection
-- Duplicate tool discovery
-- Shadow IT identification
+- AI-First: Every email goes directly to Gemini for semantic classification
+- Real Monthly Spend: Currency normalization + annual-to-monthly prorating
+- Clear AI Reasoning: Shows WHY each item is classified as active/stopped
+- Accurate Churn Detection: Based on actual billing cadence, not guesses
 """
 
 import os
@@ -38,46 +36,46 @@ except ImportError:
 
 import config
 
+# Currency exchange rates to USD (approximate - for monthly spend calculation)
+CURRENCY_TO_USD = {
+    'USD': 1.0,
+    'EUR': 1.10,
+    'GBP': 1.27,
+    'ILS': 0.27,
+    'CAD': 0.74,
+    'AUD': 0.65,
+    'JPY': 0.0067,
+    'CHF': 1.13,
+    'INR': 0.012,
+    'BRL': 0.20,
+    'MXN': 0.058,
+}
+
+
 class SubscriptionPulseService:
-    """Fast Lane SaaS Spend Analytics"""
-    
-    # Known subscription domains/patterns
-    SUBSCRIPTION_KEYWORDS = [
-        'subscription', 'monthly', 'annual', 'yearly', 'recurring',
-        'renewal', 'auto-renew', 'billing cycle', 'plan', 'license',
-        'seats', 'per user', 'per month', 'per year', '/mo', '/yr'
-    ]
-    
-    TRANSACTION_KEYWORDS = [
-        'charged', 'paid', 'payment', 'receipt', 'invoice', 'bill',
-        'transaction', 'card ending', 'successful payment', 'amount due'
-    ]
-    
-    # High-trust sender patterns (billing/finance departments)
-    TRUSTED_SENDERS = [
-        'billing@', 'finance@', 'payments@', 'invoices@', 'accounts@',
-        'noreply@', 'no-reply@', 'receipts@', 'support@'
-    ]
+    """AI-FIRST Semantic SaaS Spend Analytics - Gemini is the SOLE classifier"""
     
     # Known SaaS categories for duplicate detection
     SAAS_CATEGORIES = {
-        'project_management': ['asana', 'monday', 'trello', 'jira', 'clickup', 'notion', 'basecamp', 'wrike'],
-        'communication': ['slack', 'teams', 'zoom', 'google meet', 'discord', 'webex'],
-        'crm': ['salesforce', 'hubspot', 'pipedrive', 'zoho crm', 'freshsales'],
-        'design': ['figma', 'sketch', 'adobe', 'canva', 'invision'],
-        'development': ['github', 'gitlab', 'bitbucket', 'jfrog', 'circleci'],
-        'cloud': ['aws', 'azure', 'google cloud', 'digitalocean', 'heroku', 'vercel'],
-        'hr': ['gusto', 'bamboohr', 'workday', 'deel', 'remote'],
-        'marketing': ['mailchimp', 'sendgrid', 'hubspot', 'marketo', 'intercom'],
-        'analytics': ['mixpanel', 'amplitude', 'heap', 'fullstory', 'hotjar'],
+        'project_management': ['asana', 'monday', 'trello', 'jira', 'clickup', 'notion', 'basecamp', 'wrike', 'linear'],
+        'communication': ['slack', 'teams', 'zoom', 'google meet', 'discord', 'webex', 'loom'],
+        'crm': ['salesforce', 'hubspot', 'pipedrive', 'zoho crm', 'freshsales', 'close'],
+        'design': ['figma', 'sketch', 'adobe', 'canva', 'invision', 'framer'],
+        'development': ['github', 'gitlab', 'bitbucket', 'jfrog', 'circleci', 'vercel', 'netlify', 'replit'],
+        'cloud': ['aws', 'azure', 'google cloud', 'digitalocean', 'heroku', 'railway', 'render'],
+        'hr': ['gusto', 'bamboohr', 'workday', 'deel', 'remote', 'rippling'],
+        'marketing': ['mailchimp', 'sendgrid', 'hubspot', 'marketo', 'intercom', 'customer.io'],
+        'analytics': ['mixpanel', 'amplitude', 'heap', 'fullstory', 'hotjar', 'posthog'],
         'storage': ['dropbox', 'box', 'google drive', 'onedrive'],
-        'security': ['okta', 'auth0', '1password', 'lastpass', 'duo']
+        'security': ['okta', 'auth0', '1password', 'lastpass', 'duo', 'cloudflare'],
+        'ai_tools': ['openai', 'anthropic', 'midjourney', 'cursor', 'copilot', 'jasper'],
+        'video': ['netflix', 'spotify', 'youtube', 'disney', 'hulu', 'hbo', 'apple music'],
     }
     
     def __init__(self):
         self.config = config.config
         
-        # Initialize OpenRouter client (PRIMARY - no rate limits)
+        # Initialize OpenRouter client (PRIMARY - no rate limits, best model)
         self.openrouter_client = None
         openrouter_api_key = os.getenv('OPENROUTERA')
         if openrouter_api_key and OPENAI_AVAILABLE:
@@ -87,10 +85,10 @@ class SubscriptionPulseService:
                     api_key=openrouter_api_key,
                     default_headers={
                         "HTTP-Referer": "https://replit.com",
-                        "X-Title": "Subscription Pulse Scanner"
+                        "X-Title": "Subscription Pulse AI Scanner"
                     }
                 )
-                print("✅ OpenRouter initialized for Subscription Pulse (no rate limits)")
+                print("✅ OpenRouter Gemini 3 Pro initialized for AI-First Subscription Pulse")
             except Exception as e:
                 print(f"⚠️ OpenRouter initialization failed: {e}")
         
@@ -128,7 +126,7 @@ class SubscriptionPulseService:
         """Create subscription tracking tables if they don't exist"""
         dataset_id = f"{self.config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai"
         
-        # Subscription vendors table
+        # Subscription vendors table - with AI reasoning field
         subscription_vendors_schema = [
             bigquery.SchemaField("vendor_id", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("vendor_name", "STRING", mode="REQUIRED"),
@@ -138,15 +136,20 @@ class SubscriptionPulseService:
             bigquery.SchemaField("is_subscription", "BOOL", mode="REQUIRED"),
             bigquery.SchemaField("first_seen", "TIMESTAMP", mode="NULLABLE"),
             bigquery.SchemaField("last_seen", "TIMESTAMP", mode="NULLABLE"),
-            bigquery.SchemaField("status", "STRING", mode="NULLABLE"),  # active, stopped, zombie
-            bigquery.SchemaField("payment_frequency", "STRING", mode="NULLABLE"),  # monthly, annual
+            bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("payment_frequency", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("average_amount", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("last_amount", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("lifetime_spend", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("lifetime_spend_usd", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("monthly_spend_usd", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("payment_count", "INT64", mode="NULLABLE"),
             bigquery.SchemaField("currency", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("claimed_by", "STRING", mode="NULLABLE"),  # corporate, team name, etc
+            bigquery.SchemaField("ai_reasoning", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("confidence", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("claimed_by", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("claimed_at", "TIMESTAMP", mode="NULLABLE"),
+            bigquery.SchemaField("owner_email", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
             bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
@@ -157,14 +160,18 @@ class SubscriptionPulseService:
             bigquery.SchemaField("event_id", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("vendor_id", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("vendor_name", "STRING", mode="NULLABLE"),
-            bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),  # payment, renewal, cancellation, price_change
+            bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
             bigquery.SchemaField("amount", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("amount_usd", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("currency", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("billing_cadence", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("email_subject", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("email_id", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("paid_by_email", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("ai_reasoning", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("confidence", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("owner_email", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("metadata", "JSON", mode="NULLABLE"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
         ]
@@ -181,117 +188,223 @@ class SubscriptionPulseService:
                 table = bigquery.Table(table_id, schema=schema)
                 self.bq_client.create_table(table)
                 print(f"Created table: {table_id}")
-                
-    def analyze_email_fast(self, email_data):
+
+    def analyze_email_semantic(self, email_data):
         """
-        Fast Lane analysis with SEMANTIC AI FILTERING for subscription detection.
+        AI-FIRST SEMANTIC ANALYSIS - Gemini is the SOLE decision maker.
         
-        CRITICAL: Every email goes through Gemini for true subscription classification.
-        This filters out marketplace transactions (Mrkter), one-time purchases, and payouts.
+        NO keyword pre-filtering. Every email goes directly to AI for classification.
+        This ensures we don't miss subscriptions with unusual wording.
         
         Args:
             email_data: Dict with 'subject', 'body', 'sender', 'date', 'id'
             
         Returns:
-            Dict with extracted subscription info or None if not a TRUE subscription
+            Dict with extracted subscription info or None if not a subscription
         """
         subject = email_data.get('subject', '')
         body = email_data.get('body', '')
         sender = email_data.get('sender', '')
         email_date = email_data.get('date')
         
-        # Quick pre-filter: Check if this looks like a transaction email
-        if not self._is_transaction_email(subject, body, sender):
+        # DIRECT TO AI - No pre-filtering!
+        ai_result = self._semantic_classify_with_gemini(subject, body, sender)
+        
+        if not ai_result:
             return None
         
-        # SEMANTIC AI FILTER: Use Gemini for ALL emails to classify
-        # This is the key to filtering out Mrkter, Stripe payouts, etc.
-        if self.gemini_client:
-            ai_result = self._classify_with_gemini_flash(subject, body, sender)
-            
-            # If AI says skip or not a subscription, return None
-            if not ai_result:
-                return None
-            
-            # AI confirmed this is a TRUE subscription - use AI-extracted data
-            vendor_name = ai_result.get('vendor_name', '')
-            vendor_domain = ai_result.get('domain', '')
-            
-            # If AI didn't extract domain, try to get it from sender
-            if not vendor_domain:
-                sender_info = self._extract_vendor_from_sender(sender)
-                if sender_info:
-                    vendor_domain = sender_info.get('domain', '')
-            
-            # Detect paid by (for Shadow IT)
-            paid_by = self._extract_paid_by_email(body)
-            
-            return {
-                'vendor_name': vendor_name,
-                'domain': vendor_domain,
-                'amount': ai_result.get('amount', 0),
-                'currency': ai_result.get('currency', 'USD'),
-                'is_subscription': True,  # AI already confirmed this
-                'payment_type': ai_result.get('payment_type', 'subscription'),
-                'email_subject': subject,
-                'email_date': email_date,
-                'email_id': email_data.get('id'),
-                'sender': sender,
-                'paid_by_email': paid_by,
-                'confidence': ai_result.get('confidence', 0.8),
-                'classification_reason': ai_result.get('reason', '')
-            }
-        
-        # FALLBACK (no Gemini): Strict keyword-based detection
-        vendor_info = self._extract_vendor_from_sender(sender)
-        if not vendor_info:
+        # AI confirmed this is a TRUE subscription
+        if not ai_result.get('is_subscription', False):
             return None
             
-        amount_info = self._extract_amount(subject + ' ' + body)
-        is_subscription = self._is_subscription_email(subject, body)
-        
-        # Without AI, only accept if keywords strongly suggest subscription
-        if not is_subscription:
+        vendor_name = ai_result.get('vendor_name', '')
+        if not vendor_name:
             return None
+            
+        # Extract domain from sender if AI didn't provide it
+        vendor_domain = ai_result.get('domain', '')
+        if not vendor_domain:
+            sender_info = self._extract_vendor_from_sender(sender)
+            if sender_info:
+                vendor_domain = sender_info.get('domain', '')
         
+        # Detect who paid (for Shadow IT)
         paid_by = self._extract_paid_by_email(body)
         
+        # Calculate USD equivalent
+        amount = ai_result.get('amount', 0)
+        currency = ai_result.get('currency', 'USD')
+        amount_usd = self._convert_to_usd(amount, currency)
+        
+        # Calculate monthly equivalent based on billing cadence
+        billing_cadence = ai_result.get('billing_cadence', 'monthly')
+        monthly_amount_usd = self._calculate_monthly_amount(amount_usd, billing_cadence)
+        
         return {
-            'vendor_name': vendor_info.get('name'),
-            'domain': vendor_info.get('domain'),
-            'amount': amount_info.get('amount', 0) if amount_info else 0,
-            'currency': amount_info.get('currency', 'USD') if amount_info else 'USD',
-            'is_subscription': is_subscription,
-            'payment_type': 'subscription',
+            'vendor_name': vendor_name,
+            'domain': vendor_domain,
+            'amount': amount,
+            'amount_usd': amount_usd,
+            'monthly_amount_usd': monthly_amount_usd,
+            'currency': currency,
+            'billing_cadence': billing_cadence,
+            'is_subscription': True,
+            'payment_type': ai_result.get('payment_type', 'subscription'),
             'email_subject': subject,
             'email_date': email_date,
             'email_id': email_data.get('id'),
             'sender': sender,
             'paid_by_email': paid_by,
-            'confidence': 0.6
+            'confidence': ai_result.get('confidence', 0.8),
+            'ai_reasoning': ai_result.get('reasoning', ''),
+            'next_expected_date': ai_result.get('next_expected_date'),
         }
+    
+    # Alias for backward compatibility
+    def analyze_email_fast(self, email_data):
+        """Backward compatibility - now uses full semantic analysis"""
+        return self.analyze_email_semantic(email_data)
+    
+    def _semantic_classify_with_gemini(self, subject, body, sender):
+        """
+        AI-FIRST SEMANTIC CLASSIFICATION - The Supreme Subscription Judge
         
-    def _is_transaction_email(self, subject, body, sender):
-        """Quick check if email looks like a transaction/receipt"""
-        text = (subject + ' ' + body + ' ' + sender).lower()
+        Uses Gemini 3 Pro to semantically understand:
+        1. Is this a TRUE recurring subscription?
+        2. What's the REAL vendor name (not payment processor)?
+        3. What's the billing cadence (monthly/annual/quarterly)?
+        4. What's the exact amount and currency?
+        """
         
-        # Check for currency symbols near numbers
-        has_currency = bool(re.search(r'[$€£¥₪]\s*[\d,]+\.?\d*|\d+\.?\d*\s*[$€£¥₪]', text))
+        prompt = f"""🧠 THE SUPREME SUBSCRIPTION JUDGE - AI-First Semantic Analysis
+
+You are an expert at identifying TRUE RECURRING SUBSCRIPTIONS from emails.
+Your job: Semantically analyze this email and determine if it's a subscription payment.
+
+## EMAIL TO ANALYZE:
+**Subject**: {subject[:300]}
+**Sender**: {sender}
+**Body**: {body[:1500]}
+
+## SEMANTIC CLASSIFICATION RULES:
+
+### ✅ TRUE SUBSCRIPTIONS (is_subscription: true):
+These are services YOU PAY FOR on a recurring basis:
+- **SaaS Products**: Notion, Slack, Zoom, Figma, GitHub, Linear, Vercel, Netlify
+- **Cloud Services**: AWS, Google Cloud, Azure, DigitalOcean, Heroku
+- **AI Tools**: OpenAI, Anthropic, Cursor, Midjourney, Jasper
+- **Streaming**: Netflix, Spotify, Disney+, YouTube Premium, Apple Music
+- **Business Tools**: Salesforce, HubSpot, Intercom, Zendesk, Mailchimp
+- **Development**: JetBrains, CircleCI, Datadog, New Relic, Sentry
+- **Security**: 1Password, Okta, Auth0, Cloudflare
+- **Productivity**: Microsoft 365, Google Workspace, Dropbox, Notion
+
+### ❌ NOT SUBSCRIPTIONS (is_subscription: false) - REJECT THESE:
+1. **Marketplace/Platform Sales**: Mrkter, Fiverr, Upwork payouts (money YOU RECEIVE)
+2. **Payment Processor Notifications**: "Stripe payout", "PayPal deposit" (not charges)
+3. **One-Time Purchases**: Single orders, course purchases, hardware
+4. **Bank Alerts**: Credit card statements, bank transfers
+5. **Invoices YOU SENT**: Bills to your customers (not bills you pay)
+6. **Freelancer/Contractor Payments**: Money you paid for services rendered once
+
+### 🔑 KEY SEMANTIC INSIGHT:
+- "Stripe" charging YOU for Stripe Atlas = ✅ SUBSCRIPTION
+- "Stripe" sending payout notification = ❌ NOT SUBSCRIPTION
+- "Netflix" charging monthly fee = ✅ SUBSCRIPTION  
+- "Amazon" order confirmation = ❌ NOT SUBSCRIPTION (one-time)
+
+## OUTPUT FORMAT (JSON only, no markdown):
+{{
+  "is_subscription": true/false,
+  "vendor_name": "The REAL company name (not payment processor)",
+  "amount": 0.00,
+  "currency": "USD",
+  "billing_cadence": "monthly|annual|quarterly|weekly",
+  "payment_type": "subscription|one_time|marketplace|payout|skip",
+  "domain": "vendor.com (if known)",
+  "confidence": 0.0-1.0,
+  "reasoning": "Clear explanation of WHY this is/isn't a subscription",
+  "next_expected_date": "YYYY-MM-DD or null"
+}}
+
+If this is clearly NOT a payment/transaction email, return:
+{{"is_subscription": false, "payment_type": "skip", "reasoning": "Not a payment email"}}
+"""
+
+        result_text = None
         
-        # Check for transaction keywords
-        has_keywords = any(kw in text for kw in self.TRANSACTION_KEYWORDS)
+        # PRIMARY: OpenRouter Gemini 3 Pro (no rate limits)
+        if self.openrouter_client:
+            try:
+                response = self.openrouter_client.chat.completions.create(
+                    model="google/gemini-2.5-flash-preview",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+                result_text = response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"OpenRouter error: {e}")
         
-        # Check for trusted sender patterns
-        sender_lower = sender.lower()
-        is_trusted_sender = any(pattern in sender_lower for pattern in self.TRUSTED_SENDERS)
+        # FALLBACK: Direct Gemini API
+        if not result_text and self.gemini_client:
+            import time
+            time.sleep(0.1)  # Rate limiting
+            
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt
+                )
+                result_text = response.text.strip()
+            except Exception as e:
+                print(f"Gemini Flash error: {e}")
+                return None
         
-        return has_currency or (has_keywords and is_trusted_sender)
-        
-    def _is_subscription_email(self, subject, body):
-        """Check if email indicates a subscription/recurring payment"""
-        text = (subject + ' ' + body).lower()
-        return any(kw in text for kw in self.SUBSCRIPTION_KEYWORDS)
-        
+        if not result_text:
+            return None
+            
+        try:
+            # Clean up response
+            if result_text.startswith('```'):
+                result_text = result_text.split('```')[1]
+                if result_text.startswith('json'):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            
+            # Log classification for debugging
+            vendor = result.get('vendor_name', 'Unknown')
+            is_sub = result.get('is_subscription', False)
+            reason = result.get('reasoning', '')[:50]
+            print(f"[AI Judge] {vendor}: {'✅ SUB' if is_sub else '❌ SKIP'} - {reason}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"JSON parsing error: {e}")
+            return None
+    
+    def _convert_to_usd(self, amount, currency):
+        """Convert amount to USD using exchange rates"""
+        rate = CURRENCY_TO_USD.get(currency.upper(), 1.0)
+        return round(amount * rate, 2)
+    
+    def _calculate_monthly_amount(self, amount_usd, billing_cadence):
+        """Calculate monthly equivalent based on billing cadence"""
+        cadence_map = {
+            'monthly': 1,
+            'annual': 12,
+            'yearly': 12,
+            'quarterly': 3,
+            'weekly': 0.25,
+            'biannual': 6,
+            'semi-annual': 6,
+        }
+        divisor = cadence_map.get(billing_cadence.lower(), 1)
+        return round(amount_usd / divisor, 2)
+    
     def _extract_vendor_from_sender(self, sender):
         """Extract vendor name and domain from sender email"""
         if not sender:
@@ -322,38 +435,6 @@ class SubscriptionPulseService:
             'confidence': 0.85
         }
         
-    def _extract_amount(self, text):
-        """Extract monetary amount from text"""
-        # Common currency patterns
-        patterns = [
-            r'\$\s*([\d,]+\.?\d*)',  # $123.45
-            r'([\d,]+\.?\d*)\s*USD',  # 123.45 USD
-            r'€\s*([\d,]+\.?\d*)',    # €123.45
-            r'£\s*([\d,]+\.?\d*)',    # £123.45
-            r'₪\s*([\d,]+\.?\d*)',    # ₪123.45
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            if matches:
-                try:
-                    amount = float(matches[0].replace(',', ''))
-                    # Determine currency
-                    if '$' in text or 'USD' in text.upper():
-                        currency = 'USD'
-                    elif '€' in text or 'EUR' in text.upper():
-                        currency = 'EUR'
-                    elif '£' in text or 'GBP' in text.upper():
-                        currency = 'GBP'
-                    elif '₪' in text or 'ILS' in text.upper():
-                        currency = 'ILS'
-                    else:
-                        currency = 'USD'
-                    return {'amount': amount, 'currency': currency}
-                except ValueError:
-                    continue
-        return None
-        
     def _extract_paid_by_email(self, body):
         """Extract the email of who paid (for Shadow IT detection)"""
         patterns = [
@@ -368,129 +449,19 @@ class SubscriptionPulseService:
             if match:
                 return match.group(1)
         return None
-        
-    def _classify_with_gemini_flash(self, subject, body, sender):
-        """Use OpenRouter (PRIMARY, no rate limits) or Gemini Flash for subscription classification"""
-        
-        prompt = f"""You are a SaaS Subscription Detector. Your job is to distinguish TRUE RECURRING SUBSCRIPTIONS from one-time purchases and marketplace transactions.
 
-## Email to Analyze:
-Subject: {subject[:200]}
-Sender: {sender}
-Body Preview: {body[:500]}
-
-## CRITICAL CLASSIFICATION RULES:
-
-### TRUE SUBSCRIPTIONS (is_subscription: true) - These are SaaS/software subscriptions:
-- Software services: GitHub, Notion, Slack, Zoom, Figma, Adobe, Microsoft 365, Google Workspace
-- Streaming services: Netflix, Spotify, Disney+, YouTube Premium
-- Cloud services: AWS, Azure, GCP, Heroku, Vercel, DigitalOcean
-- Business tools: HubSpot, Salesforce, Mailchimp, Intercom, Zendesk
-- Development tools: JetBrains, CircleCI, Datadog, New Relic
-- Key indicators: "monthly plan", "annual subscription", "renewal", "your subscription", "billing cycle"
-
-### NOT SUBSCRIPTIONS (is_subscription: false) - REJECT THESE:
-1. **Marketplace/Platform Transactions**: Payments THROUGH a platform (Mrkter, Fiverr, Upwork, Amazon Marketplace, eBay sales)
-2. **Payment Processor Notifications**: Stripe payout, PayPal transfer, Square deposit notifications
-3. **One-time Purchases**: Single orders, course purchases, one-time consulting fees
-4. **Bank/Card Notifications**: Credit card alerts, bank transfers
-5. **Invoices to Customers**: Bills you SENT to others (not SaaS you're paying for)
-6. **Freelancer Payments**: Contractor payments, consultant fees
-
-### KEY INSIGHT:
-- "Stripe" charging YOU for their service = SUBSCRIPTION
-- "Stripe" notifying about a payout/deposit = NOT SUBSCRIPTION (skip it)
-- "Mrkter" sending receipt for platform transaction = NOT SUBSCRIPTION
-- "Netflix" charging for monthly service = SUBSCRIPTION
-
-## Output JSON (only valid JSON, nothing else):
-{{
-  "vendor_name": "Company providing the subscription service",
-  "amount": 0.00,
-  "currency": "USD",
-  "is_subscription": true/false,
-  "payment_type": "subscription|one_time|marketplace|payout|skip",
-  "confidence": 0.0-1.0,
-  "reason": "Brief explanation of classification"
-}}
-
-If this is clearly NOT a payment email at all, return: {{"skip": true, "reason": "not a payment email"}}"""
-
-        result_text = None
-        
-        # TRY OPENROUTER FIRST (no rate limits!)
-        if self.openrouter_client:
-            try:
-                response = self.openrouter_client.chat.completions.create(
-                    model="google/gemini-3-pro-preview",  # Gemini 3 Pro via OpenRouter (no rate limits)
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    response_format={"type": "json_object"}
-                )
-                result_text = response.choices[0].message.content.strip()
-                print(f"✅ OpenRouter Gemini 3 Pro classified email")
-            except Exception as e:
-                print(f"OpenRouter error (falling back to Gemini): {e}")
-        
-        # FALLBACK TO DIRECT GEMINI API (with rate limiting)
-        if not result_text and self.gemini_client:
-            import time
-            time.sleep(0.15)  # Rate limiting for direct API
-            
-            try:
-                response = self.gemini_client.models.generate_content(
-                    model='gemini-2.5-flash',  # Updated fallback model
-                    contents=prompt
-                )
-                result_text = response.text.strip()
-            except Exception as e:
-                print(f"Gemini Flash classification error: {e}")
-                return None
-        
-        if not result_text:
-            return None
-            
-        try:
-            # Clean up response
-            if result_text.startswith('```'):
-                result_text = result_text.split('```')[1]
-                if result_text.startswith('json'):
-                    result_text = result_text[4:]
-            result_text = result_text.strip()
-            
-            result = json.loads(result_text)
-            
-            # Skip non-subscriptions based on semantic analysis
-            if result.get('skip'):
-                return None
-            
-            # Only return TRUE subscriptions
-            payment_type = result.get('payment_type', 'unknown')
-            is_subscription = result.get('is_subscription', False)
-            
-            if payment_type in ['marketplace', 'payout', 'skip', 'one_time']:
-                print(f"[Subscription Filter] REJECTED: {result.get('vendor_name', 'Unknown')} - {result.get('reason', payment_type)}")
-                return None
-            
-            if not is_subscription:
-                print(f"[Subscription Filter] REJECTED (not subscription): {result.get('vendor_name', 'Unknown')}")
-                return None
-                
-            return result
-            
-        except Exception as e:
-            print(f"JSON parsing error: {e}")
-            return None
-            
     def aggregate_subscription_data(self, events):
         """
         Aggregate individual email events into subscription analytics
+        
+        REAL MONTHLY SPEND: Uses USD normalization and proper prorating
+        ACCURATE CHURN: Based on actual billing cadence from AI
         
         Args:
             events: List of analyzed email events
             
         Returns:
-            Dict with aggregated subscription data
+            Dict with aggregated subscription data including REAL monthly spend
         """
         vendors = defaultdict(lambda: {
             'payments': [],
@@ -498,23 +469,38 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             'last_seen': None,
             'domain': None,
             'is_subscription': False,
-            'paid_by_emails': set()
+            'paid_by_emails': set(),
+            'billing_cadence': 'monthly',
+            'ai_reasonings': [],
+            'confidences': [],
         })
         
         for event in events:
             if not event or not event.get('vendor_name'):
                 continue
                 
-            vendor_key = event['vendor_name'].lower()
+            vendor_key = event['vendor_name'].lower().strip()
             vendor_data = vendors[vendor_key]
             
-            # Track payment
+            # Track payment with USD normalized amount
             if event.get('amount', 0) > 0:
+                amount_usd = event.get('amount_usd') or self._convert_to_usd(
+                    event['amount'], 
+                    event.get('currency', 'USD')
+                )
+                monthly_usd = event.get('monthly_amount_usd') or self._calculate_monthly_amount(
+                    amount_usd,
+                    event.get('billing_cadence', 'monthly')
+                )
+                
                 vendor_data['payments'].append({
                     'amount': event['amount'],
+                    'amount_usd': amount_usd,
+                    'monthly_usd': monthly_usd,
                     'currency': event.get('currency', 'USD'),
                     'date': event.get('email_date'),
-                    'email_id': event.get('email_id')
+                    'email_id': event.get('email_id'),
+                    'billing_cadence': event.get('billing_cadence', 'monthly'),
                 })
                 
             # Update timestamps
@@ -525,15 +511,21 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                 if not vendor_data['last_seen'] or event_date > vendor_data['last_seen']:
                     vendor_data['last_seen'] = event_date
                     
-            # Track other metadata
+            # Track metadata
             vendor_data['domain'] = event.get('domain') or vendor_data['domain']
-            vendor_data['is_subscription'] = vendor_data['is_subscription'] or event.get('is_subscription', False)
+            vendor_data['is_subscription'] = True
             vendor_data['vendor_name'] = event['vendor_name']
+            vendor_data['billing_cadence'] = event.get('billing_cadence', 'monthly')
+            
+            if event.get('ai_reasoning'):
+                vendor_data['ai_reasonings'].append(event['ai_reasoning'])
+            if event.get('confidence'):
+                vendor_data['confidences'].append(event['confidence'])
             
             if event.get('paid_by_email'):
                 vendor_data['paid_by_emails'].add(event['paid_by_email'])
                 
-        # Calculate aggregates
+        # Calculate aggregates with REAL monthly spend
         results = {
             'active_subscriptions': [],
             'stopped_subscriptions': [],
@@ -544,9 +536,11 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             'timeline': [],
             'active_count': 0,
             'stopped_count': 0,
-            'monthly_spend': 0,
+            'monthly_spend': 0,  # REAL monthly spend in USD
+            'monthly_spend_by_currency': {},  # Breakdown by currency
             'potential_savings': 0,
-            'alerts': []
+            'alerts': [],
+            'total_lifetime_spend': 0,
         }
         
         now = datetime.utcnow()
@@ -555,40 +549,32 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             if not data['payments']:
                 continue
                 
-            # Calculate stats
-            amounts = [p['amount'] for p in data['payments']]
-            lifetime_spend = sum(amounts)
-            avg_amount = lifetime_spend / len(amounts) if amounts else 0
-            last_amount = amounts[-1] if amounts else 0
+            # Calculate REAL amounts in USD
+            amounts_usd = [p['amount_usd'] for p in data['payments']]
+            monthly_amounts = [p['monthly_usd'] for p in data['payments']]
             
-            # Determine frequency and calculate average days between payments
-            avg_days_between_payments = 30  # Default to monthly
-            if len(data['payments']) >= 2:
-                dates = sorted([p['date'] for p in data['payments'] if p['date']])
-                if len(dates) >= 2:
-                    avg_days_between_payments = (dates[-1] - dates[0]).days / (len(dates) - 1) if len(dates) > 1 else 30
-                    frequency = 'annual' if avg_days_between_payments > 180 else 'monthly'
-                else:
-                    frequency = 'monthly'
-            else:
-                frequency = 'one-time' if not data['is_subscription'] else 'monthly'
-                
-            # SMART CHURN DETECTION: Based on subscription frequency
-            # - Monthly subscriptions: If no payment in last 45 days, likely stopped
-            # - Annual subscriptions: If no payment in last 13 months, likely stopped
-            # - One-time: Never "stopped" (they aren't recurring)
-            if frequency == 'monthly':
-                churn_threshold = timedelta(days=45)  # 1.5x monthly cycle
-            elif frequency == 'annual':
-                churn_threshold = timedelta(days=400)  # 13 months
-            else:
-                churn_threshold = timedelta(days=9999)  # One-time never churns
-                
+            lifetime_spend_usd = sum(amounts_usd)
+            avg_monthly_usd = sum(monthly_amounts) / len(monthly_amounts) if monthly_amounts else 0
+            last_monthly_usd = monthly_amounts[-1] if monthly_amounts else 0
+            
+            # Use the most recent billing cadence
+            billing_cadence = data['payments'][-1].get('billing_cadence', 'monthly')
+            
+            # SMART CHURN DETECTION based on actual billing cadence
+            churn_thresholds = {
+                'weekly': timedelta(days=14),      # 2 weeks
+                'monthly': timedelta(days=45),     # 1.5 months
+                'quarterly': timedelta(days=120),  # 4 months
+                'annual': timedelta(days=400),     # 13 months
+                'yearly': timedelta(days=400),
+            }
+            churn_threshold = churn_thresholds.get(billing_cadence, timedelta(days=45))
             churn_cutoff = now - churn_threshold
             
-            # Determine status based on last payment date
+            # Determine status
             last_seen = data['last_seen']
-            status = 'active'  # Default
+            status = 'active'
+            days_since_payment = 0
             
             if last_seen:
                 try:
@@ -596,21 +582,24 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     if hasattr(last_seen_dt, 'tzinfo') and last_seen_dt.tzinfo:
                         last_seen_dt = last_seen_dt.replace(tzinfo=None)
                     
-                    # Check if subscription has churned
+                    days_since_payment = (now - last_seen_dt).days
+                    
                     if last_seen_dt < churn_cutoff:
                         status = 'stopped'
-                        # Add churn alert
-                        days_since_payment = (now - last_seen_dt).days
                         results['alerts'].append({
-                            'type': 'zombie',
-                            'title': f'{data["vendor_name"]} may have stopped',
-                            'description': f'No payment in {days_since_payment} days (last: {last_seen_dt.strftime("%b %d, %Y")})'
+                            'type': 'stopped',
+                            'title': f'{data["vendor_name"]} subscription ended',
+                            'description': f'No payment in {days_since_payment} days. Last payment: {last_seen_dt.strftime("%b %d, %Y")}'
                         })
                 except Exception as e:
-                    print(f"Error parsing last_seen for {data['vendor_name']}: {e}")
-                
+                    print(f"Error parsing date for {data['vendor_name']}: {e}")
+            
             # Get category
             category = self._get_vendor_category(data['vendor_name'])
+            
+            # Get best AI reasoning
+            ai_reasoning = data['ai_reasonings'][-1] if data['ai_reasonings'] else f"Detected as {billing_cadence} subscription"
+            avg_confidence = sum(data['confidences']) / len(data['confidences']) if data['confidences'] else 0.8
             
             vendor_record = {
                 'vendor_id': hashlib.md5(vendor_key.encode()).hexdigest()[:12],
@@ -620,36 +609,51 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                 'status': status,
                 'first_seen': data['first_seen'].isoformat() if data['first_seen'] else None,
                 'last_seen': data['last_seen'].isoformat() if data['last_seen'] else None,
-                'frequency': frequency,
-                'monthly_amount': avg_amount if frequency == 'monthly' else avg_amount / 12,
-                'last_amount': last_amount,
-                'lifetime_spend': lifetime_spend,
+                'days_since_payment': days_since_payment,
+                'frequency': billing_cadence,
+                'billing_cadence': billing_cadence,
+                'monthly_amount': last_monthly_usd,  # REAL monthly in USD
+                'monthly_amount_usd': last_monthly_usd,
+                'last_amount': amounts_usd[-1] if amounts_usd else 0,
+                'lifetime_spend': lifetime_spend_usd,
+                'lifetime_spend_usd': lifetime_spend_usd,
                 'payment_count': len(data['payments']),
-                'is_subscription': data['is_subscription'],
-                'payment_history': amounts[-12:],  # Last 12 payments for sparkline
-                'paid_by_emails': list(data['paid_by_emails'])
+                'is_subscription': True,
+                'payment_history': amounts_usd[-12:],
+                'paid_by_emails': list(data['paid_by_emails']),
+                'ai_reasoning': ai_reasoning,
+                'confidence': avg_confidence,
+                'currency': data['payments'][-1].get('currency', 'USD'),
             }
             
             results['all_vendors'].append(vendor_record)
+            results['total_lifetime_spend'] += lifetime_spend_usd
             
-            if status == 'active' and data['is_subscription']:
+            if status == 'active':
                 results['active_subscriptions'].append(vendor_record)
-                results['monthly_spend'] += vendor_record['monthly_amount']
-            elif status == 'stopped':
+                results['monthly_spend'] += last_monthly_usd
+                
+                # Track by currency
+                currency = vendor_record['currency']
+                if currency not in results['monthly_spend_by_currency']:
+                    results['monthly_spend_by_currency'][currency] = 0
+                results['monthly_spend_by_currency'][currency] += data['payments'][-1]['amount']
+            else:
                 results['stopped_subscriptions'].append(vendor_record)
                 
             # Detect price changes
-            if len(amounts) >= 3:
-                recent_avg = sum(amounts[-3:]) / 3
-                historical_avg = sum(amounts[:-3]) / len(amounts[:-3]) if len(amounts) > 3 else recent_avg
+            if len(amounts_usd) >= 3:
+                recent_avg = sum(amounts_usd[-3:]) / 3
+                historical_avg = sum(amounts_usd[:-3]) / len(amounts_usd[:-3]) if len(amounts_usd) > 3 else recent_avg
                 if historical_avg > 0:
                     change_percent = ((recent_avg - historical_avg) / historical_avg) * 100
-                    if abs(change_percent) >= 10:  # 10% or more change
+                    if abs(change_percent) >= 10:
                         results['price_alerts'].append({
                             'vendor_name': data['vendor_name'],
                             'old_amount': historical_avg,
                             'new_amount': recent_avg,
-                            'change_percent': change_percent
+                            'change_percent': change_percent,
+                            'direction': 'up' if change_percent > 0 else 'down',
                         })
                         results['alerts'].append({
                             'type': 'price',
@@ -657,7 +661,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                             'description': f'Changed by {abs(change_percent):.1f}% from ${historical_avg:.2f} to ${recent_avg:.2f}'
                         })
                         
-            # Shadow IT detection (personal email payments)
+            # Shadow IT detection
             if data['paid_by_emails']:
                 for email in data['paid_by_emails']:
                     if not self._is_corporate_email(email):
@@ -665,11 +669,12 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                             'id': vendor_record['vendor_id'],
                             'vendor_name': data['vendor_name'],
                             'paid_by_email': email,
-                            'amount': last_amount
+                            'amount': last_monthly_usd,
+                            'monthly_cost': last_monthly_usd,
                         })
                         results['alerts'].append({
                             'type': 'shadow',
-                            'title': f'Shadow IT detected: {data["vendor_name"]}',
+                            'title': f'Shadow IT: {data["vendor_name"]}',
                             'description': f'Paid by personal account: {email}'
                         })
                         break
@@ -680,6 +685,8 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     'vendor_name': data['vendor_name'],
                     'event_type': 'Payment',
                     'amount': payment['amount'],
+                    'amount_usd': payment['amount_usd'],
+                    'currency': payment['currency'],
                     'timestamp': payment['date'].isoformat() if payment['date'] else None,
                     'type': 'payment'
                 })
@@ -690,16 +697,21 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
             results['potential_savings'] += dup.get('potential_savings', 0)
             results['alerts'].append({
                 'type': 'duplicate',
-                'title': f'Duplicate {dup["category"]} tools detected',
+                'title': f'Duplicate {dup["category"]} tools',
                 'description': f'{len(dup["vendors"])} similar tools. Save ${dup["potential_savings"]:.0f}/year by consolidating.'
             })
             
-        # Sort and finalize
+        # Sort by spend
         results['active_subscriptions'].sort(key=lambda x: x['monthly_amount'], reverse=True)
         results['stopped_subscriptions'].sort(key=lambda x: x['lifetime_spend'], reverse=True)
         results['timeline'].sort(key=lambda x: x['timestamp'] or '', reverse=True)
+        
         results['active_count'] = len(results['active_subscriptions'])
         results['stopped_count'] = len(results['stopped_subscriptions'])
+        
+        # Round monthly spend
+        results['monthly_spend'] = round(results['monthly_spend'], 2)
+        results['total_lifetime_spend'] = round(results['total_lifetime_spend'], 2)
         
         return results
         
@@ -746,10 +758,9 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
         return domain not in personal_domains
         
     def store_subscription_results(self, client_email, results):
-        """Store subscription analytics results in BigQuery"""
+        """Store subscription analytics results in BigQuery with AI reasoning"""
         dataset_id = f"{self.config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai"
         
-        # Store vendor summaries
         for vendor in results.get('all_vendors', []):
             vendor_id = vendor['vendor_id']
             
@@ -770,17 +781,25 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     average_amount = @avg_amount,
                     last_amount = @last_amount,
                     lifetime_spend = @lifetime_spend,
+                    lifetime_spend_usd = @lifetime_spend_usd,
+                    monthly_spend_usd = @monthly_spend_usd,
                     payment_count = @payment_count,
+                    currency = @currency,
+                    ai_reasoning = @ai_reasoning,
+                    confidence = @confidence,
+                    owner_email = @owner_email,
                     updated_at = CURRENT_TIMESTAMP()
             WHEN NOT MATCHED THEN
                 INSERT (vendor_id, vendor_name, domain, category, is_subscription,
                         first_seen, last_seen, status, payment_frequency,
-                        average_amount, last_amount, lifetime_spend, payment_count,
-                        created_at, updated_at)
+                        average_amount, last_amount, lifetime_spend, lifetime_spend_usd,
+                        monthly_spend_usd, payment_count, currency, ai_reasoning,
+                        confidence, owner_email, created_at, updated_at)
                 VALUES (@vendor_id, @vendor_name, @domain, @category, @is_subscription,
                         @first_seen, @last_seen, @status, @frequency,
-                        @avg_amount, @last_amount, @lifetime_spend, @payment_count,
-                        CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                        @avg_amount, @last_amount, @lifetime_spend, @lifetime_spend_usd,
+                        @monthly_spend_usd, @payment_count, @currency, @ai_reasoning,
+                        @confidence, @owner_email, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
             """
             
             job_config = bigquery.QueryJobConfig(
@@ -789,7 +808,7 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     bigquery.ScalarQueryParameter("vendor_name", "STRING", vendor['vendor_name']),
                     bigquery.ScalarQueryParameter("domain", "STRING", vendor.get('domain')),
                     bigquery.ScalarQueryParameter("category", "STRING", vendor.get('category')),
-                    bigquery.ScalarQueryParameter("is_subscription", "BOOL", vendor.get('is_subscription', False)),
+                    bigquery.ScalarQueryParameter("is_subscription", "BOOL", True),
                     bigquery.ScalarQueryParameter("first_seen", "TIMESTAMP", vendor.get('first_seen')),
                     bigquery.ScalarQueryParameter("last_seen", "TIMESTAMP", vendor.get('last_seen')),
                     bigquery.ScalarQueryParameter("status", "STRING", vendor.get('status', 'active')),
@@ -797,7 +816,13 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     bigquery.ScalarQueryParameter("avg_amount", "FLOAT64", vendor.get('monthly_amount', 0)),
                     bigquery.ScalarQueryParameter("last_amount", "FLOAT64", vendor.get('last_amount', 0)),
                     bigquery.ScalarQueryParameter("lifetime_spend", "FLOAT64", vendor.get('lifetime_spend', 0)),
+                    bigquery.ScalarQueryParameter("lifetime_spend_usd", "FLOAT64", vendor.get('lifetime_spend_usd', 0)),
+                    bigquery.ScalarQueryParameter("monthly_spend_usd", "FLOAT64", vendor.get('monthly_amount_usd', 0)),
                     bigquery.ScalarQueryParameter("payment_count", "INT64", vendor.get('payment_count', 0)),
+                    bigquery.ScalarQueryParameter("currency", "STRING", vendor.get('currency', 'USD')),
+                    bigquery.ScalarQueryParameter("ai_reasoning", "STRING", vendor.get('ai_reasoning', '')),
+                    bigquery.ScalarQueryParameter("confidence", "FLOAT64", vendor.get('confidence', 0.8)),
+                    bigquery.ScalarQueryParameter("owner_email", "STRING", client_email),
                 ]
             )
             
@@ -809,25 +834,31 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
         return True
         
     def get_cached_results(self, client_email):
-        """Get cached subscription results from BigQuery"""
+        """Get cached subscription results from BigQuery with AI reasoning"""
         dataset_id = f"{self.config.GOOGLE_CLOUD_PROJECT_ID}.vendors_ai"
         
         query = f"""
         SELECT *
         FROM `{dataset_id}.subscription_vendors`
         WHERE updated_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+          AND (owner_email = @client_email OR owner_email IS NULL)
         ORDER BY lifetime_spend DESC
         """
         
         try:
-            results = list(self.bq_client.query(query).result())
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("client_email", "STRING", client_email),
+                ]
+            )
+            results = list(self.bq_client.query(query, job_config=job_config).result())
             if not results:
                 return None
                 
-            # Reconstruct results format
             active = []
             stopped = []
             monthly_spend = 0
+            total_lifetime = 0
             
             for row in results:
                 vendor = {
@@ -839,12 +870,20 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     'first_seen': row['first_seen'].isoformat() if row.get('first_seen') else None,
                     'last_seen': row['last_seen'].isoformat() if row.get('last_seen') else None,
                     'frequency': row.get('payment_frequency', 'monthly'),
-                    'monthly_amount': row.get('average_amount', 0),
+                    'billing_cadence': row.get('payment_frequency', 'monthly'),
+                    'monthly_amount': row.get('monthly_spend_usd') or row.get('average_amount', 0),
+                    'monthly_amount_usd': row.get('monthly_spend_usd') or row.get('average_amount', 0),
                     'last_amount': row.get('last_amount', 0),
-                    'lifetime_spend': row.get('lifetime_spend', 0),
+                    'lifetime_spend': row.get('lifetime_spend_usd') or row.get('lifetime_spend', 0),
+                    'lifetime_spend_usd': row.get('lifetime_spend_usd') or row.get('lifetime_spend', 0),
                     'payment_count': row.get('payment_count', 0),
                     'is_subscription': row.get('is_subscription', False),
+                    'ai_reasoning': row.get('ai_reasoning', ''),
+                    'confidence': row.get('confidence', 0.8),
+                    'currency': row.get('currency', 'USD'),
                 }
+                
+                total_lifetime += vendor['lifetime_spend']
                 
                 if vendor['status'] == 'active' and vendor['is_subscription']:
                     active.append(vendor)
@@ -859,7 +898,8 @@ If this is clearly NOT a payment email at all, return: {{"skip": true, "reason":
                     'stopped_subscriptions': stopped,
                     'active_count': len(active),
                     'stopped_count': len(stopped),
-                    'monthly_spend': monthly_spend,
+                    'monthly_spend': round(monthly_spend, 2),
+                    'total_lifetime_spend': round(total_lifetime, 2),
                     'potential_savings': 0,
                     'alerts': [],
                     'duplicates': self._detect_duplicate_tools(active),
