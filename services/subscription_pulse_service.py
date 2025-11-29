@@ -532,6 +532,9 @@ Return ALL {len(email_batch)} emails."""
         if not result_text:
             raise Exception("No AI response for fast filter")
         
+        # DIAGNOSTIC: Log first part of AI response
+        print(f"🔍 Stage 1 AI raw response (first 200 chars): {result_text[:200]}")
+        
         try:
             if '```json' in result_text:
                 result_text = result_text.split('```json')[1].split('```')[0]
@@ -546,7 +549,8 @@ Return ALL {len(email_batch)} emails."""
             return results
             
         except json.JSONDecodeError as e:
-            print(f"Fast filter JSON error: {e}, response: {result_text[:300]}")
+            print(f"❌ Fast filter JSON error: {e}")
+            print(f"❌ Raw response that failed: {result_text[:500]}")
             raise
     
     def parallel_semantic_filter(self, all_emails, progress_callback=None):
@@ -576,6 +580,13 @@ Return ALL {len(email_batch)} emails."""
             try:
                 results = self.semantic_fast_filter(batch)
                 
+                # DIAGNOSTIC: Log what AI returned
+                subs_count = sum(1 for r in results if r.get('is_subscription'))
+                print(f"📊 Stage 1 Batch {batch_idx}: AI returned {len(results)} results, {subs_count} are subscriptions")
+                
+                if len(results) == 0:
+                    print(f"⚠️ Stage 1 Batch {batch_idx}: AI returned EMPTY array!")
+                
                 filtered = []
                 result_map = {r.get('index', i): r for i, r in enumerate(results)}
                 for i, email in enumerate(batch):
@@ -593,7 +604,7 @@ Return ALL {len(email_batch)} emails."""
                 
                 return filtered
             except Exception as e:
-                print(f"⚠️ Stage 1 Batch {batch_idx} error: {e}")
+                print(f"❌ Stage 1 Batch {batch_idx} FAILED: {e}")
                 import traceback
                 traceback.print_exc()
                 with lock:
