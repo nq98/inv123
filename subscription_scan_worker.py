@@ -14,10 +14,13 @@ import fcntl
 import traceback
 from datetime import datetime, timedelta
 
-os.chdir('/home/runner/workspace')
-sys.path.insert(0, '/home/runner/workspace')
+# CRITICAL: Dynamically compute BASE_DIR instead of hard-coding
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
+os.chdir(BASE_DIR)
 
 JOBS_DIR = "/tmp/subscription_jobs"
+os.makedirs(JOBS_DIR, exist_ok=True)
 
 def log(msg):
     """Print with timestamp for debugging"""
@@ -294,8 +297,11 @@ def run_scan(job_id, credentials, days, user_email):
     log(f"Scan complete: {final_count} subscriptions found")
 
 def main():
+    # Ensure job directory exists at the very start
+    os.makedirs(JOBS_DIR, exist_ok=True)
+    
     if len(sys.argv) != 5:
-        print("Usage: subscription_scan_worker.py <job_id> <creds_file> <days> <user_email>")
+        print("Usage: subscription_scan_worker.py <job_id> <creds_file> <days> <user_email>", flush=True)
         sys.exit(1)
     
     job_id = sys.argv[1]
@@ -303,6 +309,8 @@ def main():
     days = int(sys.argv[3])
     user_email = sys.argv[4]
     
+    # Write initial job status immediately to confirm worker is alive
+    update_job(job_id, status='running', progress=1, message='Worker process started...')
     log(f"Worker started: job={job_id}, days={days}, user={user_email}")
     
     try:
@@ -326,4 +334,10 @@ def main():
             pass
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Last-resort error logging
+        print(f"FATAL: Worker crashed at boot: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        sys.exit(1)

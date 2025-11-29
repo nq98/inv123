@@ -8609,6 +8609,9 @@ def start_background_scan():
         profile = service.users().getProfile(userId='me').execute()
         user_email = profile.get('emailAddress', 'unknown')
         
+        # Ensure job directory exists
+        os.makedirs('/tmp/subscription_jobs', exist_ok=True)
+        
         # Create background job
         job_id = job_manager.create_job('subscription_scan', user_email)
         
@@ -8622,8 +8625,9 @@ def start_background_scan():
         # Start DETACHED SUBPROCESS - survives gunicorn worker recycling
         import subprocess
         import sys
+        import time as time_module
         
-        worker_script = os.path.join(os.path.dirname(__file__), 'subscription_scan_worker.py')
+        worker_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'subscription_scan_worker.py')
         
         stdout_log = open(f'/tmp/subscription_jobs/{job_id}_stdout.log', 'w')
         stderr_log = open(f'/tmp/subscription_jobs/{job_id}_stderr.log', 'w')
@@ -8636,7 +8640,25 @@ def start_background_scan():
             close_fds=True
         )
         
+        # Close file handles in parent (child has its own copies)
+        stdout_log.close()
+        stderr_log.close()
+        
         print(f"[Background Scan] Started worker PID {proc.pid} for job {job_id} user {user_email}")
+        
+        # Quick check for immediate crash
+        time_module.sleep(0.3)
+        exit_code = proc.poll()
+        if exit_code is not None:
+            # Worker crashed immediately
+            try:
+                with open(f'/tmp/subscription_jobs/{job_id}_stderr.log', 'r') as f:
+                    error_output = f.read()
+            except:
+                error_output = "Unknown error"
+            job_manager.update_job(job_id, status='error', error=error_output[:500], 
+                                   message=f'Worker crashed with exit code {exit_code}')
+            print(f"[Background Scan] Worker crashed immediately: {error_output[:200]}")
         
         return jsonify({
             'job_id': job_id,
