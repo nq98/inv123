@@ -1160,8 +1160,8 @@ If this is clearly NOT a payment/transaction email, return:
                 'domain': data['domain'],
                 'category': category,
                 'status': status,
-                'first_seen': data['first_seen'].isoformat() if data['first_seen'] else None,
-                'last_seen': data['last_seen'].isoformat() if data['last_seen'] else None,
+                'first_seen': self._safe_isoformat(data['first_seen']),
+                'last_seen': self._safe_isoformat(data['last_seen']),
                 'days_since_payment': days_since_payment,
                 'frequency': billing_cadence,
                 'billing_cadence': billing_cadence,
@@ -1240,7 +1240,7 @@ If this is clearly NOT a payment/transaction email, return:
                     'amount': payment['amount'],
                     'amount_usd': payment['amount_usd'],
                     'currency': payment['currency'],
-                    'timestamp': payment['date'].isoformat() if payment['date'] else None,
+                    'timestamp': self._safe_isoformat(payment.get('date')),
                     'type': 'payment'
                 })
                 
@@ -1268,6 +1268,16 @@ If this is clearly NOT a payment/transaction email, return:
         
         return results
         
+    def _safe_isoformat(self, date_value):
+        """Safely convert date to ISO format string"""
+        if date_value is None:
+            return None
+        if isinstance(date_value, str):
+            return date_value  # Already a string
+        if hasattr(date_value, 'isoformat'):
+            return date_value.isoformat()
+        return str(date_value)
+    
     def _get_vendor_category(self, vendor_name):
         """Get the category of a vendor"""
         vendor_lower = vendor_name.lower()
@@ -1420,8 +1430,8 @@ If this is clearly NOT a payment/transaction email, return:
                     'domain': row.get('domain'),
                     'category': row.get('category'),
                     'status': row.get('status', 'active'),
-                    'first_seen': row['first_seen'].isoformat() if row.get('first_seen') else None,
-                    'last_seen': row['last_seen'].isoformat() if row.get('last_seen') else None,
+                    'first_seen': self._safe_isoformat(row.get('first_seen')),
+                    'last_seen': self._safe_isoformat(row.get('last_seen')),
                     'frequency': row.get('payment_frequency', 'monthly'),
                     'billing_cadence': row.get('payment_frequency', 'monthly'),
                     'monthly_amount': row.get('monthly_spend_usd') or row.get('average_amount', 0),
