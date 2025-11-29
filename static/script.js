@@ -6840,6 +6840,9 @@ function initSubscriptionPulse() {
     // Check Gmail connection status for Subscription Pulse
     checkSubscriptionGmailStatus();
     
+    // Check for any active or completed background scans
+    checkForActiveScans();
+    
     // Connect Gmail button
     subscriptionGmailConnectBtn.addEventListener('click', () => {
         // Use same OAuth flow but redirect back to subscription-pulse tab
@@ -6929,7 +6932,14 @@ function showPulseStatus(type, message) {
 }
 
 /**
- * Start Fast Lane subscription scan
+ * Active background scan job ID
+ */
+let activeSubscriptionJobId = null;
+let subscriptionPollInterval = null;
+
+/**
+ * Start Fast Lane subscription scan (BACKGROUND MODE)
+ * Runs on server even if you close the browser
  */
 async function startSubscriptionScan() {
     const days = document.getElementById('subscriptionTimeRange').value;
@@ -6945,81 +6955,136 @@ async function startSubscriptionScan() {
         }
     }
     
-    updateScanProgress(0, 'Connecting to Gmail...');
-    addTerminalLog('info', '🚀 Starting Fast Lane Subscription Scan...');
+    updateScanProgress(0, 'Starting background scan...');
+    addTerminalLog('info', '🚀 Starting Background Subscription Scan...');
     addTerminalLog('info', `📅 Scanning emails from the last ${days} days`);
+    addTerminalLog('info', '💡 You can close this page - scan will continue on server!');
     
     try {
-        // Use SSE for real-time progress
-        const eventSource = new EventSource(`/api/subscriptions/scan/stream?days=${days}`);
+        // Start background job
+        const response = await fetch('/api/subscriptions/scan/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ days: parseInt(days) })
+        });
         
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'progress') {
-                updateScanProgress(data.percent, data.message);
-                addTerminalLog('progress', `[${data.percent}%] ${data.message}`);
-                
-                // Add details if available
-                if (data.details) {
-                    addTerminalLog('detail', `    └─ ${data.details}`);
-                }
-            } else if (data.type === 'subscription_found') {
-                addTerminalLog('success', `✅ Found: ${data.vendor} - ${data.amount || 'Unknown amount'}`);
-            } else if (data.type === 'complete') {
-                eventSource.close();
-                subscriptionScanProgress.classList.add('hidden');
-                subscriptionScanBtn.disabled = false;
-                
-                addTerminalLog('success', '─────────────────────────────────────');
-                addTerminalLog('success', '🎉 Scan Complete!');
-                addTerminalLog('info', `📊 Active Subscriptions: ${data.results?.active_count || 0}`);
-                addTerminalLog('info', `💰 Monthly Spend: ${formatCurrency(data.results?.monthly_spend || 0)}`);
-                addTerminalLog('info', `🔴 Stopped This Year: ${data.results?.stopped_count || 0}`);
-                if (data.results?.shadow_it?.length > 0) {
-                    addTerminalLog('warning', `⚠️ Shadow IT Detected: ${data.results.shadow_it.length} subscriptions`);
-                }
-                addTerminalLog('success', '─────────────────────────────────────');
-                
-                displaySubscriptionDashboard(data.results);
-            } else if (data.type === 'partial') {
-                // Scan was interrupted but we have partial results
-                eventSource.close();
-                subscriptionScanProgress.classList.add('hidden');
-                subscriptionScanBtn.disabled = false;
-                
-                addTerminalLog('warning', '─────────────────────────────────────');
-                addTerminalLog('warning', '⚠️ Scan Interrupted - Partial Results Saved');
-                addTerminalLog('info', data.message);
-                addTerminalLog('info', `📊 Active Subscriptions: ${data.results?.active_count || 0}`);
-                addTerminalLog('info', `💰 Monthly Spend: ${formatCurrency(data.results?.monthly_spend || 0)}`);
-                addTerminalLog('info', `🔴 Stopped This Year: ${data.results?.stopped_count || 0}`);
-                addTerminalLog('warning', '─────────────────────────────────────');
-                
-                // Still display what we found
-                displaySubscriptionDashboard(data.results);
-            } else if (data.type === 'error') {
-                eventSource.close();
-                subscriptionScanProgress.classList.add('hidden');
-                subscriptionScanBtn.disabled = false;
-                addTerminalLog('error', `❌ Error: ${data.message}`);
-                showPulseStatus('error', data.message);
-            }
-        };
+        const data = await response.json();
         
-        eventSource.onerror = function(error) {
-            eventSource.close();
-            subscriptionScanProgress.classList.add('hidden');
-            subscriptionScanBtn.disabled = false;
-            addTerminalLog('error', '❌ Connection lost. Please try again.');
-            showPulseStatus('error', 'Scan connection lost. Please try again.');
-        };
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        activeSubscriptionJobId = data.job_id;
+        addTerminalLog('success', `✅ Background job started: ${data.job_id}`);
+        addTerminalLog('info', '🔄 Polling for updates every 2 seconds...');
+        
+        // Start polling for status
+        startSubscriptionJobPolling(data.job_id);
         
     } catch (error) {
         subscriptionScanProgress.classList.add('hidden');
         subscriptionScanBtn.disabled = false;
         addTerminalLog('error', `❌ Failed to start scan: ${error.message}`);
         showPulseStatus('error', 'Failed to start scan: ' + error.message);
+    }
+}
+
+/**
+ * Poll for background job status
+ */
+function startSubscriptionJobPolling(jobId) {
+    let lastSubscriptionCount = 0;
+    
+    // Clear any existing poll
+    if (subscriptionPollInterval) {
+        clearInterval(subscriptionPollInterval);
+    }
+    
+    subscriptionPollInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`/api/subscriptions/scan/status/${jobId}`);
+            const job = await response.json();
+            
+            if (job.error) {
+                clearInterval(subscriptionPollInterval);
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                addTerminalLog('error', `❌ Error: ${job.error}`);
+                return;
+            }
+            
+            // Update progress
+            updateScanProgress(job.progress || 0, job.message || 'Processing...');
+            addTerminalLog('progress', `[${job.progress}%] ${job.message}`);
+            
+            // Show newly found subscriptions
+            const subs = job.subscriptions_found || [];
+            if (subs.length > lastSubscriptionCount) {
+                for (let i = lastSubscriptionCount; i < subs.length; i++) {
+                    addTerminalLog('success', `✅ Found: ${subs[i].vendor} - ${subs[i].amount}`);
+                }
+                lastSubscriptionCount = subs.length;
+            }
+            
+            // Check if complete
+            if (job.status === 'complete') {
+                clearInterval(subscriptionPollInterval);
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                
+                addTerminalLog('success', '─────────────────────────────────────');
+                addTerminalLog('success', '🎉 Scan Complete!');
+                addTerminalLog('info', `📊 Active Subscriptions: ${job.results?.active_count || 0}`);
+                addTerminalLog('info', `💰 Monthly Spend: ${formatCurrency(job.results?.monthly_spend || 0)}`);
+                addTerminalLog('info', `🔴 Stopped This Year: ${job.results?.stopped_count || 0}`);
+                if (job.results?.shadow_it?.length > 0) {
+                    addTerminalLog('warning', `⚠️ Shadow IT Detected: ${job.results.shadow_it.length} subscriptions`);
+                }
+                addTerminalLog('success', '─────────────────────────────────────');
+                
+                displaySubscriptionDashboard(job.results);
+            } else if (job.status === 'error') {
+                clearInterval(subscriptionPollInterval);
+                subscriptionScanProgress.classList.add('hidden');
+                subscriptionScanBtn.disabled = false;
+                addTerminalLog('error', `❌ Error: ${job.error || 'Unknown error'}`);
+                showPulseStatus('error', job.error || 'Scan failed');
+            }
+            
+        } catch (error) {
+            console.error('Poll error:', error);
+            addTerminalLog('warning', '⚠️ Connection interrupted, retrying...');
+        }
+    }, 2000);  // Poll every 2 seconds
+}
+
+/**
+ * Check for active or completed scans on page load
+ */
+async function checkForActiveScans() {
+    try {
+        const response = await fetch('/api/subscriptions/scan/active');
+        const data = await response.json();
+        
+        if (data.jobs && data.jobs.length > 0) {
+            const recentJob = data.jobs[0];
+            
+            if (recentJob.status === 'running') {
+                // Resume polling for active job
+                addTerminalLog('info', '🔄 Found running scan, resuming...');
+                activeSubscriptionJobId = recentJob.job_id;
+                subscriptionScanBtn.disabled = true;
+                subscriptionScanProgress.classList.remove('hidden');
+                subscriptionTerminal.classList.remove('hidden');
+                startSubscriptionJobPolling(recentJob.job_id);
+            } else if (recentJob.status === 'complete' && recentJob.results) {
+                // Show completed results
+                addTerminalLog('success', '✅ Found recent completed scan');
+                displaySubscriptionDashboard(recentJob.results);
+            }
+        }
+    } catch (error) {
+        console.log('No active scans found');
     }
 }
 

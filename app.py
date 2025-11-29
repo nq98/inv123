@@ -3,9 +3,78 @@ import json
 import uuid
 import queue
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context, flash, g
+
+# ========== BACKGROUND JOB MANAGER ==========
+# Allows subscription scans to run even when browser disconnects
+
+class BackgroundJobManager:
+    """Simple in-memory job manager for background subscription scans"""
+    
+    def __init__(self):
+        self.jobs = {}  # job_id -> job_data
+        self.lock = threading.Lock()
+        
+    def create_job(self, job_type, user_email):
+        """Create a new background job"""
+        job_id = str(uuid.uuid4())[:8]
+        with self.lock:
+            self.jobs[job_id] = {
+                'job_id': job_id,
+                'type': job_type,
+                'user_email': user_email,
+                'status': 'starting',
+                'progress': 0,
+                'message': 'Starting scan...',
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat(),
+                'results': None,
+                'error': None,
+                'subscriptions_found': []
+            }
+        return job_id
+        
+    def update_job(self, job_id, **kwargs):
+        """Update job status"""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id].update(kwargs)
+                self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+                
+    def add_subscription_found(self, job_id, vendor_name, amount):
+        """Track a found subscription for live updates"""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id]['subscriptions_found'].append({
+                    'vendor': vendor_name,
+                    'amount': amount,
+                    'found_at': datetime.now().isoformat()
+                })
+                
+    def get_job(self, job_id):
+        """Get job status"""
+        with self.lock:
+            return self.jobs.get(job_id, {}).copy()
+            
+    def get_user_jobs(self, user_email):
+        """Get all jobs for a user"""
+        with self.lock:
+            return [j.copy() for j in self.jobs.values() if j.get('user_email') == user_email]
+            
+    def cleanup_old_jobs(self, max_age_hours=24):
+        """Remove jobs older than max_age_hours"""
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+        with self.lock:
+            old_jobs = [jid for jid, j in self.jobs.items() 
+                       if datetime.fromisoformat(j['created_at']) < cutoff]
+            for jid in old_jobs:
+                del self.jobs[jid]
+
+# Global job manager instance
+job_manager = BackgroundJobManager()
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField
@@ -8450,6 +8519,336 @@ def subscription_health_check():
             'status': 'error',
             'message': str(e)
         }), 500
+
+# ========== BACKGROUND SCAN ENDPOINTS ==========
+# These allow the scan to run even when the browser disconnects
+
+@app.route('/api/subscriptions/scan/start', methods=['POST'])
+def start_background_scan():
+    """
+    Start a subscription scan in the background.
+    Returns a job_id that can be used to check status.
+    The scan continues even if the browser disconnects.
+    """
+    data = request.get_json() or {}
+    days = int(data.get('days', 365))
+    session_token = session.get('gmail_session_token')
+    
+    if not session_token:
+        return jsonify({'error': 'Gmail not connected'}), 401
+    
+    try:
+        # Get user email first
+        token_storage = SecureTokenStorage()
+        credentials = token_storage.get_credentials(session_token)
+        
+        if not credentials:
+            return jsonify({'error': 'Gmail session expired. Please reconnect.'}), 401
+            
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        from googleapiclient.discovery import build
+        
+        creds = OAuthCredentials(
+            token=credentials.get('token'),
+            refresh_token=credentials.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv('GMAIL_CLIENT_ID'),
+            client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+        )
+        
+        service = build('gmail', 'v1', credentials=creds)
+        profile = service.users().getProfile(userId='me').execute()
+        user_email = profile.get('emailAddress', 'unknown')
+        
+        # Create background job
+        job_id = job_manager.create_job('subscription_scan', user_email)
+        
+        # Start background thread
+        def run_scan():
+            try:
+                run_background_subscription_scan(job_id, credentials, days, user_email)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                job_manager.update_job(job_id, status='error', error=str(e))
+        
+        thread = threading.Thread(target=run_scan, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'started',
+            'message': 'Scan started in background. You can close this page and come back later.'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/subscriptions/scan/status/<job_id>', methods=['GET'])
+def get_scan_status(job_id):
+    """Check the status of a background scan job"""
+    job = job_manager.get_job(job_id)
+    
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+        
+    return jsonify(job)
+
+@app.route('/api/subscriptions/scan/active', methods=['GET'])
+def get_active_scans():
+    """Get any active or recent scans for the current user"""
+    session_token = session.get('gmail_session_token')
+    
+    if not session_token:
+        return jsonify({'jobs': []})
+    
+    try:
+        token_storage = SecureTokenStorage()
+        credentials = token_storage.get_credentials(session_token)
+        
+        if not credentials:
+            return jsonify({'jobs': []})
+            
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        from googleapiclient.discovery import build
+        
+        creds = OAuthCredentials(
+            token=credentials.get('token'),
+            refresh_token=credentials.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv('GMAIL_CLIENT_ID'),
+            client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+        )
+        
+        service = build('gmail', 'v1', credentials=creds)
+        profile = service.users().getProfile(userId='me').execute()
+        user_email = profile.get('emailAddress', 'unknown')
+        
+        jobs = job_manager.get_user_jobs(user_email)
+        
+        # Sort by created_at descending, return most recent
+        jobs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        return jsonify({'jobs': jobs[:5]})  # Return last 5 jobs
+        
+    except Exception as e:
+        return jsonify({'jobs': [], 'error': str(e)})
+
+def run_background_subscription_scan(job_id, credentials, days, user_email):
+    """
+    Run the subscription scan in a background thread.
+    Updates job_manager with progress so user can poll for status.
+    """
+    from google.oauth2.credentials import Credentials as OAuthCredentials
+    from googleapiclient.discovery import build
+    
+    try:
+        job_manager.update_job(job_id, status='running', progress=5, message='Connecting to Gmail...')
+        
+        pulse_service = get_subscription_pulse_service()
+        
+        creds = OAuthCredentials(
+            token=credentials.get('token'),
+            refresh_token=credentials.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv('GMAIL_CLIENT_ID'),
+            client_secret=os.getenv('GMAIL_CLIENT_SECRET')
+        )
+        
+        service = build('gmail', 'v1', credentials=creds)
+        
+        job_manager.update_job(job_id, progress=10, message='Searching for subscription emails...')
+        
+        # Build query
+        after_date = (datetime.now() - timedelta(days=days)).strftime('%Y/%m/%d')
+        
+        transactional_subjects = (
+            'subject:receipt OR subject:invoice OR subject:payment OR subject:charged OR '
+            'subject:subscription OR subject:billing OR subject:renewal OR '
+            'subject:"your receipt" OR subject:"payment received" OR subject:"payment successful" OR '
+            'subject:"your invoice" OR subject:"order confirmation" OR subject:"thank you for your order" OR '
+            'subject:חשבונית OR subject:קבלה OR subject:תשלום OR subject:מנוי OR '
+            'subject:rechnung OR subject:zahlung OR subject:abonnement OR '
+            'subject:facture OR subject:paiement OR subject:factura OR subject:recibo'
+        )
+        
+        payment_processors = (
+            'from:stripe.com OR from:@stripe.com OR from:billing.stripe.com OR '
+            'from:paypal.com OR from:@paypal.com OR from:service@paypal.com OR '
+            'from:paddle.com OR from:gumroad.com OR from:chargebee.com OR '
+            'from:recurly.com OR from:braintree.com OR from:fastspring.com OR '
+            'from:square.com OR from:shopify.com OR from:2checkout.com'
+        )
+        
+        exclusions = (
+            '-subject:"invitation" -subject:"newsletter" -subject:"webinar" '
+            '-subject:"verify your" -subject:"confirm your email" -subject:"password reset" '
+            '-subject:"we miss you" -subject:"marketing" -subject:"unsubscribe"'
+        )
+        
+        query = f'after:{after_date} (({transactional_subjects}) OR ({payment_processors})) {exclusions}'
+        
+        # Fetch emails
+        all_message_ids = []
+        page_token = None
+        max_emails = min(days * 15, 10000)
+        
+        while True:
+            results = service.users().messages().list(
+                userId='me',
+                q=query,
+                pageToken=page_token,
+                maxResults=500
+            ).execute()
+            
+            messages = results.get('messages', [])
+            all_message_ids.extend([m['id'] for m in messages])
+            
+            job_manager.update_job(job_id, progress=12, 
+                message=f'Fetching emails... {len(all_message_ids)} found so far')
+            
+            page_token = results.get('nextPageToken')
+            if not page_token or len(all_message_ids) >= max_emails:
+                break
+        
+        total_emails = len(all_message_ids)
+        job_manager.update_job(job_id, progress=20, 
+            message=f'Found {total_emails} potential subscription emails')
+        
+        if total_emails == 0:
+            job_manager.update_job(job_id, status='complete', progress=100,
+                message='No subscription emails found',
+                results={'active_subscriptions': [], 'stopped_subscriptions': [], 
+                        'active_count': 0, 'stopped_count': 0, 'monthly_spend': 0})
+            return
+        
+        # Fetch email content
+        job_manager.update_job(job_id, progress=25, message='Downloading email content...')
+        
+        import base64
+        import re
+        import html as html_lib
+        
+        def extract_email_body(payload, snippet=""):
+            plain_texts = []
+            html_texts = []
+            
+            def decode_body(data):
+                if not data:
+                    return ""
+                try:
+                    return base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                except:
+                    return ""
+            
+            def sanitize_html(raw_html):
+                if not raw_html:
+                    return ""
+                text = re.sub(r'<style[^>]*>.*?</style>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
+                text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+                text = re.sub(r'<br\s*/?\s*>', '\n', text, flags=re.IGNORECASE)
+                text = re.sub(r'<[^>]+>', ' ', text)
+                text = html_lib.unescape(text)
+                text = re.sub(r'[ \t]+', ' ', text)
+                return text.strip()
+            
+            def extract_parts(part_payload):
+                if 'parts' in part_payload:
+                    for part in part_payload['parts']:
+                        extract_parts(part)
+                else:
+                    mime_type = part_payload.get('mimeType', '')
+                    body_data = part_payload.get('body', {}).get('data', '')
+                    if mime_type == 'text/plain' and body_data:
+                        plain_texts.append(decode_body(body_data))
+                    elif mime_type == 'text/html' and body_data:
+                        html_texts.append(sanitize_html(decode_body(body_data)))
+            
+            extract_parts(payload)
+            
+            if plain_texts:
+                return '\n'.join(plain_texts)[:3000]
+            if html_texts:
+                return '\n'.join(html_texts)[:3000]
+            return snippet[:500]
+        
+        all_emails = []
+        batch_size = 100
+        
+        for batch_start in range(0, len(all_message_ids), batch_size):
+            batch_ids = all_message_ids[batch_start:batch_start + batch_size]
+            progress = 25 + int((batch_start / len(all_message_ids)) * 25)
+            job_manager.update_job(job_id, progress=progress,
+                message=f'Downloading emails {batch_start+1}-{min(batch_start+batch_size, len(all_message_ids))} of {len(all_message_ids)}...')
+            
+            for msg_id in batch_ids:
+                try:
+                    msg = service.users().messages().get(
+                        userId='me', id=msg_id, format='full'
+                    ).execute()
+                    
+                    headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                    
+                    email_data = {
+                        'id': msg_id,
+                        'subject': headers.get('subject', ''),
+                        'sender': headers.get('from', ''),
+                        'date': headers.get('date', ''),
+                        'body': extract_email_body(msg.get('payload', {}), msg.get('snippet', ''))
+                    }
+                    all_emails.append(email_data)
+                except Exception as e:
+                    print(f"Error fetching email {msg_id}: {e}")
+        
+        # STAGE 1: AI Triage
+        job_manager.update_job(job_id, progress=50,
+            message=f'⚡ Stage 1: AI Triage on {len(all_emails)} emails...')
+        
+        email_queue = pulse_service.parallel_ai_triage(all_emails)
+        
+        filter_rate = round(((len(all_emails) - len(email_queue)) / len(all_emails)) * 100, 1) if len(all_emails) > 0 else 0
+        job_manager.update_job(job_id, progress=60,
+            message=f'⚡ Stage 1 complete: {len(email_queue)} potential subscriptions ({filter_rate}% filtered)')
+        
+        # STAGE 2: Deep Extraction
+        job_manager.update_job(job_id, progress=65,
+            message=f'🧠 Stage 2: Deep extraction on {len(email_queue)} emails...')
+        
+        processed_events = pulse_service.parallel_deep_extraction(email_queue)
+        
+        # Track found subscriptions
+        for result in processed_events:
+            if result:
+                vendor_name = result.get('vendor_name', 'Unknown')
+                amount = result.get('amount')
+                job_manager.add_subscription_found(job_id, vendor_name, 
+                    f"${amount:.2f}" if amount else 'analyzing...')
+        
+        job_manager.update_job(job_id, progress=85,
+            message=f'Aggregating data from {len(processed_events)} payment events...')
+        
+        # Aggregate
+        results = pulse_service.aggregate_subscription_data(processed_events)
+        
+        job_manager.update_job(job_id, progress=95, message='Saving results...')
+        
+        # Save to BigQuery
+        try:
+            pulse_service.store_subscription_results(user_email, results)
+        except Exception as save_error:
+            print(f"Save error: {save_error}")
+        
+        job_manager.update_job(job_id, status='complete', progress=100,
+            message=f'Found {results.get("active_count", 0)} active subscriptions',
+            results=results)
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        job_manager.update_job(job_id, status='error', error=str(e),
+            message=f'Error: {str(e)}')
 
 @app.route('/api/subscriptions/scan/stream', methods=['GET'])
 def subscription_scan_stream():
