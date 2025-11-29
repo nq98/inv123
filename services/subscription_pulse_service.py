@@ -913,6 +913,21 @@ If this is clearly NOT a payment/transaction email, return:
         divisor = cadence_map.get(billing_cadence.lower(), 1)
         return round(amount_usd / divisor, 2)
     
+    def _extract_domain(self, sender):
+        """Extract domain from sender email address"""
+        if not sender:
+            return ''
+        
+        # Extract email from "Name <email>" format
+        email_match = re.search(r'<([^>]+)>', sender)
+        email = email_match.group(1) if email_match else sender
+        
+        # Extract domain
+        domain_match = re.search(r'@([^>\s]+)', email)
+        if domain_match:
+            return domain_match.group(1).lower()
+        return ''
+    
     def _extract_vendor_from_sender(self, sender):
         """Extract vendor name and domain from sender email"""
         if not sender:
