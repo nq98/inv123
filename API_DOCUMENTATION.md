@@ -5,6 +5,209 @@ This document contains all public API endpoints and database entities for the In
 
 ---
 
+# ENTITY RELATIONSHIP DIAGRAM (ERD)
+
+```mermaid
+erDiagram
+    %% ===== CORE ENTITIES =====
+    
+    users {
+        STRING email PK "User email (unique)"
+        STRING password_hash "Hashed password"
+        STRING password_salt "Password salt"
+        STRING display_name "Display name"
+        BOOLEAN is_active "Account status"
+        TIMESTAMP created_at "Registration time"
+        TIMESTAMP last_login "Last login time"
+    }
+    
+    global_vendors {
+        STRING vendor_id PK "Unique vendor ID"
+        STRING global_name "Vendor name"
+        STRING normalized_name "Normalized for matching"
+        ARRAY emails "Email addresses"
+        ARRAY domains "Vendor domains"
+        ARRAY countries "Countries"
+        JSON custom_attributes "Custom CSV columns"
+        STRING source_system "Data source"
+        STRING netsuite_internal_id FK "NetSuite ID"
+        TIMESTAMP last_updated "Last update"
+        TIMESTAMP created_at "Created time"
+    }
+    
+    invoices {
+        STRING invoice_id PK "Invoice number"
+        STRING vendor_id FK "Linked vendor"
+        STRING vendor_name "Vendor name"
+        STRING client_id "Client/tenant ID"
+        FLOAT amount "Invoice amount"
+        STRING currency "Currency code"
+        DATE invoice_date "Invoice date"
+        STRING status "matched/unmatched/ambiguous"
+        STRING netsuite_bill_id FK "NetSuite bill ID"
+        STRING netsuite_sync_status "Sync status"
+        TIMESTAMP netsuite_sync_date "Last sync"
+        JSON metadata "Extraction metadata"
+        STRING gcs_uri "GCS file path"
+        STRING file_type "pdf/png/jpeg"
+        INT64 file_size "File size bytes"
+        STRING approval_status "Review status"
+        STRING rejection_reason "Rejection reason"
+        TIMESTAMP reviewed_at "Review time"
+        STRING reviewed_by FK "Reviewer email"
+    }
+    
+    %% ===== SUBSCRIPTION TRACKING =====
+    
+    subscription_vendors {
+        STRING vendor_id PK "Subscription vendor ID"
+        STRING vendor_name "Vendor name"
+        STRING normalized_name "Normalized name"
+        STRING domain "Vendor domain"
+        STRING category "SaaS category"
+        BOOLEAN is_subscription "Confirmed subscription"
+        STRING billing_frequency "monthly/yearly"
+        FLOAT typical_amount "Typical charge"
+        STRING currency "Currency"
+        DATE first_seen_date "First detection"
+        DATE last_seen_date "Last charge"
+        INT64 payment_count "Total payments"
+        FLOAT lifetime_spend "Total spend"
+        STRING owner_email FK "Owner email"
+        STRING status "active/cancelled"
+        STRING ai_reasoning "AI reasoning"
+        FLOAT confidence "AI confidence"
+    }
+    
+    subscription_events {
+        STRING event_id PK "Event ID"
+        STRING vendor_id FK "Vendor ID"
+        STRING vendor_name "Vendor name"
+        STRING event_type "charge/renewal/cancel"
+        TIMESTAMP timestamp "Event time"
+        FLOAT amount "Amount"
+        STRING currency "Currency"
+        STRING email_subject "Source email"
+        TIMESTAMP email_date "Email date"
+        STRING message_id "Gmail message ID"
+        STRING ai_reasoning "AI reasoning"
+        FLOAT confidence "AI confidence"
+        JSON raw_data "Raw extraction"
+    }
+    
+    %% ===== NETSUITE INTEGRATION =====
+    
+    netsuite_events {
+        STRING event_id PK "Event ID"
+        TIMESTAMP timestamp "Event time"
+        STRING direction "inbound/outbound"
+        STRING event_type "Event type"
+        STRING event_category "vendor/invoice/payment"
+        STRING status "success/failed/pending"
+        STRING entity_type "Entity type"
+        STRING entity_id FK "Entity ID"
+        STRING netsuite_id "NetSuite ID"
+        STRING action "create/update/sync"
+        JSON request_data "Request payload"
+        JSON response_data "Response payload"
+        STRING error_message "Error details"
+        INT64 duration_ms "Request duration"
+        STRING user FK "Acting user"
+        JSON metadata "Additional data"
+    }
+    
+    netsuite_sync_log {
+        STRING id PK "Log ID"
+        TIMESTAMP timestamp "Log time"
+        STRING entity_type "vendor/invoice"
+        STRING entity_id FK "Entity ID"
+        STRING action "create/update/sync"
+        STRING status "success/failed"
+        STRING netsuite_id "NetSuite ID"
+        STRING error_message "Error details"
+        JSON request_data "Request payload"
+        JSON response_data "Response payload"
+        INT64 duration_ms "Duration"
+    }
+    
+    %% ===== GMAIL SCANNING =====
+    
+    gmail_scan_checkpoints {
+        STRING scan_id PK "Scan ID"
+        STRING client_email FK "Gmail account"
+        STRING scan_type "invoice/subscription"
+        STRING status "running/completed/failed"
+        INT64 days_range "Days to scan"
+        INT64 total_emails "Total found"
+        INT64 processed_count "Processed"
+        INT64 extracted_count "Extracted"
+        INT64 duplicate_count "Duplicates"
+        INT64 failed_count "Failed"
+        STRING last_message_id "Last message"
+        STRING last_page_token "Page token"
+        TIMESTAMP started_at "Start time"
+        TIMESTAMP updated_at "Update time"
+        TIMESTAMP completed_at "End time"
+        ARRAY processed_message_ids "Processed IDs"
+    }
+    
+    %% ===== AI LEARNING =====
+    
+    ai_feedback_log {
+        STRING feedback_id PK "Feedback ID"
+        STRING invoice_id FK "Invoice ID"
+        STRING feedback_type "approved/corrected/rejected"
+        JSON original_extraction "Original AI output"
+        JSON corrected_data "User corrections"
+        STRING rejection_reason "Rejection reason"
+        STRING vendor_name_original "Original vendor"
+        STRING vendor_name_corrected "Corrected vendor"
+        NUMERIC amount_original "Original amount"
+        NUMERIC amount_corrected "Corrected amount"
+        TIMESTAMP created_at "Feedback time"
+        STRING created_by FK "User email"
+        BOOLEAN applied_to_learning "Synced to RAG"
+    }
+    
+    %% ===== RELATIONSHIPS =====
+    
+    users ||--o{ invoices : "reviews"
+    users ||--o{ ai_feedback_log : "provides"
+    users ||--o{ subscription_vendors : "owns"
+    users ||--o{ gmail_scan_checkpoints : "initiates"
+    
+    global_vendors ||--o{ invoices : "receives"
+    global_vendors ||--o{ netsuite_events : "syncs_to"
+    global_vendors ||--o{ netsuite_sync_log : "logs"
+    
+    invoices ||--o{ ai_feedback_log : "gets_feedback"
+    invoices ||--o{ netsuite_events : "syncs_to"
+    invoices ||--o{ netsuite_sync_log : "logs"
+    
+    subscription_vendors ||--o{ subscription_events : "has_events"
+    
+    gmail_scan_checkpoints ||--o{ invoices : "extracts"
+    gmail_scan_checkpoints ||--o{ subscription_events : "extracts"
+```
+
+## ERD Relationship Summary
+
+| Relationship | Description |
+|--------------|-------------|
+| `users` → `invoices` | Users review and approve invoices |
+| `users` → `ai_feedback_log` | Users provide feedback on AI extractions |
+| `users` → `subscription_vendors` | Users own/manage subscriptions |
+| `users` → `gmail_scan_checkpoints` | Users initiate Gmail scans |
+| `global_vendors` → `invoices` | Vendors receive invoices |
+| `global_vendors` → `netsuite_*` | Vendors sync to NetSuite |
+| `invoices` → `ai_feedback_log` | Invoices receive feedback for learning |
+| `invoices` → `netsuite_*` | Invoices sync to NetSuite as bills |
+| `subscription_vendors` → `subscription_events` | Subscriptions have charge events |
+| `gmail_scan_checkpoints` → `invoices` | Email scans extract invoices |
+| `gmail_scan_checkpoints` → `subscription_events` | Email scans extract subscription events |
+
+---
+
 # API ENDPOINTS
 
 ## Authentication & Pages
