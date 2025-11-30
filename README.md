@@ -6,7 +6,7 @@ A hybrid 3-layer architecture for extracting structured data from invoices with 
 
 ### Layer 1: Document AI
 - Extracts structured data and bounding boxes from invoice PDFs/images
-- Processor ID: `919c19aabdb1802d`
+- Processor ID: `<SET_IN_REPLIT_SECRETS>`
 
 ### Layer 2: Vertex AI Search (RAG)
 - Retrieves vendor history and canonical IDs from datastore `invoices-ds`
@@ -81,7 +81,7 @@ All configuration is managed through environment variables and service account J
 - `documentai-access.json` - Service account for Document AI
 
 Project settings:
-- Project ID: `invoicereader-477008`
+- Project ID: `<PROJECT_ID>`
 - GCS Bucket: `payouts-invoices`
 - Document AI Location: `us`
 

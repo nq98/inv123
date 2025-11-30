@@ -173,7 +173,7 @@ GOOGLE_CLOUD_PROJECT_NUMBER=123456789012
 OPENROUTERA=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
 
 # Google AI Studio (Fallback)
-GOOGLE_GEMINI_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxx
+GOOGLE_GEMINI_API_KEY=<SET_IN_REPLIT_SECRETS>
 
 # BigQuery
 GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'
@@ -875,7 +875,7 @@ import os
 class NetSuiteEventTracker:
     """Comprehensive bidirectional event tracking for NetSuite operations"""
     
-    def __init__(self, project_id='invoicereader-477008'):
+    def __init__(self, project_id='<PROJECT_ID>'):
         self.project_id = project_id
         
         # Load credentials
@@ -1012,7 +1012,7 @@ event_tracker.log_event(
 OPENROUTERA=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
 
 # Google AI Studio (Fallback)
-GOOGLE_GEMINI_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxx
+GOOGLE_GEMINI_API_KEY=<SET_IN_REPLIT_SECRETS>
 
 # Vertex AI Search (Optional - for RAG learning)
 VERTEX_AI_SEARCH_DATA_STORE_ID=your-data-store-id
@@ -1330,7 +1330,7 @@ def get_dashboard_status(user_email: str) -> str:
     # Get vendor count
     vendor_query = """
     SELECT COUNT(*) as count 
-    FROM `invoicereader-477008.vendors_ai.global_vendors`
+    FROM `<PROJECT_ID>.vendors_ai.global_vendors`
     WHERE owner_email = @user_email
     """
     results = bigquery_service.query(vendor_query, {"user_email": user_email})
@@ -1360,7 +1360,7 @@ def search_database_first(user_email: str, query: str, search_type: str = "all")
     if search_type in ["vendors", "all"]:
         vendor_query = """
         SELECT vendor_id, global_name, emails, domains
-        FROM `invoicereader-477008.vendors_ai.global_vendors`
+        FROM `<PROJECT_ID>.vendors_ai.global_vendors`
         WHERE owner_email = @user_email
           AND LOWER(global_name) LIKE @search_pattern
         LIMIT 10
@@ -1689,7 +1689,7 @@ def stream_response(message, user_email):
 OPENROUTERA=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
 
 # Google AI Studio (Fallback)
-GOOGLE_GEMINI_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxx
+GOOGLE_GEMINI_API_KEY=<SET_IN_REPLIT_SECRETS>
 
 # Google Cloud
 GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'

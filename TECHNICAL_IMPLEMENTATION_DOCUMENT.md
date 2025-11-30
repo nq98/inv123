@@ -102,7 +102,7 @@ werkzeug            # WSGI utilities
 ## Project Configuration
 | Setting | Value |
 |---------|-------|
-| **Project ID** | `invoicereader-477008` |
+| **Project ID** | `<PROJECT_ID>` |
 | **Project Number** | `437918215047` |
 | **Region** | `us-central1` |
 | **Location** | `global` (for Vertex AI Search) |
@@ -113,9 +113,9 @@ werkzeug            # WSGI utilities
 | Setting | Value |
 |---------|-------|
 | **Processor Type** | Invoice Parser |
-| **Processor ID** | `919c19aabdb1802d` |
+| **Processor ID** | `<SET_IN_REPLIT_SECRETS>` |
 | **Location** | `us` |
-| **Processor Path** | `projects/invoicereader-477008/locations/us/processors/919c19aabdb1802d` |
+| **Processor Path** | `projects/<PROJECT_ID>/locations/us/processors/<SET_IN_REPLIT_SECRETS>` |
 
 **Extracted Entities:**
 - Invoice number, date, due date
@@ -1158,11 +1158,11 @@ gs://payouts-invoices/
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GOOGLE_CLOUD_PROJECT_ID` | `invoicereader-477008` | GCP project |
+| `GOOGLE_CLOUD_PROJECT_ID` | `<PROJECT_ID>` | GCP project |
 | `GOOGLE_CLOUD_PROJECT_NUMBER` | `437918215047` | GCP project number |
 | `GCS_BUCKET_NAME` | `payouts-invoices` | Storage bucket |
 | `REGION` | `us-central1` | GCP region |
-| `DOCAI_PROCESSOR_ID` | `919c19aabdb1802d` | Document AI processor |
+| `DOCAI_PROCESSOR_ID` | `<SET_IN_REPLIT_SECRETS>` | Document AI processor |
 | `DOCAI_LOCATION` | `us` | Document AI location |
 
 ## 14.3 Service Account Files

@@ -854,7 +854,7 @@ gcloud run deploy $SERVICE_NAME \
 ```bash
 # Create each secret (run once)
 echo -n "sk-or-v1-xxx" | gcloud secrets create openrouter-api-key --data-file=-
-echo -n "AIza..." | gcloud secrets create gemini-api-key --data-file=-
+echo -n "<YOUR_API_KEY>" | gcloud secrets create gemini-api-key --data-file=-
 # ... repeat for all secrets
 ```
 

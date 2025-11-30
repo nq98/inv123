@@ -27,9 +27,9 @@ The main project already has a complete AI invoice processing pipeline. You must
 
 ```python
 # config.py - All these exist
-GOOGLE_CLOUD_PROJECT_ID = 'invoicereader-477008'
+GOOGLE_CLOUD_PROJECT_ID = '<PROJECT_ID>'
 GCS_INPUT_BUCKET = 'payouts-invoices'            # GCS bucket for PDFs
-DOCAI_PROCESSOR_ID = '919c19aabdb1802d'          # Document AI processor
+DOCAI_PROCESSOR_ID = '<SET_IN_REPLIT_SECRETS>'          # Document AI processor
 VERTEX_SEARCH_DATA_STORE_ID = 'invoices-ds'      # RAG datastore
 GOOGLE_GEMINI_API_KEY = <from secrets>           # Gemini API
 
@@ -126,7 +126,7 @@ result = processor.process_invoice('gs://payouts-invoices/uploads/invoice.pdf', 
 Create table in `vendors_ai` dataset:
 
 ```sql
-CREATE TABLE IF NOT EXISTS `invoicereader-477008.vendors_ai.invoices` (
+CREATE TABLE IF NOT EXISTS `<PROJECT_ID>.vendors_ai.invoices` (
     invoice_id STRING NOT NULL,
     invoice_number STRING,
     vendor_name STRING,

@@ -39,16 +39,17 @@ This document provides all AI prompts used in the Invoice Management system and 
 # ============================================
 
 # Google Cloud Project ID
-GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_PROJECT=<SET_IN_REPLIT_SECRETS>
 
 # Service Account Credentials (JSON string - same as main project)
-GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account","project_id":"your-project-id","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"your-service-account@your-project-id.iam.gserviceaccount.com","client_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/..."}
+# NOTE: This is already configured in Replit Secrets - DO NOT copy real values here
+GOOGLE_APPLICATION_CREDENTIALS_JSON=<SET_IN_REPLIT_SECRETS>
 
 # Gemini AI API Key
-GOOGLE_GEMINI_API_KEY=AIza...your-api-key
+GOOGLE_GEMINI_API_KEY=<SET_IN_REPLIT_SECRETS>
 
 # Document AI Processor
-DOCUMENT_AI_PROCESSOR_ID=abc123def456
+DOCUMENT_AI_PROCESSOR_ID=<SET_IN_REPLIT_SECRETS>
 DOCUMENT_AI_LOCATION=us
 
 # Cloud Storage Bucket

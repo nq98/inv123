@@ -28,14 +28,14 @@ npm install -D @types/express @types/multer @types/uuid @types/cors typescript
 
 export const config = {
   // Google Cloud Project
-  GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID || 'invoicereader-477008',
+  GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID || '<PROJECT_ID>',
   GOOGLE_CLOUD_PROJECT_NUMBER: process.env.GOOGLE_CLOUD_PROJECT_NUMBER || '437918215047',
   
   // GCS Bucket for Invoice Storage
   GCS_BUCKET: process.env.GCS_INPUT_BUCKET || process.env.GCS_BUCKET_NAME || 'payouts-invoices',
   
   // Document AI
-  DOCAI_PROCESSOR_ID: process.env.DOCAI_PROCESSOR_ID || '919c19aabdb1802d',
+  DOCAI_PROCESSOR_ID: process.env.DOCAI_PROCESSOR_ID || '<PROCESSOR_ID>',
   DOCAI_LOCATION: process.env.DOCAI_LOCATION || 'us',
   
   // Vertex AI Search (RAG)
