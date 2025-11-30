@@ -261,16 +261,20 @@ def run_scan(job_id, credentials, days, user_email):
     from services.subscription_pulse_service import SubscriptionPulseService
     pulse_service = SubscriptionPulseService()
     
-    def stage1_progress(msg):
-        update_job(job_id, progress=55, message=msg)
+    def stage1_progress(completed, total_batches, passed_count):
+        pct = 55 + int((completed / max(total_batches, 1)) * 15)
+        update_job(job_id, progress=pct, 
+            message=f'⚡ Stage 1: Batch {completed}/{total_batches} ({passed_count:,} passed)')
     
     update_job(job_id, progress=55, 
         message=f'⚡ Stage 1: AI analyzing {len(all_emails):,} emails...')
     
     email_queue = pulse_service.parallel_semantic_filter(all_emails, progress_callback=stage1_progress)
     
-    def stage2_progress(msg):
-        update_job(job_id, progress=70, message=msg)
+    def stage2_progress(completed, total_batches):
+        pct = 70 + int((completed / max(total_batches, 1)) * 15)
+        update_job(job_id, progress=pct, 
+            message=f'⚡ Stage 2: Extracting batch {completed}/{total_batches}')
     
     update_job(job_id, progress=70, 
         message=f'⚡ Stage 2: Deep extraction on {len(email_queue):,} emails...')
