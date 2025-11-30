@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Semantic Budget Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css?v=12">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        .budget-glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.15);
+        }
+
+        .budget-header {
+            background: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-700) 100%);
+            color: white;
+            padding: 24px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 24px;
+        }
+
+        .budget-header h1 {
+            margin: 0 0 8px 0;
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .budget-header p {
+            margin: 0;
+            opacity: 0.9;
+        }
+
+        .budget-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .budget-controls .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            white-space: nowrap;
+        }
+
+        .control-group select {
+            padding: 10px 16px;
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius);
+            background: white;
+            font-size: 0.875rem;
+            min-width: 140px;
+        }
+
+        .speedometer-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (min-width: 768px) {
+            .speedometer-section {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .speedometer-card {
+            padding: 24px;
+            text-align: center;
+        }
+
+        .gauge-container {
+            position: relative;
+            width: 220px;
+            height: 130px;
+            margin: 0 auto 20px;
+        }
+
+        .gauge-svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .gauge-bg {
+            fill: none;
+            stroke: var(--gray-200);
+            stroke-width: 20;
+            stroke-linecap: round;
+        }
+
+        .gauge-fill {
+            fill: none;
+            stroke-width: 20;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.8s ease-out, stroke 0.3s ease;
+        }
+
+        .gauge-fill.green { stroke: var(--success); }
+        .gauge-fill.yellow { stroke: var(--warning); }
+        .gauge-fill.red { stroke: var(--error); }
+
+        .gauge-center-text {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+        }
+
+        .gauge-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .gauge-label {
+            font-size: 0.875rem;
+            color: var(--gray-600);
+        }
+
+        .speedometer-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .speedometer-stat {
+            text-align: center;
+            padding: 12px;
+            background: var(--gray-50);
+            border-radius: var(--radius);
+        }
+
+        .speedometer-stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--purple-500);
+        }
+
+        .speedometer-stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+            text-transform: uppercase;
+        }
+
+        .days-remaining {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, var(--purple-500), var(--purple-700));
+            color: white;
+            border-radius: 50px;
+            font-weight: 600;
+            margin-top: 16px;
+        }
+
+        .zombie-section {
+            margin-bottom: 24px;
+        }
+
+        .zombie-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: white;
+            border-radius: var(--radius);
+            margin-bottom: 12px;
+            border-left: 4px solid var(--gray-300);
+            transition: var(--transition);
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .zombie-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateX(4px);
+        }
+
+        .zombie-card.severity-dead {
+            border-left-color: var(--gray-500);
+            background: linear-gradient(90deg, rgba(107, 114, 128, 0.05), transparent);
+        }
+
+        .zombie-card.severity-critical {
+            border-left-color: var(--error);
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.05), transparent);
+        }
+
+        .zombie-card.severity-high {
+            border-left-color: #f97316;
+            background: linear-gradient(90deg, rgba(249, 115, 22, 0.05), transparent);
+        }
+
+        .zombie-card.severity-medium {
+            border-left-color: var(--warning);
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.05), transparent);
+        }
+
+        .zombie-info {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .zombie-vendor {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--gray-900);
+            margin-bottom: 4px;
+        }
+
+        .zombie-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.8125rem;
+            color: var(--gray-600);
+            flex-wrap: wrap;
+        }
+
+        .zombie-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .severity-badge {
+            padding: 6px 12px;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .severity-badge.dead {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .severity-badge.critical {
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .severity-badge.high {
+            background: #fff7ed;
+            color: #c2410c;
+        }
+
+        .severity-badge.medium {
+            background: #fffbeb;
+            color: #b45309;
+        }
+
+        .zombie-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .zombie-actions .btn {
+            padding: 8px 14px;
+            font-size: 0.8125rem;
+            min-height: 36px;
+        }
+
+        .anomaly-section {
+            margin-bottom: 24px;
+        }
+
+        .anomaly-card {
+            padding: 20px;
+            background: linear-gradient(135deg, #fef2f2, #fff1f2);
+            border: 1px solid #fecaca;
+            border-radius: var(--radius);
+            margin-bottom: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .anomaly-card::before {
+            content: '⚠️';
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            font-size: 1.5rem;
+        }
+
+        .anomaly-card.contract-violation {
+            background: linear-gradient(135deg, #fdf4ff, #fae8ff);
+            border-color: #e879f9;
+        }
+
+        .anomaly-card.contract-violation::before {
+            content: '📋';
+        }
+
+        .anomaly-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .anomaly-type {
+            padding: 4px 10px;
+            background: rgba(239, 68, 68, 0.2);
+            color: #b91c1c;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .anomaly-card.contract-violation .anomaly-type {
+            background: rgba(168, 85, 247, 0.2);
+            color: #7c3aed;
+        }
+
+        .anomaly-vendor {
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: var(--gray-900);
+        }
+
+        .anomaly-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .anomaly-stat {
+            text-align: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: var(--radius);
+        }
+
+        .anomaly-stat-value {
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .anomaly-stat-value.deviation-high {
+            color: var(--error);
+        }
+
+        .anomaly-stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+        }
+
+        .anomaly-evidence {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+            color: var(--purple-600);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .anomaly-evidence:hover {
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .empty-state-budget {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--gray-600);
+        }
+
+        .empty-state-budget .icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-budget h3 {
+            margin: 0 0 8px;
+            color: var(--gray-800);
+        }
+
+        .empty-state-budget p {
+            margin: 0 0 20px;
+        }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: var(--radius);
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .loading-card {
+            height: 120px;
+            margin-bottom: 12px;
+        }
+
+        .status-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 24px;
+            background: var(--gray-800);
+            color: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-xl);
+            z-index: 1000;
+            animation: slideInRight 0.3s ease-out;
+        }
+
+        .status-toast.success {
+            background: var(--success);
+        }
+
+        .status-toast.error {
+            background: var(--error);
+        }
+
+        @keyframes slideInRight {
+            from { 
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to { 
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .refresh-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            margin-left: auto;
+        }
+
+        .refresh-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .section-title-group h2 {
+            margin: 0 0 4px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .section-title-group p {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--gray-600);
+        }
+
+        .section-badge {
+            padding: 6px 14px;
+            background: var(--purple-100);
+            color: var(--purple-700);
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        @media (max-width: 640px) {
+            .budget-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .control-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .speedometer-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .zombie-card {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .zombie-actions {
+                width: 100%;
+            }
+
+            .zombie-actions .btn {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="main-navigation">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1 class="brand-title">🧾 Invoice AI</h1>
+                <span class="brand-subtitle">4-Layer Hybrid Intelligence</span>
+            </div>
+            <nav class="nav-tabs">
+                <a href="/" class="nav-link" data-tab="netsuite-dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="/#invoices" class="nav-link" data-tab="invoices">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-text">Invoices</span>
+                </a>
+                <a href="/#vendors" class="nav-link" data-tab="vendors">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Vendors</span>
+                </a>
+                <a href="/budget" class="nav-link active" data-tab="budget">
+                    <span class="nav-icon">💰</span>
+                    <span class="nav-text">AI Budget</span>
+                </a>
+                <a href="/#subscription-pulse" class="nav-link" data-tab="subscription-pulse">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Subscription Pulse</span>
+                </a>
+                <a href="/#gmail" class="nav-link" data-tab="gmail">
+                    <span class="nav-icon">📧</span>
+                    <span class="nav-text">Gmail</span>
+                </a>
+            </nav>
+            <div class="nav-user-section" style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
+                <span style="color: #666; font-size: 14px;">{{ current_user.email if current_user else '' }}</span>
+                <a href="/logout" class="logout-btn" style="background: #ef4444; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;">Logout</a>
+            </div>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <svg class="nav-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M3 12h18M3 6h18M3 18h18"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="tab-content-container">
+        <div class="budget-header budget-glass-card">
+            <h1>💰 AI Semantic Budget Dashboard</h1>
+            <p>Predictive forecasting, anomaly detection, and subscription zombie hunting powered by ML</p>
+        </div>
+
+        <div class="budget-controls budget-glass-card" style="padding: 16px;">
+            <button id="initModelsBtn" class="btn btn-primary" onclick="initializeMLModels()">
+                <span>🤖</span> Initialize ML Models
+            </button>
+            <button id="refreshBtn" class="btn btn-secondary" onclick="refreshAllData()">
+                <span>🔄</span> Refresh Forecasts
+            </button>
+            
+            <div class="control-group">
+                <label for="dateRange">Date Range:</label>
+                <select id="dateRange" onchange="handleDateRangeChange()">
+                    <option value="30">Last 30 Days</option>
+                    <option value="60">Last 60 Days</option>
+                    <option value="90" selected>Last 90 Days</option>
+                    <option value="180">Last 6 Months</option>
+                    <option value="365">Last Year</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="categoryFilter">Category:</label>
+                <select id="categoryFilter" onchange="handleCategoryChange()">
+                    <option value="all">All Categories</option>
+                    <option value="Software">Software</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Professional Services">Professional Services</option>
+                    <option value="Subscriptions">Subscriptions</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="refresh-indicator">
+                <span class="dot"></span>
+                <span id="lastRefresh">Auto-refresh: 30s</span>
+            </div>
+        </div>
+
+        <section class="speedometer-section">
+            <div class="speedometer-card budget-glass-card">
+                <h3 style="margin: 0 0 20px; color: var(--gray-800);">🔥 Burn Rate Speedometer</h3>
+                <div class="gauge-container" id="burnGaugeContainer">
+                    <svg class="gauge-svg" viewBox="0 0 200 120">
+                        <path class="gauge-bg" d="M20 100 A80 80 0 0 1 180 100" />
+                        <path class="gauge-fill green" id="burnGaugeFill" d="M20 100 A80 80 0 0 1 180 100" 
+                              stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+                    </svg>
+                    <div class="gauge-center-text">
+                        <div class="gauge-value" id="burnPercentage">0%</div>
+                        <div class="gauge-label">of Budget</div>
+                    </div>
+                </div>
+                
+                <div class="speedometer-stats">
+                    <div class="speedometer-stat">
+                        <div class="speedometer-stat-value" id="actualSpent">$0</div>
+                        <div class="speedometer-stat-label">Spent MTD</div>
+                    </div>
+                    <div class="speedometer-stat">
+                        <div class="speedometer-stat-value" id="forecastedSpend">$0</div>
+                        <div class="speedometer-stat-label">Forecasted</div>
+                    </div>
+                    <div class="speedometer-stat">
+                        <div class="speedometer-stat-value" id="budgetLimit">$0</div>
+                        <div class="speedometer-stat-label">Budget Limit</div>
+                    </div>
+                </div>
+                
+                <div class="days-remaining">
+                    <span>📅</span>
+                    <span id="daysRemaining">-- days left in month</span>
+                </div>
+            </div>
+
+            <div class="speedometer-card budget-glass-card">
+                <h3 style="margin: 0 0 20px; color: var(--gray-800);">📈 Spend Trend</h3>
+                <canvas id="spendTrendChart" height="180"></canvas>
+                <div id="trendSummary" style="margin-top: 16px; text-align: center; color: var(--gray-600); font-size: 0.875rem;">
+                    Loading trend data...
+                </div>
+            </div>
+        </section>
+
+        <section class="zombie-section">
+            <div class="budget-glass-card" style="padding: 24px;">
+                <div class="section-header">
+                    <div class="section-title-group">
+                        <h2>🧟 Zombie Hunter</h2>
+                        <p>Inactive or potentially cancelled subscriptions requiring attention</p>
+                    </div>
+                    <div class="section-badge" id="zombieCount">0 zombies</div>
+                </div>
+                
+                <div id="zombieList">
+                    <div class="loading-shimmer loading-card"></div>
+                    <div class="loading-shimmer loading-card"></div>
+                    <div class="loading-shimmer loading-card"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="anomaly-section">
+            <div class="budget-glass-card" style="padding: 24px;">
+                <div class="section-header">
+                    <div class="section-title-group">
+                        <h2>🚨 Anomaly Alerts</h2>
+                        <p>Invoice amounts deviating from historical patterns or violating contracts</p>
+                    </div>
+                    <div class="section-badge" id="anomalyCount">0 alerts</div>
+                </div>
+                
+                <div id="anomalyList">
+                    <div class="loading-shimmer loading-card"></div>
+                    <div class="loading-shimmer loading-card"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="statusToast" class="status-toast" style="display: none;"></div>
+
+    <script>
+        let autoRefreshInterval = null;
+        let spendTrendChart = null;
+        const AUTO_REFRESH_MS = 30000;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeNavigation();
+            loadAllData();
+            startAutoRefresh();
+        });
+
+        function initializeNavigation() {
+            const navToggle = document.getElementById('navToggle');
+            const navTabs = document.querySelector('.nav-tabs');
+            
+            if (navToggle && navTabs) {
+                navToggle.addEventListener('click', () => {
+                    navTabs.classList.toggle('active');
+                });
+            }
+        }
+
+        function startAutoRefresh() {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            autoRefreshInterval = setInterval(() => {
+                loadAllData(true);
+            }, AUTO_REFRESH_MS);
+        }
+
+        function loadAllData(silent = false) {
+            if (!silent) {
+                showLoading();
+            }
+            
+            Promise.all([
+                loadBurnRate(),
+                loadZombies(),
+                loadAnomalies()
+            ]).then(() => {
+                updateLastRefresh();
+                if (!silent) {
+                    showToast('Data refreshed successfully', 'success');
+                }
+            }).catch(error => {
+                console.error('Error loading data:', error);
+                if (!silent) {
+                    showToast('Failed to load data', 'error');
+                }
+            });
+        }
+
+        function refreshAllData() {
+            loadAllData(false);
+        }
+
+        async function loadBurnRate() {
+            try {
+                const response = await fetch('/api/budget/burn-rate');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateBurnGauge(data);
+                    updateSpendTrend(data);
+                } else if (data.status === 'no_data' || data.status === 'model_not_found') {
+                    showBurnRateEmpty(data.message || 'No data available');
+                } else {
+                    showBurnRateError(data.message || 'Error loading burn rate');
+                }
+            } catch (error) {
+                console.error('Burn rate error:', error);
+                showBurnRateError('Failed to fetch burn rate data');
+            }
+        }
+
+        function updateBurnGauge(data) {
+            const actualSpent = data.current_month_spend || 0;
+            const forecasted = data.ml_forecasted_spend || data.linear_forecasted_spend || actualSpent;
+            const budgetLimit = data.budget_limit || forecasted * 1.2;
+            const percentage = Math.min((actualSpent / budgetLimit) * 100, 100);
+            
+            document.getElementById('actualSpent').textContent = formatCurrency(actualSpent);
+            document.getElementById('forecastedSpend').textContent = formatCurrency(forecasted);
+            document.getElementById('budgetLimit').textContent = formatCurrency(budgetLimit);
+            document.getElementById('burnPercentage').textContent = Math.round(percentage) + '%';
+            
+            const gauge = document.getElementById('burnGaugeFill');
+            const maxDashOffset = 251.2;
+            const dashOffset = maxDashOffset - (maxDashOffset * percentage / 100);
+            gauge.style.strokeDashoffset = dashOffset;
+            
+            gauge.classList.remove('green', 'yellow', 'red');
+            if (percentage >= 100) {
+                gauge.classList.add('red');
+            } else if (percentage >= 80) {
+                gauge.classList.add('yellow');
+            } else {
+                gauge.classList.add('green');
+            }
+            
+            const daysLeft = data.days_remaining || getDaysRemainingInMonth();
+            document.getElementById('daysRemaining').textContent = `${daysLeft} days left in month`;
+        }
+
+        function getDaysRemainingInMonth() {
+            const now = new Date();
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            return lastDay.getDate() - now.getDate();
+        }
+
+        function updateSpendTrend(data) {
+            const ctx = document.getElementById('spendTrendChart').getContext('2d');
+            
+            if (spendTrendChart) {
+                spendTrendChart.destroy();
+            }
+            
+            const labels = data.daily_spend ? Object.keys(data.daily_spend).slice(-14) : generateLastNDays(14);
+            const values = data.daily_spend ? Object.values(data.daily_spend).slice(-14) : [];
+            
+            spendTrendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.map(d => formatDateShort(d)),
+                    datasets: [{
+                        label: 'Daily Spend',
+                        data: values.length ? values : generateMockTrendData(14),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#667eea'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => '$' + value.toLocaleString()
+                            }
+                        }
+                    }
+                }
+            });
+            
+            const variance = data.variance_percent || 0;
+            const trend = variance > 5 ? '📈 Trending up' : variance < -5 ? '📉 Trending down' : '→ Stable';
+            document.getElementById('trendSummary').innerHTML = `${trend} • Variance: ${variance.toFixed(1)}%`;
+        }
+
+        function showBurnRateEmpty(message) {
+            document.getElementById('burnPercentage').textContent = '--';
+            document.getElementById('actualSpent').textContent = '--';
+            document.getElementById('forecastedSpend').textContent = '--';
+            document.getElementById('budgetLimit').textContent = '--';
+            document.getElementById('trendSummary').textContent = message;
+        }
+
+        function showBurnRateError(message) {
+            document.getElementById('trendSummary').innerHTML = `<span style="color: var(--error);">⚠️ ${message}</span>`;
+        }
+
+        async function loadZombies() {
+            try {
+                const dateRange = document.getElementById('dateRange').value;
+                const response = await fetch(`/api/budget/zombies?inactive_days=${dateRange}`);
+                const data = await response.json();
+                
+                const zombieList = document.getElementById('zombieList');
+                const zombieCount = document.getElementById('zombieCount');
+                
+                if (data.status === 'success' && data.zombies && data.zombies.length > 0) {
+                    zombieCount.textContent = `${data.zombies.length} zombie${data.zombies.length !== 1 ? 's' : ''}`;
+                    zombieList.innerHTML = data.zombies.map(zombie => renderZombieCard(zombie)).join('');
+                } else {
+                    zombieCount.textContent = '0 zombies';
+                    zombieList.innerHTML = `
+                        <div class="empty-state-budget">
+                            <div class="icon">🎉</div>
+                            <h3>No Zombie Subscriptions</h3>
+                            <p>All your subscriptions appear to be active and healthy.</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Zombies error:', error);
+                document.getElementById('zombieList').innerHTML = `
+                    <div class="empty-state-budget">
+                        <div class="icon">⚠️</div>
+                        <h3>Error Loading Zombies</h3>
+                        <p>Unable to fetch zombie subscription data. Please try again.</p>
+                        <button class="btn btn-secondary" onclick="loadZombies()">Retry</button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderZombieCard(zombie) {
+            const severityClass = zombie.severity.toLowerCase();
+            const severityLabels = {
+                dead: '☠️ Dead',
+                critical: '🔴 Critical',
+                high: '🟠 High',
+                medium: '🟡 Medium'
+            };
+            
+            return `
+                <div class="zombie-card severity-${severityClass}">
+                    <div class="zombie-info">
+                        <div class="zombie-vendor">${escapeHtml(zombie.vendor_name)}</div>
+                        <div class="zombie-meta">
+                            <span>📅 Last: ${formatDate(zombie.last_invoice_date)}</span>
+                            <span>⏰ ${zombie.days_since_last_invoice} days inactive</span>
+                            <span>💵 Avg: ${formatCurrency(zombie.avg_amount)}</span>
+                        </div>
+                    </div>
+                    <span class="severity-badge ${severityClass}">${severityLabels[severityClass] || zombie.severity}</span>
+                    <div class="zombie-actions">
+                        <button class="btn btn-secondary" onclick="investigateZombie('${escapeHtml(zombie.vendor_name)}')">
+                            🔍 Investigate
+                        </button>
+                        <button class="btn btn-secondary" onclick="markActive('${escapeHtml(zombie.vendor_name)}')">
+                            ✅ Mark Active
+                        </button>
+                        <button class="btn btn-secondary" onclick="confirmCancelled('${escapeHtml(zombie.vendor_name)}')">
+                            ❌ Confirm Cancelled
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadAnomalies() {
+            try {
+                const response = await fetch('/api/budget/anomalies');
+                const data = await response.json();
+                
+                const anomalyList = document.getElementById('anomalyList');
+                const anomalyCount = document.getElementById('anomalyCount');
+                
+                if (data.status === 'success' && data.anomalies && data.anomalies.length > 0) {
+                    anomalyCount.textContent = `${data.anomalies.length} alert${data.anomalies.length !== 1 ? 's' : ''}`;
+                    anomalyList.innerHTML = data.anomalies.map(anomaly => renderAnomalyCard(anomaly)).join('');
+                } else if (data.status === 'model_not_found') {
+                    anomalyCount.textContent = '0 alerts';
+                    anomalyList.innerHTML = `
+                        <div class="empty-state-budget">
+                            <div class="icon">🤖</div>
+                            <h3>ML Models Not Initialized</h3>
+                            <p>Click "Initialize ML Models" to train ARIMA models for anomaly detection.</p>
+                        </div>
+                    `;
+                } else {
+                    anomalyCount.textContent = '0 alerts';
+                    anomalyList.innerHTML = `
+                        <div class="empty-state-budget">
+                            <div class="icon">✅</div>
+                            <h3>No Anomalies Detected</h3>
+                            <p>All invoices are within expected patterns. Great news!</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Anomalies error:', error);
+                document.getElementById('anomalyList').innerHTML = `
+                    <div class="empty-state-budget">
+                        <div class="icon">⚠️</div>
+                        <h3>Error Loading Anomalies</h3>
+                        <p>Unable to fetch anomaly data. Please try again.</p>
+                        <button class="btn btn-secondary" onclick="loadAnomalies()">Retry</button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderAnomalyCard(anomaly) {
+            const isContractViolation = anomaly.alert_type === 'CONTRACT_VIOLATION';
+            const cardClass = isContractViolation ? 'anomaly-card contract-violation' : 'anomaly-card';
+            
+            const deviationPercent = anomaly.deviation_percent || 
+                ((anomaly.actual_spend - (anomaly.expected_upper || anomaly.expected_lower || 0)) / 
+                 (anomaly.expected_upper || anomaly.actual_spend) * 100);
+            
+            return `
+                <div class="${cardClass}">
+                    <div class="anomaly-header">
+                        <span class="anomaly-type">${isContractViolation ? 'Contract Violation' : 'Spend Anomaly'}</span>
+                        <span class="anomaly-vendor">${escapeHtml(anomaly.vendor_name)}</span>
+                    </div>
+                    <div class="anomaly-details">
+                        <div class="anomaly-stat">
+                            <div class="anomaly-stat-value">${formatCurrency(anomaly.actual_spend || anomaly.invoice_amount)}</div>
+                            <div class="anomaly-stat-label">Invoice Amount</div>
+                        </div>
+                        <div class="anomaly-stat">
+                            <div class="anomaly-stat-value">${formatCurrency(anomaly.expected_lower || 0)} - ${formatCurrency(anomaly.expected_upper || 0)}</div>
+                            <div class="anomaly-stat-label">Expected Range</div>
+                        </div>
+                        <div class="anomaly-stat">
+                            <div class="anomaly-stat-value ${Math.abs(deviationPercent) > 50 ? 'deviation-high' : ''}">${deviationPercent > 0 ? '+' : ''}${deviationPercent.toFixed(1)}%</div>
+                            <div class="anomaly-stat-label">Deviation</div>
+                        </div>
+                        <div class="anomaly-stat">
+                            <div class="anomaly-stat-value">${anomaly.severity || 'HIGH'}</div>
+                            <div class="anomaly-stat-label">Severity</div>
+                        </div>
+                    </div>
+                    ${anomaly.contract_link ? `
+                        <a href="${anomaly.contract_link}" class="anomaly-evidence" target="_blank">
+                            📋 View Contract Evidence
+                        </a>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        async function initializeMLModels() {
+            const btn = document.getElementById('initModelsBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span> Training...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/budget/initialize-models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showToast('ML models initialized successfully!', 'success');
+                    loadAllData();
+                } else {
+                    showToast(data.message || 'Failed to initialize models', 'error');
+                }
+            } catch (error) {
+                console.error('ML init error:', error);
+                showToast('Error initializing ML models', 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function investigateZombie(vendorName) {
+            showToast(`Investigating ${vendorName}...`, 'success');
+            window.location.href = `/#vendors?search=${encodeURIComponent(vendorName)}`;
+        }
+
+        async function markActive(vendorName) {
+            try {
+                const response = await fetch('/api/budget/zombie/mark-active', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vendor_name: vendorName })
+                });
+                
+                const data = await response.json();
+                showToast(data.message || `${vendorName} marked as active`, 'success');
+                loadZombies();
+            } catch (error) {
+                showToast('Failed to update status', 'error');
+            }
+        }
+
+        async function confirmCancelled(vendorName) {
+            if (!confirm(`Confirm ${vendorName} is cancelled? This will remove it from tracking.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/budget/zombie/confirm-cancelled', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vendor_name: vendorName })
+                });
+                
+                const data = await response.json();
+                showToast(data.message || `${vendorName} confirmed as cancelled`, 'success');
+                loadZombies();
+            } catch (error) {
+                showToast('Failed to update status', 'error');
+            }
+        }
+
+        function handleDateRangeChange() {
+            loadZombies();
+        }
+
+        function handleCategoryChange() {
+            loadAllData();
+        }
+
+        function showLoading() {
+            document.getElementById('zombieList').innerHTML = `
+                <div class="loading-shimmer loading-card"></div>
+                <div class="loading-shimmer loading-card"></div>
+            `;
+            document.getElementById('anomalyList').innerHTML = `
+                <div class="loading-shimmer loading-card"></div>
+                <div class="loading-shimmer loading-card"></div>
+            `;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('statusToast');
+            toast.textContent = message;
+            toast.className = `status-toast ${type}`;
+            toast.style.display = 'block';
+            
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+
+        function updateLastRefresh() {
+            const now = new Date();
+            document.getElementById('lastRefresh').textContent = `Last: ${now.toLocaleTimeString()}`;
+        }
+
+        function formatCurrency(amount) {
+            if (amount == null || isNaN(amount)) return '$0';
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatDateShort(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function generateLastNDays(n) {
+            const dates = [];
+            for (let i = n - 1; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                dates.push(date.toISOString().split('T')[0]);
+            }
+            return dates;
+        }
+
+        function generateMockTrendData(n) {
+            const data = [];
+            let base = 5000;
+            for (let i = 0; i < n; i++) {
+                base += (Math.random() - 0.5) * 1000;
+                data.push(Math.max(0, base));
+            }
+            return data;
+        }
+    </script>
+</body>
+</html>

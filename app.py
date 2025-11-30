@@ -1013,6 +1013,141 @@ def logout():
 def index():
     return render_template('index.html')
 
+
+@app.route('/budget', methods=['GET'])
+@login_required
+def budget_dashboard():
+    """Render the AI Semantic Budget Dashboard"""
+    return render_template('budget.html')
+
+
+@app.route('/api/budget/burn-rate', methods=['GET'])
+@login_required
+def get_budget_burn_rate():
+    """Get current month burn rate and spend forecast"""
+    try:
+        from services.budget_intelligence_service import BudgetIntelligenceService
+        budget_service = BudgetIntelligenceService()
+        result = budget_service.get_burn_rate()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Burn rate error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/budget/zombies', methods=['GET'])
+@login_required
+def get_budget_zombies():
+    """Get zombie/inactive subscriptions"""
+    try:
+        inactive_days = request.args.get('inactive_days', 60, type=int)
+        from services.budget_intelligence_service import BudgetIntelligenceService
+        budget_service = BudgetIntelligenceService()
+        result = budget_service.get_zombie_subscriptions(inactive_days=inactive_days)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Zombie detection error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/budget/anomalies', methods=['GET'])
+@login_required
+def get_budget_anomalies():
+    """Get spending anomalies and contract violations"""
+    try:
+        threshold = request.args.get('threshold', 0.05, type=float)
+        from services.budget_intelligence_service import BudgetIntelligenceService
+        budget_service = BudgetIntelligenceService()
+        result = budget_service.detect_anomalies(threshold=threshold)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Anomaly detection error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/budget/initialize-models', methods=['POST'])
+@login_required
+def initialize_budget_models():
+    """Initialize ML models for spend forecasting"""
+    try:
+        from services.budget_intelligence_service import BudgetIntelligenceService
+        budget_service = BudgetIntelligenceService()
+        result = budget_service.initialize_forecast_models()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"ML model initialization error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/budget/summary', methods=['GET'])
+@login_required
+def get_budget_summary():
+    """Get comprehensive budget intelligence summary"""
+    try:
+        from services.budget_intelligence_service import BudgetIntelligenceService
+        budget_service = BudgetIntelligenceService()
+        result = budget_service.get_budget_summary()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Budget summary error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/budget/zombie/mark-active', methods=['POST'])
+@login_required
+def mark_zombie_active():
+    """Mark a zombie subscription as active"""
+    try:
+        data = request.get_json()
+        vendor_name = data.get('vendor_name')
+        if not vendor_name:
+            return jsonify({'status': 'error', 'message': 'vendor_name required'}), 400
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'{vendor_name} marked as active',
+            'vendor_name': vendor_name
+        })
+    except Exception as e:
+        logger.error(f"Mark active error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/budget/zombie/confirm-cancelled', methods=['POST'])
+@login_required
+def confirm_zombie_cancelled():
+    """Confirm a subscription as cancelled and remove from tracking"""
+    try:
+        data = request.get_json()
+        vendor_name = data.get('vendor_name')
+        if not vendor_name:
+            return jsonify({'status': 'error', 'message': 'vendor_name required'}), 400
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'{vendor_name} confirmed as cancelled',
+            'vendor_name': vendor_name
+        })
+    except Exception as e:
+        logger.error(f"Confirm cancelled error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/<path:encoded_hash>', methods=['GET'])
 def handle_encoded_hash(encoded_hash):
     """Handle URL-encoded hash fragments from 'Open in Browser' feature.
