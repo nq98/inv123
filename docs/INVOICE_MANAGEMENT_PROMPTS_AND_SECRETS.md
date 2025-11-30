@@ -1,8 +1,8 @@
-# Invoice Management - AI Prompts & Secrets Configuration
+# Invoice Management - AI Prompts & Secrets Configuration (TypeScript)
 
 ## Complete Reference for AI Prompts and Environment Secrets
 
-This document provides all AI prompts used in the Invoice Management system and detailed configuration for each Google Cloud service and secret.
+This document provides all AI prompts used in the Invoice Management system and detailed TypeScript configuration for each Google Cloud service and secret.
 
 ---
 
@@ -31,7 +31,7 @@ This document provides all AI prompts used in the Invoice Management system and 
 | `GCS_BUCKET` | Cloud Storage | Bucket name for storing PDFs |
 | `VERTEX_AI_SEARCH_DATA_STORE_ID` | Vertex AI Search | Data store ID for RAG |
 
-### Environment Variables
+### Environment Variables Template
 
 ```bash
 # ============================================
@@ -81,55 +81,64 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 
 // Initialize with credentials from secret
 const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-const credentials = JSON.parse(credentialsJson);
-const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined;
+const projectId = process.env.GOOGLE_CLOUD_PROJECT || '';
 const location = process.env.DOCUMENT_AI_LOCATION || 'us';
-const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
+const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID || '';
 
-const client = new DocumentProcessorServiceClient({ credentials });
+const client = credentials
+  ? new DocumentProcessorServiceClient({ credentials })
+  : new DocumentProcessorServiceClient();
 
 // Build processor name
 const processorName = `projects/${projectId}/locations/${location}/processors/${processorId}`;
 ```
 
-### Python Configuration
-
-```python
-import os
-import json
-from google.cloud import documentai_v1 as documentai
-from google.oauth2 import service_account
-
-# Load credentials from secret
-creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-creds_dict = json.loads(creds_json)
-credentials = service_account.Credentials.from_service_account_info(creds_dict)
-
-# Initialize client
-client = documentai.DocumentProcessorServiceClient(credentials=credentials)
-
-# Build processor path
-project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
-location = os.environ.get('DOCUMENT_AI_LOCATION', 'us')
-processor_id = os.environ.get('DOCUMENT_AI_PROCESSOR_ID')
-processor_name = client.processor_path(project_id, location, processor_id)
-```
-
 ### How Document AI Is Used
 
 ```typescript
-// Process invoice PDF
-const [result] = await client.processDocument({
-  name: processorName,
-  rawDocument: {
-    content: pdfBuffer.toString('base64'),
-    mimeType: 'application/pdf',
-  },
-});
+interface DocumentAIResult {
+  text: string;
+  entities: Record<string, { value: string; confidence: number }[]>;
+  pages: number;
+}
 
-// Extract entities
-const entities = result.document.entities;
-// Returns: supplier_name, invoice_id, invoice_date, due_date, total_amount, currency, line_items
+async function extractWithDocumentAI(
+  content: Buffer,
+  mimeType: string
+): Promise<DocumentAIResult> {
+  const [result] = await client.processDocument({
+    name: processorName,
+    rawDocument: {
+      content: content.toString('base64'),
+      mimeType,
+    },
+  });
+
+  const document = result.document;
+  if (!document) {
+    return { text: '', entities: {}, pages: 0 };
+  }
+
+  // Extract entities
+  const entities: Record<string, { value: string; confidence: number }[]> = {};
+  for (const entity of document.entities || []) {
+    const type = entity.type || 'unknown';
+    if (!entities[type]) {
+      entities[type] = [];
+    }
+    entities[type].push({
+      value: entity.mentionText || '',
+      confidence: entity.confidence || 0,
+    });
+  }
+
+  return {
+    text: document.text || '',
+    entities,
+    pages: document.pages?.length || 0,
+  };
+}
 ```
 
 ---
@@ -145,56 +154,41 @@ const entities = result.document.entities;
 ### TypeScript Configuration
 
 ```typescript
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
 // Initialize with API key from secret
-const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+const apiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+const model: GenerativeModel = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 ```
 
-### Python Configuration
+### How Gemini Is Used
 
-```python
-import os
-import google.generativeai as genai
+```typescript
+interface ExtractedInvoiceData {
+  vendorName: string;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  amount: number;
+  subtotal: number | null;
+  taxAmount: number | null;
+  currency: string;
+  documentType: 'invoice' | 'receipt';
+  lineItems: Array<{ description: string; amount: number }>;
+  confidence: number;
+}
 
-# Initialize with API key from secret
-api_key = os.environ.get('GOOGLE_GEMINI_API_KEY')
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-pro')
-```
-
-### Main Invoice Extraction Prompt
-
-```
-You are an expert invoice parser. Extract all invoice data from this document.
+async function semanticExtraction(
+  docText: string,
+  ragContext: string
+): Promise<ExtractedInvoiceData> {
+  const prompt = `You are an expert invoice parser. Extract all invoice data from this document.
 
 DOCUMENT TEXT:
-{document_text}
+${docText.substring(0, 8000)}
 
-{rag_context_if_available}
-
-EXTRACTION RULES:
-1. Extract vendor/supplier name (company issuing the invoice)
-2. Extract invoice number exactly as shown
-3. Extract all monetary amounts (subtotal, tax, total)
-4. Parse dates in ISO format (YYYY-MM-DD)
-5. Identify currency (USD, EUR, GBP, etc.)
-6. Extract line items with descriptions and amounts
-7. Determine if this is an Invoice or Receipt
-8. Assess payment terms and due date
-
-MULTI-CURRENCY HANDLING:
-- Look for currency symbols ($, €, £, ¥) and codes
-- If multiple currencies appear, identify the primary invoice currency
-- Note any currency conversion information
-
-DATE PARSING (handle all formats):
-- US format: MM/DD/YYYY
-- EU format: DD/MM/YYYY or DD.MM.YYYY
-- ISO format: YYYY-MM-DD
-- Written format: "November 20, 2024"
+${ragContext}
 
 Return a JSON object with this exact structure:
 {
@@ -207,31 +201,23 @@ Return a JSON object with this exact structure:
     "taxAmount": number or null,
     "currency": "USD",
     "documentType": "invoice" or "receipt",
-    "description": "brief description or null",
-    "lineItems": [
-        {"description": "string", "quantity": number, "unitPrice": number, "amount": number}
-    ],
-    "paymentTerms": "string or null",
-    "category": "suggested category or null",
+    "lineItems": [{"description": "string", "amount": number}],
     "confidence": 0.0 to 1.0
 }
 
-Return ONLY valid JSON, no markdown or explanation.
-```
+Return ONLY valid JSON, no markdown.`;
 
-### How Gemini Is Used
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  let text = response.text();
 
-```typescript
-// Send prompt to Gemini
-const result = await model.generateContent(prompt);
-const response = await result.response;
-let text = response.text();
+  // Parse JSON from response
+  if (text.includes('```json')) {
+    text = text.split('```json')[1].split('```')[0];
+  }
 
-// Parse JSON from response
-if (text.includes('```json')) {
-  text = text.split('```json')[1].split('```')[0];
+  return JSON.parse(text.trim());
 }
-const extractedData = JSON.parse(text.trim());
 ```
 
 ---
@@ -248,53 +234,55 @@ const extractedData = JSON.parse(text.trim());
 ### TypeScript Configuration
 
 ```typescript
-import { Storage } from '@google-cloud/storage';
+import { Storage, Bucket } from '@google-cloud/storage';
 
 // Initialize with credentials from secret
 const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-const credentials = JSON.parse(credentialsJson);
+const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined;
 const bucketName = process.env.GCS_BUCKET || 'payouts-invoices';
 
-const storage = new Storage({ credentials });
-const bucket = storage.bucket(bucketName);
-```
+const storage = credentials
+  ? new Storage({ credentials })
+  : new Storage();
 
-### Python Configuration
-
-```python
-import os
-import json
-from google.cloud import storage
-from google.oauth2 import service_account
-
-# Load credentials from secret
-creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-creds_dict = json.loads(creds_json)
-credentials = service_account.Credentials.from_service_account_info(creds_dict)
-
-# Initialize client
-storage_client = storage.Client(credentials=credentials)
-bucket_name = os.environ.get('GCS_BUCKET', 'payouts-invoices')
-bucket = storage_client.bucket(bucket_name)
+const bucket: Bucket = storage.bucket(bucketName);
 ```
 
 ### How GCS Is Used
 
 ```typescript
-// Upload invoice PDF
-const gcsPath = `invoices/${userEmail}/${datePath}/${filename}`;
-const file = bucket.file(gcsPath);
-await file.save(pdfBuffer, {
-  contentType: 'application/pdf',
-  metadata: { uploadedBy: userEmail }
-});
+import { format } from 'date-fns';
 
-// Generate signed URL for download
-const [signedUrl] = await file.getSignedUrl({
-  version: 'v4',
-  action: 'read',
-  expires: Date.now() + 60 * 60 * 1000 // 1 hour
-});
+async function uploadToGCS(
+  content: Buffer,
+  filename: string,
+  userEmail: string
+): Promise<string> {
+  const datePath = format(new Date(), 'yyyy/MM/dd');
+  const safeEmail = userEmail.replace('@', '_at_').replace(/\./g, '_');
+  const gcsPath = `invoices/${safeEmail}/${datePath}/${filename}`;
+
+  const file = bucket.file(gcsPath);
+  await file.save(content, {
+    contentType: 'application/pdf',
+    metadata: {
+      uploadedBy: userEmail,
+      uploadedAt: new Date().toISOString(),
+    },
+  });
+
+  return gcsPath;
+}
+
+async function getSignedUrl(gcsPath: string): Promise<string> {
+  const file = bucket.file(gcsPath);
+  const [url] = await file.getSignedUrl({
+    version: 'v4',
+    action: 'read',
+    expires: Date.now() + 60 * 60 * 1000, // 1 hour
+  });
+  return url;
+}
 ```
 
 ---
@@ -316,91 +304,71 @@ import { BigQuery } from '@google-cloud/bigquery';
 
 // Initialize with credentials from secret
 const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-const credentials = JSON.parse(credentialsJson);
-const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined;
+const projectId = process.env.GOOGLE_CLOUD_PROJECT || '';
 const datasetId = process.env.BIGQUERY_DATASET || 'vendors_ai';
 
-const bigquery = new BigQuery({ credentials, projectId });
+const bigquery = credentials
+  ? new BigQuery({ credentials, projectId })
+  : new BigQuery({ projectId });
+
 const tableId = `${projectId}.${datasetId}.invoices`;
-```
-
-### Python Configuration
-
-```python
-import os
-import json
-from google.cloud import bigquery
-from google.oauth2 import service_account
-
-# Load credentials from secret
-creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-creds_dict = json.loads(creds_json)
-credentials = service_account.Credentials.from_service_account_info(creds_dict)
-
-# Initialize client
-project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
-bq_client = bigquery.Client(credentials=credentials, project=project_id)
-dataset_id = os.environ.get('BIGQUERY_DATASET', 'vendors_ai')
-table_id = f"{project_id}.{dataset_id}.invoices"
-```
-
-### BigQuery Table Schema
-
-```sql
-CREATE TABLE IF NOT EXISTS `{project_id}.{dataset_id}.invoices` (
-    invoice_id STRING NOT NULL,
-    invoice_number STRING,
-    vendor_name STRING,
-    vendor_id STRING,
-    amount FLOAT64,
-    currency STRING DEFAULT 'USD',
-    tax_amount FLOAT64,
-    subtotal FLOAT64,
-    invoice_date DATE,
-    due_date DATE,
-    scheduled_date DATE,
-    payment_type STRING,
-    payment_status STRING DEFAULT 'pending',
-    category STRING,
-    gl_code STRING,
-    description STRING,
-    line_items STRING,
-    status STRING DEFAULT 'pending',
-    approval_status STRING,
-    approved_by STRING,
-    approved_at TIMESTAMP,
-    rejected_by STRING,
-    rejected_at TIMESTAMP,
-    rejection_reason STRING,
-    source STRING,
-    original_filename STRING,
-    gcs_path STRING,
-    extraction_confidence FLOAT64,
-    extraction_method STRING,
-    raw_extraction STRING,
-    user_email STRING,
-    tenant_id STRING,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
-);
 ```
 
 ### How BigQuery Is Used
 
 ```typescript
-// Store invoice
-await bigquery.dataset(datasetId).table('invoices').insert([invoiceRow]);
+interface InvoiceRow {
+  invoice_id: string;
+  invoice_number: string | null;
+  vendor_name: string;
+  amount: number;
+  currency: string;
+  status: string;
+  user_email: string;
+  created_at: string;
+}
 
-// Query invoices
-const [rows] = await bigquery.query({
-  query: `SELECT * FROM \`${tableId}\` WHERE user_email = @email`,
-  params: { email: userEmail }
-});
+async function storeInvoice(invoice: InvoiceRow): Promise<void> {
+  await bigquery.dataset(datasetId).table('invoices').insert([invoice]);
+}
 
-// Update invoice status
-await bigquery.query({
-  query: `UPDATE \`${tableId}\` SET status = 'approved' WHERE invoice_id = '${invoiceId}'`
-});
+async function listInvoices(
+  userEmail: string,
+  page: number = 1,
+  limit: number = 50
+): Promise<InvoiceRow[]> {
+  const offset = (page - 1) * limit;
+  const query = `
+    SELECT * FROM \`${tableId}\`
+    WHERE user_email = @userEmail
+    ORDER BY created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  const [rows] = await bigquery.query({
+    query,
+    params: { userEmail },
+  });
+
+  return rows as InvoiceRow[];
+}
+
+async function approveInvoice(
+  invoiceId: string,
+  userEmail: string
+): Promise<void> {
+  const query = `
+    UPDATE \`${tableId}\`
+    SET status = 'approved',
+        approved_by = '${userEmail}',
+        approved_at = CURRENT_TIMESTAMP(),
+        updated_at = CURRENT_TIMESTAMP()
+    WHERE invoice_id = '${invoiceId}'
+  `;
+
+  await bigquery.query({ query });
+}
 ```
 
 ---
@@ -421,49 +389,49 @@ await bigquery.query({
 import { SearchServiceClient } from '@google-cloud/discoveryengine';
 
 const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-const credentials = JSON.parse(credentialsJson);
-const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-const dataStoreId = process.env.VERTEX_AI_SEARCH_DATA_STORE_ID;
+const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined;
+const projectId = process.env.GOOGLE_CLOUD_PROJECT || '';
+const dataStoreId = process.env.VERTEX_AI_SEARCH_DATA_STORE_ID || '';
 
-const client = new SearchServiceClient({ credentials });
+const client = credentials
+  ? new SearchServiceClient({ credentials })
+  : new SearchServiceClient();
+
 const servingConfig = `projects/${projectId}/locations/global/collections/default_collection/dataStores/${dataStoreId}/servingConfigs/default_search`;
-```
-
-### Python Configuration
-
-```python
-import os
-import json
-from google.cloud import discoveryengine_v1 as discoveryengine
-from google.oauth2 import service_account
-
-# Load credentials from secret
-creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-creds_dict = json.loads(creds_json)
-credentials = service_account.Credentials.from_service_account_info(creds_dict)
-
-# Initialize client
-client = discoveryengine.SearchServiceClient(credentials=credentials)
-project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
-data_store_id = os.environ.get('VERTEX_AI_SEARCH_DATA_STORE_ID')
-serving_config = f"projects/{project_id}/locations/global/collections/default_collection/dataStores/{data_store_id}/servingConfigs/default_search"
 ```
 
 ### How RAG Is Used
 
 ```typescript
-// Search for historical invoice context
-const [response] = await client.search({
-  servingConfig,
-  query: vendorName,
-  pageSize: 5,
-});
+interface RAGContext {
+  typicalCategory?: string;
+  typicalPaymentType?: string;
+  vendorHistory?: Array<{ amount: number; category: string }>;
+}
 
-// Use historical data to improve extraction
-const ragContext = {
-  typicalCategory: response.results[0]?.document?.category,
-  typicalPaymentType: response.results[0]?.document?.paymentType,
-};
+async function getRAGContext(vendorHint: string): Promise<RAGContext> {
+  if (!vendorHint || !dataStoreId) return {};
+
+  try {
+    const [response] = await client.search({
+      servingConfig,
+      query: vendorHint,
+      pageSize: 5,
+    });
+
+    if (response.results && response.results.length > 0) {
+      const firstResult = response.results[0].document as any;
+      return {
+        typicalCategory: firstResult?.category,
+        typicalPaymentType: firstResult?.paymentType,
+      };
+    }
+  } catch (error) {
+    console.warn('RAG context lookup failed:', error);
+  }
+
+  return {};
+}
 ```
 
 ---
@@ -472,7 +440,7 @@ const ragContext = {
 
 ### 1. Main Invoice Extraction Prompt (Gemini 1.5 Pro)
 
-**Used In:** `InvoiceParserService.extractInvoiceData()`
+**Used In:** `InvoiceParserService.semanticExtraction()`
 
 **Purpose:** Extract structured invoice data from OCR text
 
@@ -530,7 +498,7 @@ Return a JSON object with this exact structure:
 Return ONLY valid JSON, no markdown or explanation.
 ```
 
-### 2. Payment Type Detection Prompt (Optional Enhancement)
+### 2. Payment Type Detection Prompt
 
 **Purpose:** Detect payment method from invoice text
 
@@ -559,7 +527,7 @@ Return JSON:
 Return ONLY valid JSON.
 ```
 
-### 3. Invoice Category Classification Prompt (Optional Enhancement)
+### 3. Invoice Category Classification Prompt
 
 **Purpose:** Classify invoice into spending category
 
@@ -645,48 +613,33 @@ Your service account needs these IAM roles:
 
 ---
 
-## Integration Checklist
+## TypeScript Integration Checklist
 
 - [ ] Set `GOOGLE_APPLICATION_CREDENTIALS_JSON` secret
 - [ ] Set `GOOGLE_GEMINI_API_KEY` secret
 - [ ] Set `GOOGLE_CLOUD_PROJECT` environment variable
 - [ ] Set `DOCUMENT_AI_PROCESSOR_ID` environment variable
 - [ ] Set `GCS_BUCKET` environment variable
-- [ ] Set `BIGQUERY_DATASET` environment variable (optional, defaults to `vendors_ai`)
-- [ ] Set `VERTEX_AI_SEARCH_DATA_STORE_ID` environment variable (optional for RAG)
-- [ ] Create BigQuery table using schema above
+- [ ] Set `BIGQUERY_DATASET` environment variable
+- [ ] Set `VERTEX_AI_SEARCH_DATA_STORE_ID` environment variable (optional)
+- [ ] Install npm packages:
+  ```bash
+  npm install @google-cloud/documentai @google-cloud/storage @google-cloud/bigquery
+  npm install @google/generative-ai @google-cloud/discoveryengine
+  ```
+- [ ] Create BigQuery table using schema
 - [ ] Grant service account required IAM roles
-- [ ] Test Document AI processor with sample PDF
-- [ ] Test Gemini API key with sample prompt
-- [ ] Test GCS bucket access (upload/download)
-- [ ] Test BigQuery table access (insert/query)
+- [ ] Test all services
 
 ---
 
-## Troubleshooting
+## Complete Implementation Files
 
-### Document AI Not Working
-```bash
-# Check processor exists
-gcloud documentai processors list --location=us --project=$GOOGLE_CLOUD_PROJECT
-```
+| File | Description |
+|------|-------------|
+| `invoice_parser_service_complete.ts` | Full TypeScript parser service |
+| `invoice_management_api.ts` | Complete Express API routes |
+| `INVOICE_MANAGEMENT_TYPESCRIPT_GUIDE.md` | Detailed TypeScript guide |
+| `INVOICE_MANAGEMENT_INTEGRATION_GUIDE.md` | Integration documentation |
 
-### Gemini API Errors
-```bash
-# Test API key
-curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=$GOOGLE_GEMINI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"contents":[{"parts":[{"text":"Hello"}]}]}'
-```
-
-### GCS Permission Denied
-```bash
-# Check bucket access
-gsutil ls gs://$GCS_BUCKET
-```
-
-### BigQuery Errors
-```bash
-# Check table exists
-bq show $GOOGLE_CLOUD_PROJECT:$BIGQUERY_DATASET.invoices
-```
+All files are TypeScript-only with full type definitions.
