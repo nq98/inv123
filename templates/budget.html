@@ -794,13 +794,13 @@
         function updateBurnGauge(data) {
             const actualSpent = data.current_month_spend || 0;
             const forecasted = data.ml_forecasted_spend || data.linear_forecasted_spend || actualSpent;
-            const budgetLimit = data.budget_limit || forecasted * 1.2;
-            const percentage = Math.min((actualSpent / budgetLimit) * 100, 100);
+            const budgetLimit = data.budget_limit || (forecasted > 0 ? forecasted * 1.2 : 10000);
+            const percentage = budgetLimit > 0 ? Math.min((actualSpent / budgetLimit) * 100, 100) : 0;
             
             document.getElementById('actualSpent').textContent = formatCurrency(actualSpent);
             document.getElementById('forecastedSpend').textContent = formatCurrency(forecasted);
             document.getElementById('budgetLimit').textContent = formatCurrency(budgetLimit);
-            document.getElementById('burnPercentage').textContent = Math.round(percentage) + '%';
+            document.getElementById('burnPercentage').textContent = (isNaN(percentage) ? 0 : Math.round(percentage)) + '%';
             
             const gauge = document.getElementById('burnGaugeFill');
             const maxDashOffset = 251.2;
@@ -1057,11 +1057,16 @@
                     showToast('ML models initialized successfully!', 'success');
                     loadAllData();
                 } else {
-                    showToast(data.message || 'Failed to initialize models', 'error');
+                    const msg = data.message || '';
+                    if (msg.includes('time series') || msg.includes('ARIMA') || msg.includes('invalid')) {
+                        showToast('Need more invoice history for forecasting. Using linear projections instead.', 'info');
+                    } else {
+                        showToast('Models need more data - using fallback estimates', 'info');
+                    }
                 }
             } catch (error) {
                 console.error('ML init error:', error);
-                showToast('Error initializing ML models', 'error');
+                showToast('Using fallback forecasting', 'info');
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
