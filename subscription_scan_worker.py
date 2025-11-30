@@ -258,8 +258,8 @@ def run_scan(job_id, credentials, days, user_email):
                     except:
                         pass
     
-    from services.subscription_pulse_service import get_subscription_pulse_service
-    pulse_service = get_subscription_pulse_service()
+    from services.subscription_pulse_service import SubscriptionPulseService
+    pulse_service = SubscriptionPulseService()
     
     update_job(job_id, progress=55, 
         message=f'⚡ Stage 1: AI analyzing {len(all_emails):,} emails...')
