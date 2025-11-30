@@ -670,7 +670,9 @@
 
             <div class="speedometer-card budget-glass-card">
                 <h3 style="margin: 0 0 20px; color: var(--gray-800);">📈 Spend Trend</h3>
-                <canvas id="spendTrendChart" height="180"></canvas>
+                <div style="position: relative; width: 100%; height: 180px; max-width: 100%; overflow: hidden;">
+                    <canvas id="spendTrendChart"></canvas>
+                </div>
                 <div id="trendSummary" style="margin-top: 16px; text-align: center; color: var(--gray-600); font-size: 0.875rem;">
                     Loading trend data...
                 </div>
@@ -718,12 +720,12 @@
     <script>
         let autoRefreshInterval = null;
         let spendTrendChart = null;
-        const AUTO_REFRESH_MS = 30000;
+        let cachedMockData = null;
+        const AUTO_REFRESH_MS = 60000;
 
         document.addEventListener('DOMContentLoaded', () => {
             initializeNavigation();
             loadAllData();
-            startAutoRefresh();
         });
 
         function initializeNavigation() {
@@ -1182,12 +1184,16 @@
         }
 
         function generateMockTrendData(n) {
+            if (cachedMockData && cachedMockData.length === n) {
+                return cachedMockData;
+            }
             const data = [];
             let base = 5000;
             for (let i = 0; i < n; i++) {
                 base += (Math.random() - 0.5) * 1000;
-                data.push(Math.max(0, base));
+                data.push(Math.max(0, Math.round(base)));
             }
+            cachedMockData = data;
             return data;
         }
     </script>
